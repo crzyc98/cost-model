@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import os
 from datetime import datetime
+import math
 
 # --- ML Dependencies ---
 try:
@@ -231,3 +232,89 @@ def prepare_features_for_model(df, feature_names, reference_date):
             print(f"Imputed NaNs in feature '{col}' with median value {median_val:.2f}")
 
     return final_features # Return only the feature columns needed by model
+
+# --- Termination Application Logic ---
+def apply_stochastic_termination(termination_probs):
+    """Applies stochastic termination based on probabilities.
+
+    Args:
+        termination_probs (pd.Series): Series of termination probabilities (0 to 1).
+
+    Returns:
+        pd.Series: Boolean series indicating termination decision (True=Terminate).
+    """
+    if termination_probs is None or termination_probs.empty:
+        return pd.Series(False, index=termination_probs.index)
+    
+    # Generate random numbers for each employee
+    random_draws = np.random.rand(len(termination_probs))
+    
+    # Terminate if random draw < predicted probability
+    termination_decisions = random_draws < termination_probs
+    return termination_decisions
+
+def apply_terminations(df, terminated_ids, termination_date):
+    """Updates the DataFrame to mark employees as terminated.
+
+    Args:
+        df (pd.DataFrame): The census dataframe.
+        terminated_ids (pd.Index): Index of employees to terminate.
+        termination_date (pd.Timestamp): The date of termination.
+
+    Returns:
+        pd.DataFrame: The updated dataframe (or modifies inplace and returns None,
+                      depending on desired pattern - returning modified df is safer).
+    """
+    if not terminated_ids.empty:
+        df.loc[terminated_ids, 'termination_date'] = termination_date
+        df.loc[terminated_ids, 'status'] = 'Terminated'
+    return df
+
+def apply_rule_based_turnover(df, termination_rate, termination_date):
+    """Applies deterministic termination based on rule-based scores and a target rate.
+
+    Args:
+        df (pd.DataFrame): The census dataframe (must have age, tenure, gross_compensation).
+        termination_rate (float): The target gross termination rate (e.g., 0.10 for 10%).
+        termination_date (pd.Timestamp): The date of termination.
+
+    Returns:
+        pd.DataFrame: The updated dataframe with terminations applied.
+    """
+    if df.empty or termination_rate <= 0:
+        return df
+
+    # Calculate rule-based scores (ensure necessary columns exist)
+    required_cols = ['birth_date', 'hire_date', 'gross_compensation']
+    if not all(col in df.columns for col in required_cols):
+        print("Warning: Missing columns required for rule-based scoring. Skipping rule-based termination.")
+        return df
+
+    # Calculate age and tenure for scoring
+    # Avoid modifying df directly if it's just for scoring
+    temp_df = df.copy()
+    temp_df['age_for_scoring'] = calculate_age(temp_df['birth_date'], termination_date)
+    temp_df['tenure_for_scoring'] = calculate_tenure(temp_df['hire_date'], termination_date)
+    
+    comp_p25 = temp_df['gross_compensation'].quantile(0.25)
+    rule_based_scores = temp_df.apply(
+        lambda row: calculate_turnover_score_rule_based(
+            row['age_for_scoring'],
+            row['tenure_for_scoring'],
+            row['gross_compensation'],
+            comp_p25
+        ), axis=1)
+    
+    # Determine number of terminations
+    target_terminations = math.ceil(len(df) * termination_rate)
+    target_terminations = min(target_terminations, len(df)) # Cannot terminate more than exist
+
+    # Identify employees with highest scores to terminate
+    # Ensure score series has the same index as the original df
+    rule_based_scores.index = df.index 
+    terminating_indices = rule_based_scores.nlargest(target_terminations).index
+
+    # Apply terminations
+    df = apply_terminations(df, terminating_indices, termination_date)
+    
+    return df

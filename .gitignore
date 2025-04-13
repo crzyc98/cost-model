@@ -26,10 +26,6 @@ MANIFEST
 venv/
 env/
 
-# Data files
-*.csv
-*.xlsx
-
 # IDE
 .vscode/
 .idea/
