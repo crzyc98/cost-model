@@ -1,7 +1,0 @@
-pandas>=1.0
-numpy>=1.18
-openpyxl>=3.0 # Added for Excel export functionality
-
-# Optional dependencies for ML-based turnover prediction
-scikit-learn>=0.24
-lightgbm>=3.0
