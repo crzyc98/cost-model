@@ -28,6 +28,7 @@ baseline_scenario = {
     'comp_increase_rate': 0.03, # Example: 3% annual comp increase
     'hire_rate': 0.10,          # Example: 10% annual gross hire rate
     'termination_rate': 0.08,   # Example: 8% target annual turnover
+    'maintain_headcount': False,  # Allow population growth based on hire_rate
     # 'role_distribution': {...}, # Placeholder for future enhancement
     # 'role_compensation_params': {...}, # Placeholder for future enhancement
     'plan_rules': {
@@ -63,6 +64,7 @@ proposed_scenario = {
     'comp_increase_rate': 0.03,
     'hire_rate': 0.10,
     'termination_rate': 0.08,
+    'maintain_headcount': False,  # Allow population growth based on hire_rate
     # 'role_distribution': {...}, # Placeholder for future enhancement
     # 'role_compensation_params': {...}, # Placeholder for future enhancement
     'plan_rules': {

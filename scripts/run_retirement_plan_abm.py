@@ -5,6 +5,8 @@ import yaml
 import argparse
 import logging
 import os
+import sys  # ensure parent project root is on path for imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from decimal import Decimal
 from model.retirement_model import RetirementPlanModel
 
@@ -132,6 +134,22 @@ def run_simulation(config_path, census_path, output_prefix):
 
         print(f"Model-level results saved to: {model_output_path}")
         print(f"Agent-level results saved to: {agent_output_path}")
+
+        # --- Log Yearly Summary Tables ---
+        status_table = agent_data.groupby(['Year', 'EmploymentStatus']).size().unstack(fill_value=0)
+        # Ensure all key statuses exist
+        for col in ['Active Continuous', 'New Hire Active', 'Previously Terminated', 'Terminated']:
+            if col not in status_table.columns:
+                status_table[col] = 0
+        ordered_cols = ['Active Continuous', 'New Hire Active', 'Previously Terminated', 'Terminated'] + [c for c in status_table.columns if c not in ['Active Continuous','New Hire Active','Previously Terminated','Terminated']]
+        status_table = status_table[ordered_cols]
+        logging.info("\n--- Employment Status by Year ---\n%s", status_table.to_string())
+        # --- Compute and Log Growth Metrics ---
+        growth_df = status_table[['Active Continuous', 'New Hire Active']].copy()
+        growth_df['Total'] = growth_df.sum(axis=1)
+        growth_df['Growth'] = growth_df['Total'].diff().fillna(0).astype(int)
+        growth_df['% Growth'] = (growth_df['Growth'] / growth_df['Total'].shift()).fillna(0)
+        logging.info("\n--- Yearly Growth Metrics ---\n%s", growth_df.to_string())
 
     except Exception as e:
         print(f"Error collecting or saving results: {e}")

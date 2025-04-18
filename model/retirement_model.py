@@ -10,6 +10,7 @@ import logging # For logging
 # Need relativedelta for adding months to dates
 from dateutil.relativedelta import relativedelta 
 import re # Import regular expression module
+from utils.status_enums import EmploymentStatus
 
 # Configure logging
 # Set up basic logging for the module if needed, or rely on root config
@@ -210,13 +211,12 @@ class RetirementPlanModel(mesa.Model):
         # Clear the list of hires from the *previous* step before creating new ones
         self.last_step_hires_list = []
 
+        # Track start-of-year active headcount for next hires
+        active_at_start = sum(1 for a in self.population.values() if a.is_active)
+        # Reset hire record for this year (we'll spawn at end)
+        self.last_step_hires_list = []
+
         # 1. Create New Hires for *this* year
-        active_at_start = self.schedule.get_agent_count()
-        growth_rate = self.scenario_config.get('annual_growth_rate', 0.02)
-        logging.debug(f"STEP Year {self.year} PRE-HIRE: Active Agents = {active_at_start}, Growth Rate = {growth_rate:.4f}")
-        newly_hired_agents = self._create_new_hires()
-        self.last_step_hires_list = newly_hired_agents # Store the list
-        
         # 2. Identify Terminations for this year
         agents_terminating_this_year = self._identify_terminations()
         agents_terminating_this_year_ids = {a.unique_id for a in agents_terminating_this_year}
@@ -233,7 +233,7 @@ class RetirementPlanModel(mesa.Model):
         
         # 5. Update employment status based on terminations
         for agent in self.population.values():
-            is_new_hire = agent.unique_id in [a.unique_id for a in newly_hired_agents]
+            is_new_hire = agent.unique_id in [a.unique_id for a in self.last_step_hires_list]
             terminates_this_year = agent.unique_id in agents_terminating_this_year_ids
             
             # Status logic based on this year's events
@@ -281,14 +281,16 @@ class RetirementPlanModel(mesa.Model):
                 agent.is_active = False # Update active status
                 if is_new_hire:
                     agent.employment_status = "New Hire Terminated"
-                else: # Terminated, was not hired this year
+                else:
                     agent.employment_status = "Terminated"
+                    # Remove experienced terminations from the schedule
+                    self.schedule.remove(agent)
                 # Optional: Add debug print for assigned date
                 logging.debug(f"  Termination Processed: Agent {agent.unique_id} terminated on {agent.termination_date.date()} (Year {self.year}) Status: {agent.employment_status}")
 
             elif is_new_hire: # Not terminated this year, but was hired this year
                 agent.is_active = True
-                agent.employment_status = "New Hire Active" # Ensure this is set for new hires
+                agent.employment_status = EmploymentStatus.NEW_HIRE.value # Ensure this is set for new hires
                 # Removed redundant print statement from here, it's in _create_new_hires
 
             elif agent.is_active: # Not terminated, not hired this year, AND was active at start
@@ -306,11 +308,41 @@ class RetirementPlanModel(mesa.Model):
                     # Fallback if logic missed something, or if term date is exactly this year but they weren't in term list
                     agent.employment_status = "Inactive" # A generic inactive status?
 
-        # 6. Update the Schedule to reflect the state *at the end* of this year
-        #    Remove agents who terminated this year
-        for agent in agents_terminating_this_year:
-            if agent.unique_id in self.schedule._agents: # Ensure it's actually in schedule
+        # 6. Calibrate hires using expected or realized veteran terminations and apply head-on attrition
+        growth_rate = self.scenario_config.get('annual_growth_rate', 0.02)
+        h_ex = self.scenario_config.get('annual_termination_rate', 0.0)
+        h_nh = self.scenario_config.get('new_hire_termination_rate', h_ex)
+        delta = round(active_at_start * growth_rate)
+        T_ex_real = len(agents_terminating_this_year)
+        use_expected = self.scenario_config.get('use_expected_attrition', False)
+        T_ex_used = h_ex * active_at_start if use_expected else T_ex_real
+        # H_t = (delta + T_ex_used) / (1 - h_nh)
+        if (1 - h_nh) > 0:
+            H_t = int((delta + T_ex_used) / (1 - h_nh))
+        else:
+            H_t = int(delta + T_ex_used)
+        method = "expected" if use_expected else "realized"
+        print(f"Creating {H_t} new agents (using {method} T_ex={T_ex_used:.2f}, target_g={growth_rate:.2%}) for year {self.year}...")
+        # Spawn new hires
+        new_hires = self._create_new_hires(num_new_hires=H_t)
+        # Determine and apply new-hire attrition head-on
+        T_nh = int(round(H_t * h_nh))
+        if T_nh > 0 and new_hires:
+            term_batch = self.random.sample(new_hires, min(T_nh, len(new_hires)))
+            year_end = pd.Timestamp(f"{self.year}-12-31")
+            for agent in term_batch:
+                hire_ts = pd.to_datetime(agent.hire_date)
+                days_range = (year_end - hire_ts).days if pd.notna(hire_ts) else 0
+                offset = self.random.randint(0, days_range) if days_range > 0 else 0
+                term_date = hire_ts + pd.Timedelta(days=offset) if pd.notna(hire_ts) else year_end
+                agent.termination_date = term_date
+                agent.is_active = False
+                agent.employment_status = "New Hire Terminated"
                 self.schedule.remove(agent)
+        # Keep survivors
+        survivors = [a for a in new_hires if a.is_active]
+        self.last_step_hires_list = survivors
+        logging.info(f"Δ={delta}, T_ex_real={T_ex_real}, T_ex_used={T_ex_used:.2f}, T_nh={T_nh}, H_t={H_t}")
 
         # --- Calculate Prorated Compensation for Reporting --- 
         # Do this *after* final termination dates are set for the year, for *all* agents present
@@ -498,10 +530,15 @@ class RetirementPlanModel(mesa.Model):
 
         return terminating_agents
 
-    def _create_new_hires(self):
+    def _create_new_hires(self, num_new_hires=None):
         """Creates new agents based on growth rate using census-derived compensation stats."""
+        # Override hire count if provided, else compute via calibration
         growth_rate = self.scenario_config.get('annual_growth_rate', 0.02)
-        # start_salary = Decimal(str(self.scenario_config.get('new_hire_start_salary', 50000))) # No longer needed
+        term_rate = self.scenario_config.get('annual_termination_rate', 0.0)
+        new_hire_term_rate = self.scenario_config.get('new_hire_termination_rate', term_rate)
+        denom_new = 1 - new_hire_term_rate
+        # Solve N*(1-t) + H*(1-h_t) = N*(1+g) => H = N*(t+g)/(1-h_t)
+        hire_multiplier = (term_rate + growth_rate) / denom_new if denom_new > 0 else growth_rate
         avg_start_age = self.scenario_config.get('new_hire_average_age', 30)
         # Get year start/end for random date generation
         year_start = pd.Timestamp(f"{self.year}-01-01")
@@ -515,28 +552,19 @@ class RetirementPlanModel(mesa.Model):
         # Set a minimum floor for generated salary (e.g., 30% of mean, or a fixed amount)
         min_salary_floor = self.initial_comp_mean * Decimal('0.3')
 
-        # Base growth on agents active (Continuous or New Hire) at the *start* of the year
-        num_active_at_start = sum(1 for agent in self.schedule.agents 
-                                  if agent.employment_status in ["Active Continuous", "New Hire Active", "Active Initial"]) # Added Active Initial
-
-        logging.debug(f"FUNC _create_new_hires Year {self.year}: Active Agent Count (Filtered) = {num_active_at_start}")
-        if num_active_at_start > 0:
-            num_new_hires = round(num_active_at_start * growth_rate)
-            logging.debug(f"FUNC _create_new_hires Year {self.year}: Calculated Hires = {num_new_hires}")
+        # Determine how many to spawn
+        if num_new_hires is None:
+            if self.schedule.get_agent_count() > 0:
+                count_to_create = round(self.schedule.get_agent_count() * hire_multiplier)
+            else:
+                count_to_create = self.scenario_config.get('initial_hires_if_empty', 5)
         else:
-            num_new_hires = self.scenario_config.get('initial_hires_if_empty', 5)
-            logging.debug(f"FUNC _create_new_hires Year {self.year}: Calculated Hires (fallback) = {num_new_hires}")
-
-        # Prevent double-adding: if we already added new hires this year, don't add again
-        if hasattr(self, '_new_hires_added_this_year') and self._new_hires_added_this_year == self.year:
-            logging.warning(f"_create_new_hires called more than once for year {self.year}; skipping to avoid double-adding agents.")
-            return []
-        self._new_hires_added_this_year = self.year
+            count_to_create = num_new_hires
 
         new_agents_list = []
-        if num_new_hires > 0:
-            print(f"Creating {num_new_hires} new agents for year {self.year} using census stats (Mean: {self.initial_comp_mean:.2f}, StdDev: {self.initial_comp_std_dev:.2f})...")
-            for _ in range(num_new_hires):
+        if count_to_create > 0:
+            print(f"Creating {count_to_create} new agents for year {self.year} using census stats (Mean: {self.initial_comp_mean:.2f}, StdDev: {self.initial_comp_std_dev:.2f})...")
+            for _ in range(count_to_create):
                 unique_id = self.next_agent_id
                 self.next_agent_id += 1
 
@@ -569,6 +597,7 @@ class RetirementPlanModel(mesa.Model):
                 }
                 agent = EmployeeAgent(unique_id, self, initial_state)
                 agent.is_new_hire = True
+                agent.employment_status = EmploymentStatus.NEW_HIRE.value
                 # Only add to scheduler and population here; not during model init
                 self.schedule.add(agent)
                 self.population[unique_id] = agent

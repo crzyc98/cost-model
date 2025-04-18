@@ -7,7 +7,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import re # Added for parsing match formula
 from dateutil.relativedelta import relativedelta # Added for eligibility date calc
-from utils import calculate_age, calculate_tenure
+from utils.date_utils import calculate_age, calculate_tenure  # Use date utilities from utils
 
 def determine_eligibility(df, scenario_config, simulation_year_end_date):
     """

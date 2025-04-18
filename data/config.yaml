@@ -79,8 +79,14 @@ behavioral_params:
   voluntary_decrease_amount: 0.01 # Amount for voluntary decrease
 
 # Economic / Demographic Assumptions
+# h_ex: annual experienced attrition rate (experienced staff)
+# h_nh: annual new-hire attrition rate
 annual_compensation_increase_rate: 0.03
+# h_ex: annual attrition rate for experienced staff
 annual_termination_rate: 0.13
-annual_growth_rate: 0.15 # For new hires
+# h_nh: annual attrition rate for new hires
+new_hire_termination_rate: 0.20 # Attrition rate for new hires
+use_expected_attrition: false  # Toggle expected vs realized veteran attrition in hires
 new_hire_start_salary: 55000
 new_hire_average_age: 30
+annual_growth_rate: 0.02 # Target 2% net growth
