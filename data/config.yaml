@@ -90,3 +90,17 @@ use_expected_attrition: false  # Toggle expected vs realized veteran attrition i
 new_hire_start_salary: 55000
 new_hire_average_age: 30
 annual_growth_rate: 0.02 # Target 2% net growth
+monthly_transition: false # Enable monthly attrition transitions
+hazard_model_params:
+  file: data/hazard_model_params.yaml # Path to saved hazard parameters
+onboarding:
+  enabled: true # Toggle onboarding hazard modifications for new hires
+  early_tenure_months: 6 # Months since hire with elevated hazard
+  hazard_multiplier: 1.5 # Multiplier applied to base hazard during onboarding period
+  productivity_curve: # Fractional productivity ramp over first months (0–1)
+    - 0.80
+    - 0.85
+    - 0.90
+    - 0.95
+    - 1.00
+    - 1.00

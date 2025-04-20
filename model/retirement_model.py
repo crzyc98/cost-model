@@ -10,6 +10,7 @@ import logging # For logging
 # Need relativedelta for adding months to dates
 from dateutil.relativedelta import relativedelta 
 import re # Import regular expression module
+import yaml  # For loading hazard model parameters
 from utils.status_enums import EmploymentStatus
 
 # Configure logging
@@ -44,12 +45,25 @@ class RetirementPlanModel(mesa.Model):
         self.datacollector = DataCollector(
             model_reporters={
                 "NumAgents": lambda m: len(m.schedule.agents),
+                "Continuous Active": lambda m: sum(1 for a in m.population.values() if a.employment_status == "Continuous Active"),
+                "New Hire Active": lambda m: sum(1 for a in m.population.values() if a.employment_status == "New Hire Active"),
+                "Experienced Terminated": lambda m: sum(1 for a in m.population.values() if a.employment_status == "Experienced Terminated"),
+                "New Hire Terminated": lambda m: sum(1 for a in m.population.values() if a.employment_status == "New Hire Terminated"),
+                "Previously Terminated": lambda m: sum(1 for a in m.population.values() if a.employment_status == "Previously Terminated"),
+                "PlanCost": lambda m: float(sum(a.contributions_current_year.get('total_employer', Decimal('0.0')) for a in m.population.values())),
+                "AvgDeferralPct": lambda m: float(sum(a.deferral_rate for a in m.population.values()) / (len(m.population) if len(m.population) > 0 else 1)),
             },
             agent_reporters={
                 "DeferralRate": lambda a: getattr(a, "deferral_rate", None),
                 "IsParticipating": lambda a: getattr(a, "is_participating", None),
                 "EmploymentStatus": lambda a: getattr(a, "employment_status", None),
-                # Add more agent-level attributes as needed
+                "TenureMonths": lambda a: a._calculate_tenure_months(pd.Timestamp(f"{a.model.year}-12-31")),
+                "Cohort": lambda a: (
+                    "0-1yr" if a._calculate_tenure_months(pd.Timestamp(f"{a.model.year}-12-31")) <= 12
+                    else ("1-3yr" if a._calculate_tenure_months(pd.Timestamp(f"{a.model.year}-12-31")) <= 36 else "3+yr")
+                ),
+                "EmployerMatch": lambda a: float(a.contributions_current_year.get('employer_match', Decimal('0.0'))),
+                "EmployerNEC": lambda a: float(a.contributions_current_year.get('employer_nec', Decimal('0.0'))),
             }
         )
 
@@ -106,6 +120,36 @@ class RetirementPlanModel(mesa.Model):
         self._calculate_initial_comp_stats(initial_census_df)
         self._create_agents_from_census(initial_census_df)
         # DO NOT call self._create_new_hires here! Only call it during simulation steps.
+
+        # Load hazard model parameters if monthly_transition enabled
+        if self.scenario_config.get('monthly_transition', False):
+            hazard_config = self.scenario_config.get('hazard_model_params', {})
+            hazard_file = hazard_config.get('file')
+            if hazard_file:
+                try:
+                    with open(hazard_file, 'r') as f:
+                        params = yaml.safe_load(f)
+                    self.hazard_params = params
+                    coeffs = params.get('cox_coefficients', {})
+                    self.cox_coeffs = {k: float(v) for k, v in coeffs.items()}
+                    median = params.get('kaplan_meier_median_years', None)
+                    self.km_median_years = float(median) if median not in (None, 'inf', float('inf')) else math.inf
+                    self.baseline_hazard = (math.log(2) / self.km_median_years) if self.km_median_years != math.inf else 0.0
+                    self.logger.info(f"Loaded hazard parameters from {hazard_file}")
+                except Exception as e:
+                    self.logger.error(f"Error loading hazard model params from {hazard_file}: {e}")
+                    self.hazard_params = None
+                    self.baseline_hazard = 0.0
+        else:
+            self.hazard_params = None
+            self.baseline_hazard = 0.0
+
+        # Phase 4 Onboarding config: early-tenure hazard & productivity ramp
+        onboarding_cfg = self.scenario_config.get('onboarding', {})
+        self.onboarding_enabled = onboarding_cfg.get('enabled', False)
+        self.onboarding_early_months = int(onboarding_cfg.get('early_tenure_months', 0))
+        self.onboarding_multiplier = float(onboarding_cfg.get('hazard_multiplier', 1.0))
+        self.productivity_curve = onboarding_cfg.get('productivity_curve', [])
 
     def _normalize_config(self) -> None:
         """Ensure plan_rules and key config sections are present and normalized."""
@@ -189,10 +233,10 @@ class RetirementPlanModel(mesa.Model):
         
         # Sample a few agents to check their termination dates and status
         sample_agents = list(self.population.values())[:5] # Take first 5 created
-        print("\nSampling first 5 agents created:")
+        logging.debug("\nSampling first 5 agents created:")
         for i, agent in enumerate(sample_agents):
-            print(f"  Sample agent {i} (ID: {agent.unique_id}):")
-            
+            logging.debug(f"  Sample agent {i} (ID: {agent.unique_id})")
+        
         # Initialize empty list for tracking new hires in steps
         self.last_step_hires_list = []
         
@@ -238,51 +282,12 @@ class RetirementPlanModel(mesa.Model):
             
             # Status logic based on this year's events
             if terminates_this_year:
-                # Generate termination date
-                year_start = pd.Timestamp(f"{self.year}-01-01")
-                year_end = pd.Timestamp(f"{self.year}-12-31")
-                days_in_year = (year_end - year_start).days
-                random_day_offset = random.randint(0, days_in_year)
-                generated_term_date = year_start + pd.Timedelta(days=random_day_offset)
-                final_term_date = generated_term_date # Default assumption
-
-                if is_new_hire:
-                    hire_date_ts = pd.to_datetime(agent.hire_date) 
-                    if pd.notna(hire_date_ts):
-                        # Ensure termination date is within 2-8 months tenure for new hires
-                        min_term_date = hire_date_ts + relativedelta(months=2)
-                        max_term_date_ideal = hire_date_ts + relativedelta(months=8)
-                        # Cap max date at year end
-                        max_term_date = min(max_term_date_ideal, year_end) 
-
-                        if final_term_date < min_term_date:
-                            logging.debug(f"  Term Date Adj (Min Tenure): Agent {agent.unique_id} (New Hire) random term {final_term_date.date()} was before min {min_term_date.date()}. Setting term to min date.")
-                            final_term_date = min_term_date
-                        elif final_term_date > max_term_date:
-                            logging.debug(f"  Term Date Adj (Max Tenure): Agent {agent.unique_id} (New Hire) random term {final_term_date.date()} was after max {max_term_date.date()}. Setting term to max date.")
-                            final_term_date = max_term_date
-                            
-                        # Final check: ensure it's not somehow before hire date after adjustments (edge case)
-                        if final_term_date < hire_date_ts:
-                            logging.warning(f"  Term Date Warning: Agent {agent.unique_id} (New Hire) final term date {final_term_date.date()} ended up before hire date {hire_date_ts.date()} after tenure adjustment. Setting to min_term_date.")
-                            final_term_date = min_term_date # Fallback to min tenure date
-                    else:
-                        # Handle case where hire date is NaT (shouldn't happen for new hires)
-                        logging.warning(f"  Term Date Warning: Agent {agent.unique_id} (New Hire) has NaT hire date. Cannot apply tenure rule.")
-                        # Fallback: Ensure term date is at least year_start if hire_date is bad
-                        if final_term_date < year_start:
-                            final_term_date = year_start
-                else:
-                    # Assign the calculated/adjusted date
-                    agent.termination_date = final_term_date 
-                    # --- End Assign Termination Date ---
-
                 # Agent was terminated during this step
                 agent.is_active = False # Update active status
                 if is_new_hire:
                     agent.employment_status = "New Hire Terminated"
                 else:
-                    agent.employment_status = "Terminated"
+                    agent.employment_status = "Experienced Terminated"
                     # Remove experienced terminations from the schedule
                     self.schedule.remove(agent)
                 # Optional: Add debug print for assigned date
@@ -295,7 +300,7 @@ class RetirementPlanModel(mesa.Model):
 
             elif agent.is_active: # Not terminated, not hired this year, AND was active at start
                 # This relies on agent.is_active reflecting start-of-step status correctly
-                agent.employment_status = "Active Continuous"
+                agent.employment_status = "Continuous Active"
 
             else: # Not terminated, not hired, was not active at start (e.g., already terminated)
                 # Ensure these are marked inactive and have appropriate status
@@ -322,7 +327,7 @@ class RetirementPlanModel(mesa.Model):
         else:
             H_t = int(delta + T_ex_used)
         method = "expected" if use_expected else "realized"
-        print(f"Creating {H_t} new agents (using {method} T_ex={T_ex_used:.2f}, target_g={growth_rate:.2%}) for year {self.year}...")
+        logging.debug(f"Creating {H_t} new agents (using {method} T_ex={T_ex_used:.2f}, target_g={growth_rate:.2%}) for year {self.year}...")
         # Spawn new hires
         new_hires = self._create_new_hires(num_new_hires=H_t)
         # Determine and apply new-hire attrition head-on
@@ -373,8 +378,18 @@ class RetirementPlanModel(mesa.Model):
             # Calculate prorated compensation
             if total_days_in_year > 0:
                 proration_factor = (days_worked / total_days_in_year).min(Decimal('1.0')) # Cap at 1.0
-                # Use agent's gross compensation (annualized) for the base
-                prorated_comp = (agent.gross_compensation * proration_factor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                # Base prorated compensation
+                base_comp = agent.gross_compensation * proration_factor
+                # Apply onboarding productivity ramp if enabled
+                if self.onboarding_enabled:
+                    tenure_months = agent._calculate_tenure_months(effective_start_date)
+                    if tenure_months <= len(self.productivity_curve):
+                        factor = Decimal(str(self.productivity_curve[tenure_months-1]))
+                    else:
+                        factor = Decimal('1.0')
+                else:
+                    factor = Decimal('1.0')
+                prorated_comp = (base_comp * factor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             else:
                 prorated_comp = Decimal('0.00') # Avoid division by zero
 
@@ -397,10 +412,10 @@ class RetirementPlanModel(mesa.Model):
             if agent.is_new_hire:
                 new_hire_count += 1
                 
-        print(f"Employment status counts for year {self.year}:")
+        logging.debug(f"Employment status counts for year {self.year}:")
         for status, count in status_counts.items():
-            print(f"  {status}: {count}")
-        print(f"  New hires (is_new_hire=True): {new_hire_count}")
+            logging.debug(f"  {status}: {count}")
+        logging.debug(f"  New hires (is_new_hire=True): {new_hire_count}")
             
         logging.debug(f"[{self.year}] Pre-Data Collection Check for specific agent flags:")
         agents_to_check = ['97', '47'] # Agents from user example
@@ -418,12 +433,16 @@ class RetirementPlanModel(mesa.Model):
         # 7. Increment Year for the next step
         self.year += 1 # Use self.year consistently
 
-        print(f"--- Finished model step for year {self.year - 1} ---")
+        logging.debug(f"--- Finished model step for year {self.year - 1} ---")
         # Optional: Print population/schedule size difference for debugging
         # print(f"End of Year {self.year - 1}: Population={len(self.population)}, Schedule={self.schedule.get_agent_count()}")
 
     def _identify_terminations(self):
         """Identifies agents terminating this year based on probability, adjusted for tenure, age, and compensation."""
+        # Route to monthly transitions if enabled
+        if self.scenario_config.get('monthly_transition', False) and getattr(self, 'hazard_params', None):
+            return self._identify_monthly_terminations()
+        
         terminating_agents = []
         # Iterate ONLY agents currently active in the schedule
         agents_eligible_for_term = [a for a in self.schedule.agents if a.is_active]
@@ -434,8 +453,8 @@ class RetirementPlanModel(mesa.Model):
         # Get the current simulation date for age/tenure calculations
         current_sim_date = pd.Timestamp(year=self.year, month=12, day=31)
         
-        print(f"Identifying terminations for year {self.year} using base rate: {base_term_rate:.2%}")
-        print(f"Adjusting for tenure, age, and compensation factors")
+        logging.debug(f"Identifying terminations for year {self.year} using base rate: {base_term_rate:.2%}")
+        logging.debug(f"Adjusting for tenure, age, and compensation factors")
         
         # Track termination counts by category for reporting
         term_counts = {
@@ -522,12 +541,39 @@ class RetirementPlanModel(mesa.Model):
         # Report termination statistics
         total_terms = len(terminating_agents)
         if total_terms > 0:
-            print(f"Termination summary for year {self.year}:")
-            print(f"  Total terminations: {total_terms} of {len(agents_eligible_for_term)} eligible agents ({total_terms/len(agents_eligible_for_term):.2%})")
-            print(f"  By tenure: New hires: {term_counts['new_hire']}, Short: {term_counts['short_tenure']}, Mid: {term_counts['mid_tenure']}, Long: {term_counts['long_tenure']}")
-            print(f"  By age: Young: {term_counts['young']}, Mid-age: {term_counts['mid_age']}, Older: {term_counts['older']}")
-            print(f"  By compensation: Low: {term_counts['low_comp']}, Mid: {term_counts['mid_comp']}, High: {term_counts['high_comp']}")
+            logging.debug(f"Termination summary for year {self.year}:")
+            logging.debug(f"  Total terminations: {total_terms} of {len(agents_eligible_for_term)} eligible agents ({total_terms/len(agents_eligible_for_term):.2%})")
+            logging.debug(f"  By tenure: New hires: {term_counts['new_hire']}, Short: {term_counts['short_tenure']}, Mid: {term_counts['mid_tenure']}, Long: {term_counts['long_tenure']}")
+            logging.debug(f"  By age: Young: {term_counts['young']}, Mid-age: {term_counts['mid_age']}, Older: {term_counts['older']}")
+            logging.debug(f"  By compensation: Low: {term_counts['low_comp']}, Mid: {term_counts['mid_comp']}, High: {term_counts['high_comp']}")
 
+        return terminating_agents
+
+    def _identify_monthly_terminations(self):
+        """Identifies terminations using monthly transition probabilities from hazard model."""
+        terminating_agents = []
+        agents_active = [a for a in self.schedule.agents if a.is_active]
+        for agent in agents_active:
+            age_at_hire = (agent.hire_date.year - agent.birth_date.year) if agent.hire_date and agent.birth_date else 0
+            comp = float(agent.gross_compensation)
+            xb = self.cox_coeffs.get('age_at_hire', 0.0) * age_at_hire + self.cox_coeffs.get('gross_compensation', 0.0) * comp
+            hazard_annual = self.baseline_hazard * math.exp(xb)
+            hazard_monthly = hazard_annual / 12.0
+            for month in range(1, 13):
+                # adjust monthly hazard for onboarding period
+                month_start = pd.Timestamp(year=self.year, month=month, day=1)
+                tenure_months = agent._calculate_tenure_months(month_start)
+                hazard_m = hazard_monthly * self.onboarding_multiplier if self.onboarding_enabled and tenure_months <= self.onboarding_early_months else hazard_monthly
+                try:
+                    p = 1.0 - math.exp(-hazard_m)
+                except OverflowError:
+                    p = 0.0
+                if random.random() < p:
+                    month_end = month_start + relativedelta(months=1) - pd.Timedelta(days=1)
+                    agent.termination_date = month_end
+                    terminating_agents.append(agent)
+                    break
+        self.logger.debug(f"Monthly terminations for year {self.year}: {len(terminating_agents)} agents terminated.")
         return terminating_agents
 
     def _create_new_hires(self, num_new_hires=None):
@@ -563,7 +609,7 @@ class RetirementPlanModel(mesa.Model):
 
         new_agents_list = []
         if count_to_create > 0:
-            print(f"Creating {count_to_create} new agents for year {self.year} using census stats (Mean: {self.initial_comp_mean:.2f}, StdDev: {self.initial_comp_std_dev:.2f})...")
+            logging.debug(f"Creating {count_to_create} new agents for year {self.year} using census stats (Mean: {self.initial_comp_mean:.2f}, StdDev: {self.initial_comp_std_dev:.2f})...")
             for _ in range(count_to_create):
                 unique_id = self.next_agent_id
                 self.next_agent_id += 1

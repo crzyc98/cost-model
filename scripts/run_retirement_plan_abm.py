@@ -108,18 +108,6 @@ def run_simulation(config_path, census_path, output_prefix):
         model_data['Year'] = model_data['YearStep'] + start_year - 1
         model_data.drop(columns=['YearStep'], inplace=True) # Remove temporary step column
         
-        # Print employment status counts for verification
-        print("\n--- Employment Status Counts in Agent Data ---")
-        status_counts = agent_data['EmploymentStatus'].value_counts()
-        print(status_counts)
-        
-        # Check if 'New Hire Active' is present
-        if 'New Hire Active' not in status_counts.index:
-            print("WARNING: 'New Hire Active' status is missing from the results!")
-            # Look for new hires in the model's population
-            new_hire_count = sum(1 for a in model.population.values() if a.employment_status == "New Hire Active")
-            print(f"Found {new_hire_count} agents with 'New Hire Active' status in the model population")
-
         # Ensure output directory exists
         output_dir = "output"
         os.makedirs(output_dir, exist_ok=True)
@@ -135,17 +123,14 @@ def run_simulation(config_path, census_path, output_prefix):
         print(f"Model-level results saved to: {model_output_path}")
         print(f"Agent-level results saved to: {agent_output_path}")
 
-        # --- Log Yearly Summary Tables ---
-        status_table = agent_data.groupby(['Year', 'EmploymentStatus']).size().unstack(fill_value=0)
-        # Ensure all key statuses exist
-        for col in ['Active Continuous', 'New Hire Active', 'Previously Terminated', 'Terminated']:
-            if col not in status_table.columns:
-                status_table[col] = 0
-        ordered_cols = ['Active Continuous', 'New Hire Active', 'Previously Terminated', 'Terminated'] + [c for c in status_table.columns if c not in ['Active Continuous','New Hire Active','Previously Terminated','Terminated']]
-        status_table = status_table[ordered_cols]
-        logging.info("\n--- Employment Status by Year ---\n%s", status_table.to_string())
+        # Build classification summary table
+        summary_cols = ['Continuous Active', 'New Hire Active', 'Experienced Terminated', 'New Hire Terminated', 'Previously Terminated']
+        table = model_data[['Year'] + summary_cols].set_index('Year')
+        print("\n--- Employment Status by Year ---")
+        print(table)
+
         # --- Compute and Log Growth Metrics ---
-        growth_df = status_table[['Active Continuous', 'New Hire Active']].copy()
+        growth_df = table[['Continuous Active', 'New Hire Active']].copy()
         growth_df['Total'] = growth_df.sum(axis=1)
         growth_df['Growth'] = growth_df['Total'].diff().fillna(0).astype(int)
         growth_df['% Growth'] = (growth_df['Growth'] / growth_df['Total'].shift()).fillna(0)

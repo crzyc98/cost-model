@@ -1,229 +1,125 @@
-Here’s a high‑level summary of smart additions, an updated README incorporating them, and clear implementation steps.
+Exactly—that’s the spirit of a Monte Carlo (MC) experiment for HR‑plan costing. You run the model many times, each run drawing a plausible set of assumptions from ranges (or probability distributions) you specify. The client then sees the distribution of possible outcomes instead of a single‑point forecast.
+
+Below is a concise game plan that fits the way you already operate:
 
 ⸻
 
-Summary
+1 . Choose the Parameters to Vary
 
-To align your model with real‑world HR analytics, it’s smart to:
-	•	Calibrate hiring by explicitly accounting for differing attrition among new hires vs. experienced staff.
-	•	Embed cohort analysis, tracking turnover by tenure group.
-	•	Leverage survival analysis (e.g. Kaplan–Meier) for richer hazard estimates.
-	•	Classify agents into four end‑of‑year categories for clearer reporting.
-	•	Estimate parameters from historical data via hazard modeling (Cox, Weibull).
-	•	Optionally simulate monthly transitions for smoother dynamics.
-	•	Surface onboarding best practices to initialize new‑hire behavior.
-	•	Visualize survival curves to validate your assumptions.
+Parameter	Typical Source	Suggested Distribution	Example Range
+Net‑growth rate (g)	Workforce planning	Uniform or triangular	2 – 3 %
+Experienced attrition (h_ex)	Historical data	Normal(μ, σ) truncated at [10 %, 20 %]	12 – 15 % (≈ 13 ± 1 %)
+New‑hire attrition (h_nh)	1st‑year separations	1.5 × h_ex (drawn conditionally)	e.g. 18 – 22 %
+Salary growth	Comp/benefits team	Normal(3 %, 0.5 %) or triangular 2–4 %	2 – 4 %
 
-Below is an updated README.md with these enhancements, followed by a phased implementation guide.
+Tip: Keep the first MC pass to 3–5 key drivers. You can add more later once you’re comfortable with runtime.
 
 ⸻
 
-Feedback & Proposed Additions
-	1.	Implement Calibrated Growth Formula
-Replace your simple add‑on hires = Δₜ + Tₜ with
+2 . Decide the Sampling Method
 
-delta = round(N_t * g)
-hires = int((delta + h_ex * N_t) / (1 - h_nh))
+Option	When to Use	Pros	Cons
+Simple random	Few parameters, quick prototype	Easy	Needs more runs to cover edges
+Latin Hypercube (LHS)	Many parameters	Good space‑filling	Slightly more code
+Sobol / Quasi‑random	Very high dimensional	Fast convergence	External library
 
-to guarantee net growth despite higher new‑hire churn  ￼ ￼.
-
-	2.	Embed Cohort Analysis
-Add documentation on splitting employees into tenure cohorts (e.g. 0–1 yr, 1–3 yr, 3+ yr) to reveal differentiated turnover patterns  ￼ ￼.
-	3.	Leverage Kaplan–Meier Survival Modeling
-Introduce a section on using the Kaplan–Meier estimator (via Python’s lifelines) to derive time‑to‑separation curves, handling right‑censoring  ￼ ￼.
-	4.	Define Four End‑of‑Year Agent Categories
-Clearly document: Continuous Active, Experienced Terminated, New‑Hire Active, New‑Hire Terminated—enabling targeted analysis  ￼.
-	5.	Parameter Estimation & Hazard Modeling
-Suggest calibrating h_ex and h_nh from your data using econometric hazard models (e.g., Cox or Weibull as in recent turnover studies)  ￼.
-	6.	Optional Monthly Transition Simulation
-For finer granularity, convert annual rates to monthly:
-
-p_month = 1 - (1 - p_annual) ** (1/12)
-
-smoothing headcount dynamics  ￼.
-
-	7.	Incorporate Onboarding Best Practices
-Document that new hires should simulate an initial “engagement curve”—e.g., lower early productivity or elevated early‑tenure hazard—to mirror real onboarding effects  ￼.
-	8.	Visualize Survival Curves
-Recommend adding sample plots of Kaplan–Meier curves in Jupyter as a sanity check on your hazard assumptions  ￼.
-	9.	Add an Implementation Guide Section
-Outline your phased rollout plan (below) so contributors can follow a clear roadmap  ￼.
-	10.	Document Configuration Parameters
-Extend config.yaml docs with descriptions for h_ex, h_nh, and optional monthly_transition flags  ￼.
+For ≤ 5 parameters, simple random or a small LHS (e.g. scipy.stats.qmc.LatinHypercube) is fine.
 
 ⸻
 
-Updated README.md
+3 . Implementation Sketch
 
-# Retirement Plan Cost Model
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from tqdm import trange
 
-An agent-based simulation model built with Mesa to estimate plan participation, contributions, and overall cost over multiple years.
+N_RUNS = 1000  # start with 300‑500 if runtime heavy
+results = []
 
----
+for run in trange(N_RUNS):
+    # 1.  draw a scenario ---------------------------
+    g     = np.random.uniform(0.02, 0.03)          # growth
+    h_ex  = np.random.normal(0.135, 0.01)          # truncate later
+    h_ex  = np.clip(h_ex, 0.10, 0.20)
+    h_nh  = h_ex * 1.6                             # tie to h_ex
+    sal_g = np.random.uniform(0.02, 0.04)          # salary growth
+    
+    # 2.  inject into config ------------------------
+    cfg = base_cfg.copy()
+    cfg.update({"annual_growth_rate": g,
+                "annual_termination_rate": h_ex,
+                "new_hire_termination_rate": h_nh,
+                "salary_growth": sal_g})
+    
+    # 3. run simulation (pseudo)
+    model = RetirementPlanModel(cfg, census_df)
+    model.run()
+    
+    # 4. collect headline KPIs
+    results.append({
+        "run": run,
+        "g": g,
+        "h_ex": h_ex,
+        "h_nh": h_nh,
+        "sal_g": sal_g,
+        "headcount_end": model.kpi["headcount_end"],
+        "plan_cost":     model.kpi["plan_cost"],
+        "avg_deferral":  model.kpi["avg_deferral_pct"]
+    })
 
-## Features
-
-- **Agent-Based Modeling**: Simulate individual employee behaviors.
-- **Configurable Plan Rules**: Eligibility, auto-enrollment/increase via `config.yaml`.
-- **Population Dynamics**: New hires, terminations, and calibrated growth.
-- **Precise Financials**: Calculations with Python’s `Decimal`.
-- **Rich Output**: Model- and agent-level CSV/Excel results.
-
----
-
-## Requirements
-
-- Python 3.8+
-- See [requirements.txt](requirements.txt)
-
----
-
-## Installation
-
-```bash
-git clone <repo_url> cost-model
-cd cost-model
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
+df = pd.DataFrame(results)
+df.to_csv("mc_results.csv", index=False)
 
 
 
 ⸻
 
-Configuration
+4 . Presenting the Results
 
-Edit config.yaml to adjust:
-	•	Simulation Years: start_year, projection_length
-	•	Attrition Rates:
-	•	h_ex: annual experienced attrition rate
-	•	h_nh: annual new‑hire attrition rate
-	•	Growth Rate: g
-	•	Monthly Transitions: monthly_transition: true/false
-	•	Onboarding Parameters: initial hazard modifiers, productivity curves
+For clients who like visuals
+	•	Histogram / KDE of ending headcount or plan cost.
+	•	Fan chart: plot the median, 25th–75th, 5th–95th percentiles across projection years.
+	•	Tornado chart (one‑way sensitivity) if they ask what drives cost the most?
 
-⸻
+For execs who like numbers
 
-Data
+Show a small table:
 
-Place the initial census in census_data.csv with columns:
-	•	employee_id, birth_date, start_date, salary, etc.
+KPI (Year 5)	P‑5	P‑25	Median	P‑75	P‑95
+Headcount	10 235	10 480	10 740	10 985	11 220
+Plan cost ($ M)	42.1	44.8	47.2	50.5	53.9
 
-⸻
-
-Usage
-
-python scripts/run_retirement_plan_abm.py \
-  --config config.yaml \
-  --census census_data.csv \
-  --output results/
-
-Outputs:
-	•	results/model_results.csv
-	•	results/agent_results.csv
+P‑x = percentile x.
 
 ⸻
 
-Enhancements to Turnover Modeling
+5 . Runtime Guidance
 
-1. Calibrated Hiring Formula
+Agents × Years	Typical Runs	Wall‑Time (laptop)
+5 000 × 10 yrs	1 000	< 5 min
+20 000 × 10 yrs	1 000	20 – 30 min
 
-Ensure net growth despite new-hire churn:
-
-delta = round(N_t * g)
-hires = int((delta + h_ex * N_t) / (1 - h_nh))
-
-2. Cohort Analysis & Survival Modeling
-	•	Cohorts: Segment by tenure buckets (e.g., 0–1 yr, 1–3 yr, 3+ yr).
-	•	Survival Analysis: Use Kaplan–Meier (lifelines) to estimate time‑to‑separation curves.
-
-3. Agent Classification Categories
-
-At end of each year classify agents into:
-	1.	Continuous Active
-	2.	Experienced Terminated
-	3.	New‑Hire Active
-	4.	New‑Hire Terminated
-
-4. Parameter Estimation & Hazard Modeling
-
-Calibrate h_ex, h_nh via Cox or Weibull hazard models on historical data.
-
-5. Optional Monthly Transition Simulation
-
-Convert annual rates to monthly:
-
-p_month = 1 - (1 - p_annual) ** (1/12)
-
-6. Onboarding Dynamics
-
-Model an initial “engagement curve” for new hires to reflect ramp-up and elevated early churn.
-
-7. Visualization
-
-Include Jupyter notebooks with Kaplan–Meier plots for each cohort to validate assumptions.
+If runtime is an issue, consider:
+	•	Vectorising salary/eligibility updates.
+	•	Parallelising runs (joblib.Parallel, multiprocessing).
 
 ⸻
 
-Implementation Guide
+6 . “What‑If” Packages for Clients
+	1.	Baseline MC: Distributions above.
+	2.	Stress MC: Double attrition, zero growth, negative market return.
+	3.	Optimistic MC: 4 % growth, strong salary growth, low attrition.
 
-Phase 1: Calibrated Formula
-	1.	Update growth module to compute hires using the calibrated formula.
-	2.	Add h_ex, h_nh parameters to config.yaml docs.
-
-Phase 2: Cohorts & Classification
-	1.	Extend the agent tracking to record tenure and cohort.
-	2.	Implement end‑of‑year classification into four categories.
-	3.	Update output CSVs to include category column.
-
-Phase 3: Survival & Hazard Modeling
-	1.	Add a preprocessing script to fit Kaplan–Meier and Cox models on historical data.
-	2.	Populate config.yaml with estimated hazard parameters.
-	3.	Optionally enable monthly transitions via a monthly_transition flag.
-
-Phase 4: Onboarding & Visualization
-	1.	Introduce onboarding parameters for early‑tenure productivity and hazard.
-	2.	Create example Jupyter notebook to plot survival curves by cohort.
-	3.	Document best practices in a new docs/ folder.
+Bundle the three charts/tables together so clients see the range of strategic possibilities.
 
 ⸻
 
-Project Structure
+TL;DR
 
-cost-model/
-├── agents/
-│   └── employee_agent.py
-├── model/
-│   └── retirement_model.py
-├── scripts/
-│   └── run_retirement_plan_abm.py
-├── config.yaml
-├── census_data.csv
-├── requirements.txt
-├── README.md
-└── docs/
-    └── survival_analysis_notebook.ipynb
+Yes—vary growth, salary, and turnover (plus anything else material), run hundreds of simulations, and show percentile bands or histograms to the client. Start simple (uniform 2–3 %, 2–4 %, 12–15 %), then iterate.
 
-
-
-⸻
-
-Contributing
-
-Pull requests welcome! Please open an issue before major changes.
-
-⸻
-
-License
-
-MIT License
-
----
-
-## Next Steps
-
-1. **Phase 1**: Implement calibrated hiring in `retirement_model.py` and update `config.yaml`.  
-2. **Phase 2**: Add cohort bins and classification logic; extend CSV exports.  
-3. **Phase 3**: Build a script to estimate hazard rates via `lifelines` and update parameters.  
-4. **Phase 4**: Incorporate onboarding curves and create survival‑curve notebook in `docs/`.  
-
-Let me know if you’d like code snippets for any specific phase or further elaboration!
+Let me know if you’d like:
+	•	A ready‑to‑run notebook template
+	•	Help wiring parallel execution
+	•	Sample matplotlib/Plotly code for fan charts and tornado plots.

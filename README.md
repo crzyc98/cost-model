@@ -39,6 +39,8 @@ Edit `config.yaml` to adjust:
 - Contribution formulas and IRS limits
 - Demographic and turnover rates
 - Veteran attrition handling: `use_expected_attrition` (boolean) to toggle expected vs. realized veteran terminations in hires
+- Monthly attrition transitions: `monthly_transition` (boolean) to enable monthly hazard-based terminations using fitted hazard model
+- Hazard model parameters: `hazard_model_params.file` pointing to YAML file with Cox coefficients and Kaplan–Meier median time
 
 ## Data
 
@@ -63,10 +65,28 @@ python scripts/run_retirement_plan_abm.py \
 - `--census`: path to your initial census CSV
 - `--output`: directory to write model and agent result files
 
+**Monthly attrition** can be activated by setting `monthly_transition: true` and specifying `hazard_model_params.file` in your `config.yaml`. The simulation CLI remains the same.
+
 After completion, results will be saved as:
 
 - `results/model_results.csv`
 - `results/agent_results.csv`
+
+## Reporting Dynamics
+After running the ABM simulation, generate visual reports with:
+
+```bash
+python3 scripts/report_dynamics.py \
+  --model_csv output/<prefix>_model_results.csv \
+  --agent_csv output/<prefix>_agent_results.csv \
+  --output_dir output
+```
+
+This will produce:
+
+- `output/net_growth_decomposition.png`
+- `output/cohort_counts.png`
+- `output/hire_termination_dynamics.png`
 
 ## Project Structure
 

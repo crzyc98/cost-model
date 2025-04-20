@@ -32,3 +32,6 @@ env/
 *.swp
 *.swo
 .DS_Store
+
+# Output
+output/
