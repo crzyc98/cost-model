@@ -216,9 +216,11 @@ def project_census(
 
 
         # --- Post-Termination Processing ---
-        continuing_employees = current_df[current_df['termination_date'].isna()]
-        term_count_actual = len(current_df) - len(continuing_employees) # Re-calculate actual terms
+        terminated_employees = current_df[current_df['termination_date'].notna()].copy()
+        continuing_employees = current_df[current_df['termination_date'].isna()].copy()
+        term_count_actual = len(terminated_employees)
         print(f"Identified {term_count_actual} terminations. Continuing: {len(continuing_employees)}")
+        # Use only continuing employees for next iteration
         current_df = continuing_employees.copy()
 
         # 3. Generate New Hires
@@ -278,10 +280,12 @@ def project_census(
         # Calculate contributions (deferrals, match, NEC)
         current_df = calculate_contributions(current_df, scenario_config, year_end_date.year, year_start_date, year_end_date)
 
-        # --- Store Yearly Results --- 
-        # Add year marker and store a copy of the DF for this year
-        projected_data[year_num] = current_df.copy()
-        active_count = len(current_df[current_df['termination_date'].isna()])
+        # --- Snapshot Yearly Results with Terminations Included ---
+        # Align terminated to same columns
+        terminated_aligned = terminated_employees.reindex(columns=current_df.columns, fill_value=pd.NA)
+        year_snapshot = pd.concat([terminated_aligned, current_df], ignore_index=True)
+        projected_data[year_num] = year_snapshot.copy()
+        active_count = len(current_df)
         print(f"End of Year {current_sim_year} Active Headcount: {active_count}")
 
     print("\n--- Projection Complete ---")

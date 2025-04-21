@@ -140,20 +140,68 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
         print("  Warning: Required columns missing for Auto Enrollment. Skipping.")
         return df
 
-    # --- Define Target Group --- NEW LOGIC ---
-    # Target employees who became eligible *during* the current simulation year
-    # and meet other criteria.
-    became_eligible_this_year = (
-        (df['eligibility_entry_date'] >= simulation_year_start_date) &
-        (df['eligibility_entry_date'] <= simulation_year_end_date)
+    # Initialize tracking columns if missing
+    if 'enrollment_date' not in df.columns:
+        df['enrollment_date'] = pd.NaT
+    if 'first_contribution_date' not in df.columns:
+        df['first_contribution_date'] = pd.NaT
+    if 'ae_opt_out_date' not in df.columns:
+        df['ae_opt_out_date'] = pd.NaT
+
+    # --- Setup AE window and enrollment flags ---
+    window_days = ae_rules.get('window_days', None)
+    df['ae_window_start'] = df['eligibility_entry_date']
+    if window_days is not None:
+        df['ae_window_end'] = df['eligibility_entry_date'] + timedelta(days=window_days)
+    else:
+        df['ae_window_end'] = pd.NaT
+
+    df['proactive_enrolled'] = False
+    df['auto_enrolled'] = False
+    # Debug booleans for AE process
+    df['became_eligible_during_year'] = False
+    df['window_closed_during_year'] = False
+    # --- Proactive Enrollment at Eligibility Entry ---
+    proactive_p = ae_rules.get('proactive_enrollment_probability', 0.0)
+    if proactive_p > 0 and 'eligibility_entry_date' in df.columns:
+        newly_eligible = (
+            (df['eligibility_entry_date'] >= simulation_year_start_date) &
+            (df['eligibility_entry_date'] <= simulation_year_end_date)
+        )
+        # Flag those who became eligible this year
+        df.loc[newly_eligible, 'became_eligible_during_year'] = True
+        active = df['status'] == 'Active'
+        not_part = ~df['is_participating']
+        not_opted = ~df['ae_opted_out']
+        candidates = newly_eligible & active & not_part & not_opted
+        idxs = df.index[candidates]
+        if len(idxs) > 0:
+            draws = np.random.rand(len(idxs))
+            selected = idxs[draws < proactive_p]
+            # Set enrollment flags and dates
+            df.loc[selected, 'deferral_rate'] = ae_rules.get('default_rate', 0.0)
+            df.loc[selected, 'is_participating'] = True
+            df.loc[selected, 'proactive_enrolled'] = True
+            df.loc[selected, 'enrollment_date'] = df.loc[selected, 'eligibility_entry_date']
+            df.loc[selected, 'first_contribution_date'] = df.loc[selected, 'eligibility_entry_date']
+            print(f"  {len(selected)} proactively enrolled at eligibility (p={proactive_p:.2%})")
+
+    # --- Define AE Target Window ---
+    # Employees whose AE window closes in this simulation year
+    within_window_closure = (
+        (df['ae_window_end'] >= simulation_year_start_date) &
+        (df['ae_window_end'] <= simulation_year_end_date)
     )
+    # Flag those whose AE window closed this year
+    df.loc[within_window_closure, 'window_closed_during_year'] = True
 
-    is_active = (df['status'] == 'Active')
-    not_participating = (~df['is_participating'])
-    not_opted_out = (~df['ae_opted_out'])
-
-    # Combine criteria
-    ae_target_mask = (became_eligible_this_year & is_active & not_participating & not_opted_out)
+    # Target active, eligible, non-participating, non-opted-out employees
+    ae_target_mask = (
+        df['is_eligible'] &
+        (~df['is_participating']) &
+        (~df['ae_opted_out']) &
+        within_window_closure
+    )
 
     num_targeted = ae_target_mask.sum()
     if num_targeted == 0:
@@ -193,11 +241,16 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
     for i, outcome in enumerate(assigned_outcomes):
         idx = target_indices[i]
         if outcome == 'stay_default':
+            # Auto-enrollment at window closure
             df.loc[idx, 'deferral_rate'] = ae_default_rate
             df.loc[idx, 'is_participating'] = True
-            # Mark them as having been subject to AE this year?
+            df.loc[idx, 'auto_enrolled'] = True
+            df.loc[idx, 'enrollment_date'] = df.loc[idx, 'ae_window_end']
+            df.loc[idx, 'first_contribution_date'] = df.loc[idx, 'ae_window_end']
         elif outcome == 'opt_out':
+            # Opt-out record
             df.loc[idx, 'ae_opted_out'] = True
+            df.loc[idx, 'ae_opt_out_date'] = df.loc[idx, 'ae_window_end']
             df.loc[idx, 'is_participating'] = False # Should already be false, but explicit
         # elif outcome == 'increase_to_match_cap': # Future enhancement?
         #     # Need match cap logic here...
@@ -207,6 +260,7 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
     opted_out_count = df.loc[target_indices, 'ae_opted_out'].sum()
     print(f"  AE Applied: {enrolled_count} enrolled at {ae_default_rate*100:.1f}%, {opted_out_count - enrolled_count} opted out.") # Opt-out counts those enrolled too
 
+    # Retain AE window columns for raw output
     return df
 
 
@@ -407,7 +461,7 @@ def calculate_contributions(df, scenario_config, simulation_year, year_start_dat
             try:
                 parts = employer_match_formula.split(',')
                 for part in parts:
-                    match_re = re.match(r"\s*(\d+\.?\d*)\s*%\s+up\s+to\s+(\d+\.?\d*)\s*%\s*", part.strip(), re.IGNORECASE)
+                    match_re = re.match(r"\s*(\d+\.?\d*)\s*%\s+up\s+to\s+(\d+\.?\d*)\s*%", part.strip(), re.IGNORECASE)
                     if match_re:
                         match_percent = float(match_re.group(1)) / 100.0
                         deferral_cap_percent = float(match_re.group(2)) / 100.0
@@ -512,16 +566,16 @@ def parse_match_formula(formula_str):
 
     formula_str = formula_str.strip()
     # Simple case: Flat match rate (e.g., "5%") - Treat as having no cap implicitly
-    match_simple = re.match(r"(\d+(\.\d+)?)\s*%", formula_str)
+    match_simple = re.match(r"(\d+\.?\d*)\s*%", formula_str)
     if match_simple and "up to" not in formula_str.lower():
         match_rate = float(match_simple.group(1)) / 100.0
         return match_rate, 1.0 # Assume cap is effectively 100% deferral if not specified
 
     # Standard case: "X% up to Y%"
-    match_standard = re.match(r"(\d+(\.\d+)?)\s*%\s+up\s+to\s+(\d+(\.\d+)?)\s*%", formula_str, re.IGNORECASE)
+    match_standard = re.match(r"(\d+\.?\d*)\s*%\s+up\s+to\s+(\d+\.?\d*)\s*%", formula_str, re.IGNORECASE)
     if match_standard:
         match_rate = float(match_standard.group(1)) / 100.0
-        cap_deferral_perc = float(match_standard.group(3)) / 100.0
+        cap_deferral_perc = float(match_standard.group(2)) / 100.0
         return match_rate, cap_deferral_perc
     
     # Tiered or complex formulas are not handled by this simple parser

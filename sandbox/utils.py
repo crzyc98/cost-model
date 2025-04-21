@@ -111,7 +111,11 @@ def generate_new_hires(
         return pd.DataFrame() # Return empty DataFrame if no hires needed
 
     new_hires_list = []
-    hire_date = pd.Timestamp(f"{hire_year}-12-31") # Assume hired end of year for simplicity
+    # Generate random hire dates uniformly throughout the hire year
+    year_start = pd.Timestamp(f"{hire_year}-01-01")
+    year_end = pd.Timestamp(f"{hire_year}-12-31")
+    days_in_year = (year_end - year_start).days + 1
+    random_day_offsets = np.random.randint(0, days_in_year, size=num_hires)
 
     # --- Generate New Hire Details --- 
     roles = list(role_distribution.keys()) if role_distribution else ['Default']
@@ -143,7 +147,7 @@ def generate_new_hires(
     for i in range(num_hires):
         record = {}
         record['ssn'] = new_ssns[i]
-        record['hire_date'] = hire_date
+        record['hire_date'] = year_start + pd.Timedelta(days=int(random_day_offsets[i]))
         record['termination_date'] = pd.NaT
         record['status'] = 'Active'
 
@@ -153,7 +157,7 @@ def generate_new_hires(
 
         # Generate Age/Birth Date
         age = ages[i]
-        birth_year = hire_date.year - age
+        birth_year = record['hire_date'].year - age
         # Simple random birth month/day
         birth_month = np.random.randint(1, 13)
         birth_day = np.random.randint(1, 29) # Avoid Feb 29 issues simply
@@ -191,6 +195,7 @@ def generate_new_hires(
         record['is_eligible'] = False
         record['is_participating'] = False
         record['pre_tax_deferral_percentage'] = 0.0 # Assume 0% initially
+        record['deferral_rate'] = record['pre_tax_deferral_percentage']  # Initialize deferral_rate for new hires
         record['roth_deferral_percentage'] = 0.0 # Assume 0% initially
         record['pre_tax_contributions'] = 0.0
         record['roth_contributions'] = 0.0
