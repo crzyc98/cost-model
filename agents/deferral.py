@@ -1,5 +1,6 @@
 from decimal import Decimal
 from utils.decimal_helpers import ZERO_DECIMAL  # Shared decimal helper
+import pandas as pd  # For handling dates when capturing participation_date
 
 class DeferralMixin:
     """Mixin providing deferral decision logic."""
@@ -121,3 +122,20 @@ class DeferralMixin:
             print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Exiting _make_deferral_decision. Final Rate: {self.deferral_rate}")
 
         self.is_participating = self.deferral_rate > ZERO_DECIMAL
+        # Set participation_date when agent first participates
+        if not was_participating and self.is_participating and (self.participation_date is None or pd.isna(self.participation_date)):
+            # Auto-enrollment: hire_date + window_days
+            if self.enrollment_method == self.ENROLL_METHOD_AE:
+                days = self.model.ae_config.get('window_days', 0)
+                if self.hire_date and not pd.isna(self.hire_date):
+                    self.participation_date = self.hire_date + pd.Timedelta(days=days)
+            # Manual enrollment: random within voluntary window
+            elif self.enrollment_method == self.ENROLL_METHOD_MANUAL:
+                bparams = self.model.scenario_config.get('behavioral_params', {})
+                max_days = bparams.get('voluntary_window_days', 180)
+                if self.hire_date and not pd.isna(self.hire_date):
+                    offset = self.random.randint(0, max_days)
+                    self.participation_date = self.hire_date + pd.Timedelta(days=offset)
+            else:
+                # Fallback: use hire_date
+                self.participation_date = self.hire_date

@@ -64,6 +64,10 @@ class RetirementPlanModel(mesa.Model):
                 ),
                 "EmployerMatch": lambda a: float(a.contributions_current_year.get('employer_match', Decimal('0.0'))),
                 "EmployerNEC": lambda a: float(a.contributions_current_year.get('employer_nec', Decimal('0.0'))),
+                "HireDate": lambda a: a.hire_date.date() if pd.notnull(a.hire_date) else None,
+                "BirthDate": lambda a: a.birth_date.date() if pd.notnull(a.birth_date) else None,
+                "TerminationDate": lambda a: a.termination_date.date() if pd.notnull(a.termination_date) else None,
+                "ParticipationDate": lambda a: a.participation_date.date() if pd.notnull(a.participation_date) else None
             }
         )
 
@@ -288,8 +292,7 @@ class RetirementPlanModel(mesa.Model):
                     agent.employment_status = "New Hire Terminated"
                 else:
                     agent.employment_status = "Experienced Terminated"
-                    # Remove experienced terminations from the schedule
-                    self.schedule.remove(agent)
+                    # self.schedule.remove(agent)  # commented out so termination_date is still collected
                 # Optional: Add debug print for assigned date
                 logging.debug(f"  Termination Processed: Agent {agent.unique_id} terminated on {agent.termination_date.date()} (Year {self.year}) Status: {agent.employment_status}")
 
@@ -343,7 +346,7 @@ class RetirementPlanModel(mesa.Model):
                 agent.termination_date = term_date
                 agent.is_active = False
                 agent.employment_status = "New Hire Terminated"
-                self.schedule.remove(agent)
+                # self.schedule.remove(agent)  # commented out so termination_date is still collected
         # Keep survivors
         survivors = [a for a in new_hires if a.is_active]
         self.last_step_hires_list = survivors

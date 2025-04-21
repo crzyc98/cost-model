@@ -29,6 +29,7 @@ class EmployeeAgent(BehaviorMixin, StateMixin, CompensationMixin, EligibilityMix
         self.birth_date = initial_state.get('birth_date')
         self.hire_date = initial_state.get('hire_date')
         self.termination_date = initial_state.get('termination_date', None)
+        self.participation_date = initial_state.get('participation_date', None)
         self.status = initial_state.get('status', 'Active')
         self.role = initial_state.get('role')
         # Ensure gross_compensation is Decimal for arithmetic
@@ -46,6 +47,13 @@ class EmployeeAgent(BehaviorMixin, StateMixin, CompensationMixin, EligibilityMix
         initial_deferral_percentage = initial_state.get('pre_tax_deferral_percentage', 0.0)
         self.deferral_rate: Decimal = Decimal(str(initial_deferral_percentage)) / Decimal('100.0')
         self.is_participating: bool = self.deferral_rate > ZERO_DECIMAL
+        # Estimate participation_date for initial participants if not provided
+        if self.is_participating and (self.participation_date is None or pd.isna(self.participation_date)):
+            # Sample first contribution date between hire_date and end-of-year before simulation starts
+            baseline = pd.Timestamp(year=self.model.start_year-1, month=12, day=31)
+            tenure_days = (baseline - self.hire_date).days if self.hire_date and not pd.isna(self.hire_date) else 0
+            offset = self.model.random.randint(0, tenure_days) if tenure_days > 0 else 0
+            self.participation_date = self.hire_date + pd.Timedelta(days=offset)
         self.enrollment_method: str = initial_state.get('enrollment_method', 'None')
         self.ae_opted_out: bool = str(initial_state.get('ae_opted_out', 'False')).lower() in ('true', '1', 't', 'y', 'yes')
         self.ai_opted_out: bool = str(initial_state.get('ai_opted_out', 'False')).lower() in ('true', '1', 't', 'y', 'yes')

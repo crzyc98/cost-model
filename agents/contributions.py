@@ -91,3 +91,17 @@ class ContributionsMixin:
             self.contributions_current_year['employer_match'] +
             self.contributions_current_year['employer_nec']
         )
+
+        # Prorate contributions for mid-year participation
+        start_of_year = pd.Timestamp(year=self.model.year, month=1, day=1)
+        end_of_year = pd.Timestamp(year=self.model.year, month=12, day=31)
+        pd_date = self.participation_date
+        if pd_date and not pd.isna(pd_date):
+            part_start = pd.to_datetime(pd_date)
+            if part_start <= end_of_year:
+                part_start = max(part_start, start_of_year)
+                days_active = (end_of_year - part_start).days + 1
+                days_year = (end_of_year - start_of_year).days + 1
+                fraction = Decimal(days_active) / Decimal(days_year)
+                for key, val in self.contributions_current_year.items():
+                    self.contributions_current_year[key] = (val * fraction).quantize(Decimal('0.01'), ROUND_HALF_UP)

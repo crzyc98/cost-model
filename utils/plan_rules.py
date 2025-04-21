@@ -93,8 +93,15 @@ def determine_eligibility(df, scenario_config, simulation_year_end_date):
     is_active = df['status'].isin(['Active', 'Unknown'])
 
     df['is_eligible'] = (is_eligible_based_on_date & is_active)
-
-
+    # Apply hours_worked requirement if configured
+    min_hours = plan_rules.get('min_hours_worked', 0)
+    if min_hours > 0:
+        if 'hours_worked' in df.columns:
+            below = df['hours_worked'] < min_hours
+            df.loc[below, 'is_eligible'] = False
+            print(f"  Hours requirement: set {below.sum()} employees ineligible (<{min_hours} hours).")
+        else:
+            print("  Warning: 'hours_worked' missing; skipping hours requirement.")
     eligible_count = df['is_eligible'].sum()
     print(f"  Eligibility determined: {eligible_count} eligible employees.")
 
@@ -243,7 +250,13 @@ def apply_auto_increase(df, scenario_config, simulation_year):
         (df['ai_opted_out'] == False) &
         (df['deferral_rate'] < ai_max_deferral_rate)
     )
-
+    # if flagged, only bump those hired this simulation year
+    if ai_config.get('apply_to_new_hires_only', False):
+        year_start = pd.Timestamp(f"{simulation_year}-01-01")
+        year_end   = pd.Timestamp(f"{simulation_year}-12-31")
+        new_hires  = (df['hire_date'] >= year_start) & (df['hire_date'] <= year_end)
+        increase_mask &= new_hires
+        print(f"  Auto-increase restricted to new hires for {simulation_year}.")
     num_to_increase = increase_mask.sum()
 
     if num_to_increase > 0:
@@ -379,6 +392,12 @@ def calculate_contributions(df, scenario_config, simulation_year, year_start_dat
                 print(f"  Warning: Could not parse non-elective formula: '{employer_non_elective_formula}'. Assuming 0%.")
 
         df.loc[calc_mask, 'employer_non_elective_contribution'] = df.loc[calc_mask, 'capped_compensation'] * nec_rate
+
+        # Last Day Work Rule: zero match & NEC for terminated employees
+        if plan_rules.get('last_day_work_rule', False):
+            term_mask = df['status'] == 'Terminated'
+            df.loc[term_mask, ['employer_match_contribution','employer_non_elective_contribution']] = 0.0
+            print(f"  Last day work rule: zeroed match/NEC for {term_mask.sum()} terminated employees.")
 
         # --- Calculate Employer Match Contribution ---
         df.loc[calc_mask, 'employer_match_contribution'] = 0.0 # Initialize for the eligible group

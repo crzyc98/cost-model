@@ -24,6 +24,7 @@ auto_enrollment:
   # NEW: Target rates for specific outcomes (as decimal rates)
   opt_down_target_rate: 0.03     # Example: Target rate if opting down
   increase_high_target_rate: 0.10 # Example: Target rate if increasing high
+  window_days: 30 # AE window after hire in days
 
 auto_increase:
   enabled: true
@@ -67,6 +68,7 @@ behavioral_params:
   # For non-participants (if AE doesn't apply)
   voluntary_enrollment_rate: 0.20  # Probability of non-participant starting contribution
   voluntary_default_deferral: 0.05 # Default rate if enrolling voluntarily
+  voluntary_window_days: 180 # Max days after hire to enroll voluntarily
 
   # For existing participants (if AI doesn't apply / opted out)
   voluntary_change_probability: 0.10 # Overall chance of ANY voluntary change per year

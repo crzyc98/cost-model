@@ -21,85 +21,51 @@ DEFAULT_IRS_LIMITS = {
     2029: {'comp_limit': 420000, 'deferral_limit': 28000, 'catch_up': 9000}, # Placeholder
 }
 
+# Baseline: AE on new hires only (35-day window), no AI
 baseline_scenario = {
     'scenario_name': 'Baseline',
-    'start_year': 2024, # Assuming projection starts from year after last census
-    'projection_years': 5,
-    'comp_increase_rate': 0.03, # Example: 3% annual comp increase
-    'hire_rate': 0.10,          # Example: 10% annual gross hire rate
-    'termination_rate': 0.08,   # Example: 8% target annual turnover
-    'maintain_headcount': False,  # Allow population growth based on hire_rate
-    # 'role_distribution': {...}, # Placeholder for future enhancement
-    # 'role_compensation_params': {...}, # Placeholder for future enhancement
-    'plan_rules': {
-        'eligibility': {
-            'min_age': 21,
-            'min_service_months': 12
-        },
-        'auto_enrollment': {
-            'enabled': False,
-            'default_rate': 0.03,
-            'opt_out_rate': 0.10
-        },
-        'auto_increase': {
-            'enabled': False,
-            'increase_rate': 0.01,
-            'cap_rate': 0.10,
-            'opt_out_rate': 0.20
-        },
-        'employer_match_formula': "50% up to 6%", # Example formula
-        'employer_non_elective_formula': "2%", # Example formula
-        'catch_up_age': 50 # Default catch-up age
-    },
-    'irs_limits': DEFAULT_IRS_LIMITS,
-    'use_ml_turnover': True, # Default to rule-based
-    'ml_model_path': 'termination_model_pipeline.joblib',
-    'model_features_path': 'termination_model_features.joblib' # Store path to features list
-}
-
-proposed_scenario = {
-    'scenario_name': 'Proposed_AE_AI',
-    'start_year': 2024,
+    'start_year': 2025,
     'projection_years': 5,
     'comp_increase_rate': 0.03,
     'hire_rate': 0.10,
     'termination_rate': 0.08,
-    'maintain_headcount': False,  # Allow population growth based on hire_rate
-    # 'role_distribution': {...}, # Placeholder for future enhancement
-    # 'role_compensation_params': {...}, # Placeholder for future enhancement
+    'maintain_headcount': False,
     'plan_rules': {
-        'eligibility': {
-            'min_age': 21,
-            'min_service_months': 6 # Reduced service requirement
-        },
+        'eligibility': {'min_age':21, 'min_service_months':0},
         'auto_enrollment': {
             'enabled': True,
             'default_rate': 0.06,
-            'opt_out_rate': 0.15, # Original opt-out, maybe superseded by distribution?
-            'ae_outcome_distribution': { # Corrected keys
-                'stay_default': 0.80, # Was 'enroll_default'
-                'opt_out': 0.20
-                # 'increase_to_match_cap': 0.0 # Optional, not used here
-            }
+            'ae_outcome_distribution': {'stay_default':0.90, 'opt_out':0.10},
+            'window_days': 35
         },
-        'auto_increase': {
-            'enabled': True,
-            'increase_rate': 0.01,
-            'cap_rate': 0.10,
-            'opt_out_rate': 0.25
-        },
-        'employer_match_formula': "50% up to 6%", # Changed formula
-        'employer_non_elective_formula': "2%", # No NEC
-        'catch_up_age': 50
+        'auto_increase': {'enabled': False},
+        'employer_match_formula': '50% up to 6%',
+        'employer_non_elective_formula': '0%',
+        'min_hours_worked': 1000,
+        'last_day_work_rule': True
     },
     'irs_limits': DEFAULT_IRS_LIMITS,
     'use_ml_turnover': True,
     'ml_model_path': 'termination_model_pipeline.joblib',
-    'model_features_path': 'termination_model_features.joblib' # Store path to features list
+    'model_features_path': 'termination_model_features.joblib'
+}
+
+# Scenario: AIP for new hires only
+aip_new_hires = {
+    **baseline_scenario,
+    'scenario_name': 'AIP_New_Hires',
+    'plan_rules': {**baseline_scenario['plan_rules'], 'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10, 'apply_to_new_hires_only':True}}
+}
+
+# Scenario: AIP for all eligible
+aip_all_eligible = {
+    **baseline_scenario,
+    'scenario_name': 'AIP_All_Eligible',
+    'plan_rules': {**baseline_scenario['plan_rules'], 'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10}}
 }
 
 # List of scenarios to run
-SCENARIOS_TO_RUN = [baseline_scenario, proposed_scenario]
+SCENARIOS_TO_RUN = [baseline_scenario, aip_new_hires, aip_all_eligible]
 
 # --- Helper Functions ---
 
