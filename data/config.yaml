@@ -11,7 +11,7 @@ eligibility:
 
 auto_enrollment:
   enabled: true
-  proactive_enrollment_probability: 0.05  # Small chance new eligibles sign up before window closes
+  proactive_enrollment_probability: 0.05  # Non-zero to activate proactive enrollment
   default_rate: 0.06 # Example: 6% as a decimal rate
   # NEW: Distribution of outcomes for those auto-enrolled
   outcome_distribution:

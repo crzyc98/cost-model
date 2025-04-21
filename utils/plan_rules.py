@@ -161,19 +161,20 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
     # Debug booleans for AE process
     df['became_eligible_during_year'] = False
     df['window_closed_during_year'] = False
-    # --- Proactive Enrollment at Eligibility Entry ---
+    # --- Proactive Enrollment at Eligibility Entry (Debug) ---
     proactive_p = ae_rules.get('proactive_enrollment_probability', 0.0)
-    if proactive_p > 0 and 'eligibility_entry_date' in df.columns:
+    print(f"  [Proactive AE Debug] probability={proactive_p:.2%}")
+    if 'eligibility_entry_date' in df.columns:
         newly_eligible = (
             (df['eligibility_entry_date'] >= simulation_year_start_date) &
             (df['eligibility_entry_date'] <= simulation_year_end_date)
         )
-        # Flag those who became eligible this year
-        df.loc[newly_eligible, 'became_eligible_during_year'] = True
+        print(f"  [Proactive AE Debug] newly eligible count={newly_eligible.sum()}")
         active = df['status'] == 'Active'
         not_part = ~df['is_participating']
         not_opted = ~df['ae_opted_out']
         candidates = newly_eligible & active & not_part & not_opted
+        print(f"  [Proactive AE Debug] candidate count={candidates.sum()}")
         idxs = df.index[candidates]
         if len(idxs) > 0:
             draws = np.random.rand(len(idxs))

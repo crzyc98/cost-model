@@ -1,7 +1,8 @@
+no one proactively enrolled
 
-new hires had no deferral rate in the ae/aip test i ran
+if someone opts out of ae that would mean they opt out of ai
 
-the sandbox output didn't have any terminations in it.  why is status always active in the sandbox output?  i would like to see the terminations, especially because in some cases they will contribute their own money at some point during the year and have employer match or core contributions
+auto annual increase, no one is in it?  if we run a new hire ae program, the people that are in auto enrollment will be annual increased a year after their enrollment date.  if it is all eligilbe, it would be the same but in this case everyone that is a current active would be re-enrolled at the default rate (if they have a rate that is below the default rate but greater than 0.  could we add a way in config to tell you who to re-enroll at the default rate?)
 
-can we validate how eligible entry date is calculated? is it used?
-how is tenure calulated? it looks too high? is it in months?
+if somoene opts out, the opt out date would be a random date beween the window start and window end
+

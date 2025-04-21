@@ -34,6 +34,7 @@ baseline_scenario = {
         'eligibility': {'min_age':21, 'min_service_months':0},
         'auto_enrollment': {
             'enabled': True,
+            'proactive_enrollment_probability': 0.05,  # enable proactive AE
             'default_rate': 0.06,
             'ae_outcome_distribution': {'stay_default':0.90, 'opt_out':0.10},
             'window_days': 35
@@ -54,14 +55,20 @@ baseline_scenario = {
 aip_new_hires = {
     **baseline_scenario,
     'scenario_name': 'AIP_New_Hires',
-    'plan_rules': {**baseline_scenario['plan_rules'], 'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10, 'apply_to_new_hires_only':True}}
+    'plan_rules': {**baseline_scenario['plan_rules'], 
+                   'auto_enrollment': {**baseline_scenario['plan_rules']['auto_enrollment'], 
+                                       'proactive_enrollment_probability': 0.05},  # enable proactive AE
+                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10, 'apply_to_new_hires_only':True}}
 }
 
 # Scenario: AIP for all eligible
 aip_all_eligible = {
     **baseline_scenario,
     'scenario_name': 'AIP_All_Eligible',
-    'plan_rules': {**baseline_scenario['plan_rules'], 'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10}}
+    'plan_rules': {**baseline_scenario['plan_rules'], 
+                   'auto_enrollment': {**baseline_scenario['plan_rules']['auto_enrollment'], 
+                                       'proactive_enrollment_probability': 0.05},  # enable proactive AE
+                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10}}
 }
 
 # List of scenarios to run
