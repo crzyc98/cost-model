@@ -2,6 +2,9 @@
 Core projection logic for the census data.
 """
 
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pandas as pd
 import numpy as np
 from datetime import timedelta
@@ -11,7 +14,7 @@ import joblib # Import joblib for loading model/features
 
 from utils import calculate_age, calculate_tenure, generate_new_ssn, generate_new_hires
 from ml_logic import prepare_features_for_model, calculate_turnover_score_rule_based, ML_LIBS_AVAILABLE, apply_stochastic_termination, apply_terminations, apply_rule_based_turnover
-from plan_rules import determine_eligibility, apply_auto_enrollment, apply_auto_increase, apply_plan_change_deferral_response, calculate_contributions
+from utils.plan_rules import determine_eligibility, apply_auto_enrollment, apply_auto_increase, apply_plan_change_deferral_response, calculate_contributions
 
 # --- Placeholder Imports for Plan Rule Engine ---
 # These functions will be defined elsewhere (e.g., plan_rules.py)

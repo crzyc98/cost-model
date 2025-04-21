@@ -283,9 +283,8 @@ def run_scenario_simulation(scenario_name, scenario_config, start_census_df, bas
         baseline_scenario_config=baseline_scenario_config
     )
 
-    # TODO: Call aggregation function here eventually
     aggregated_results = aggregate_scenario_results(projected_data, scenario_config)
-    return aggregated_results
+    return projected_data, aggregated_results
 
 # --- Main Execution --- 
 
@@ -293,6 +292,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run retirement plan projection simulations for multiple scenarios.')
     parser.add_argument('input_csv', help='Path to the initial census CSV file.')
     parser.add_argument('--output', help='Optional base path/name for output Excel file (e.g., projection_results). Scenario name and .xlsx will be appended.')
+    parser.add_argument('--raw-output', action='store_true', help='Save raw agent-level results to Excel')
     # Removed args for individual rates, years are now in config
 
     args = parser.parse_args()
@@ -301,25 +301,25 @@ if __name__ == "__main__":
     initial_census_df = load_and_initialize_data(args.input_csv)
 
     if initial_census_df is not None:
-        all_scenario_results = {}
+        all_summary_results = {}
+        all_raw_results = {}
 
         # 2. Loop Through Scenarios and Run Simulation
         for config in SCENARIOS_TO_RUN:
-            # Run the simulation for the current scenario
             baseline_scenario = next((s for s in SCENARIOS_TO_RUN if s['scenario_name'] == 'Baseline'), None)
             if not baseline_scenario:
                 print("Error: 'Baseline' scenario configuration not found. Cannot proceed.")
                 exit()
-            scenario_yearly_data = run_scenario_simulation(config['scenario_name'], config, initial_census_df, baseline_scenario)
+            raw_data, summary_data = run_scenario_simulation(config['scenario_name'], config, initial_census_df, baseline_scenario)
             
-            # Store the raw yearly data for now
-            all_scenario_results[config['scenario_name']] = scenario_yearly_data
+            all_summary_results[config['scenario_name']] = summary_data
+            all_raw_results[config['scenario_name']] = raw_data
 
         # 3. Process and Save Results
         if args.output:
             base_output_path = args.output
-            # Save each scenario's yearly breakdown to a separate Excel file
-            for scenario_name, yearly_data in all_scenario_results.items():
+            # Save summary metrics for each scenario
+            for scenario_name, yearly_data in all_summary_results.items():
                 output_file = f"{base_output_path}_{scenario_name}.xlsx"
                 try:
                     with pd.ExcelWriter(output_file) as writer:
@@ -327,9 +327,16 @@ if __name__ == "__main__":
                     print(f"Saved results for scenario '{scenario_name}' to: {output_file}")
                 except Exception as e:
                     print(f"Error saving results for scenario '{scenario_name}' to {output_file}: {e}")
-        else:
-            print("\nSimulation complete. No output file specified. Results not saved.")
-            # Optionally print some summary if no file output
-
+        if args.raw_output:
+            # Save raw agent-level data for each scenario
+            for scenario_name, data_dict in all_raw_results.items():
+                raw_file = f"{base_output_path}_{scenario_name}_raw.xlsx"
+                try:
+                    with pd.ExcelWriter(raw_file) as writer:
+                        for year, df in data_dict.items():
+                            df.to_excel(writer, sheet_name=f'Year_{year}', index=False)
+                    print(f"Saved raw agent-level results for '{scenario_name}' to: {raw_file}")
+                except Exception as e:
+                    print(f"Error saving raw data for '{scenario_name}' to {raw_file}: {e}")
     else:
         print("Projection run failed due to data loading/initialization errors.")
