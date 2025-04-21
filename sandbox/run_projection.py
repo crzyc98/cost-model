@@ -3,7 +3,7 @@ Script to run retirement plan projection simulations for multiple scenarios.
 """
 
 import pandas as pd
-from projection import project_census
+from projection_utils import project_census
 from datetime import datetime # Added for IRS limits
 import argparse # Keep argparse for input/output files
 import joblib # Import joblib for loading the model
@@ -103,10 +103,10 @@ def load_and_initialize_data(csv_path):
     if 'ai_opted_out' not in df.columns: df['ai_opted_out'] = False
     # Initial deferral rate from percentage column
     if 'pre_tax_deferral_percentage' in df.columns:
-        # Convert percentage to rate (e.g., 5 -> 0.05)
+        # Convert percentage or fraction to rate (<=1 treated as fraction, >1 as percent)
         if 'deferral_rate' not in df.columns:
-             df['deferral_rate'] = pd.to_numeric(df['pre_tax_deferral_percentage'], errors='coerce') / 100.0
-             df['deferral_rate'] = df['deferral_rate'].fillna(0.0)
+            raw_pct = pd.to_numeric(df['pre_tax_deferral_percentage'], errors='coerce')
+            df['deferral_rate'] = raw_pct.where(raw_pct <= 1, raw_pct / 100.0).fillna(0.0)
     elif 'deferral_rate' not in df.columns:
         df['deferral_rate'] = 0.0 # Default if no source column
         print("Warning: 'pre_tax_deferral_percentage' or 'deferral_rate' not found. Initializing deferral rate to 0.")

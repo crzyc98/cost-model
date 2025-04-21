@@ -12,8 +12,9 @@ import math
 from scipy.stats import truncnorm # Added for new hire generation
 import joblib # Import joblib for loading model/features
 
-from utils import calculate_age, calculate_tenure, generate_new_ssn, generate_new_hires
-from ml_logic import prepare_features_for_model, calculate_turnover_score_rule_based, ML_LIBS_AVAILABLE, apply_stochastic_termination, apply_terminations, apply_rule_based_turnover
+from utils.date_utils import calculate_age, calculate_tenure
+from sandbox.utils import generate_new_ssn, generate_new_hires
+from sandbox.ml_logic import prepare_features_for_model, calculate_turnover_score_rule_based, ML_LIBS_AVAILABLE, apply_stochastic_termination, apply_terminations, apply_rule_based_turnover
 from utils.plan_rules import determine_eligibility, apply_auto_enrollment, apply_auto_increase, apply_plan_change_deferral_response, calculate_contributions
 
 # --- Placeholder Imports for Plan Rule Engine ---
