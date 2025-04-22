@@ -271,6 +271,12 @@ def project_census(
         if scenario_config.get('plan_rules', {}).get('auto_increase', {}).get('enabled', False):
              # Apply auto-increase per scenario config
              current_df = apply_auto_increase(current_df, scenario_config, year_end_date.year)
+             # Debug AI: report flagged count and sample rates
+             ai_count = current_df['ai_enrolled'].sum() if 'ai_enrolled' in current_df.columns else 0
+             print(f"  DEBUG AI: total ai_enrolled: {ai_count}")
+             if ai_count > 0:
+                 sample_rates = current_df.loc[current_df['ai_enrolled'], 'deferral_rate'].head(5).tolist()
+                 print(f"  DEBUG AI: sample ai_enrolled deferral rates: {sample_rates}")
 
         print(f"DEBUG: Before calculate_contributions - Type: {type(current_df)}")
         if current_df is not None:

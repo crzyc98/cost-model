@@ -353,6 +353,10 @@ def apply_auto_increase(df, scenario_config, simulation_year):
         increase_mask &= new_hires
         print(f"  Auto-increase restricted to new hires for {simulation_year}.")
     num_to_increase = increase_mask.sum()
+    # Debug: how many candidates and their current rates
+    print(f"  Debug AI: {num_to_increase} employees eligible for auto-increase (deferral_rate < {ai_max_deferral_rate:.2%})")
+    if num_to_increase > 0:
+        print("  Debug AI: sample pre-bump rates:", df.loc[increase_mask, 'deferral_rate'].head(5).tolist())
 
     if num_to_increase > 0:
         # Apply the increase, ensuring it doesn't exceed the max rate
@@ -362,6 +366,7 @@ def apply_auto_increase(df, scenario_config, simulation_year):
         capped_rate = np.minimum(new_rate, ai_max_deferral_rate)
         # Apply the capped rate
         df.loc[increase_mask, 'deferral_rate'] = capped_rate
+        print("  Debug AI: sample post-bump rates:", df.loc[increase_mask, 'deferral_rate'].head(5).tolist())
         print(f"  Applied auto-increase to {num_to_increase} employees (Rate: +{ai_increase_rate:.2%}, Cap: {ai_max_deferral_rate:.2%}).")
     else:
         print("  No employees met the criteria for auto-increase this year.")
