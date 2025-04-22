@@ -66,10 +66,15 @@ aip_new_hires = {
 aip_all_eligible = {
     **baseline_scenario,
     'scenario_name': 'AIP_All_Eligible',
-    'plan_rules': {**baseline_scenario['plan_rules'], 
-                   'auto_enrollment': {**baseline_scenario['plan_rules']['auto_enrollment'], 
-                                       'proactive_enrollment_probability': 0.05},  # enable proactive AE
-                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.06}}
+    'plan_rules': {
+        **baseline_scenario['plan_rules'],
+        'auto_enrollment': {
+            **baseline_scenario['plan_rules']['auto_enrollment'],
+            'proactive_enrollment_probability': 0.05,
+            're_enroll_existing': True  # enroll existing eligibles at default rate
+        },
+        'auto_increase': {'enabled': True, 'increase_rate': 0.01, 'cap_rate': 0.06}
+    }
 }
 
 # List of scenarios to run
