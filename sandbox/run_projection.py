@@ -35,6 +35,7 @@ baseline_scenario = {
         'auto_enrollment': {
             'enabled': True,
             'proactive_enrollment_probability': 0.05,  # enable proactive AE
+            'proactive_rate_range': (0.01, 0.05),      # variable deferral range
             'default_rate': 0.06,
             'ae_outcome_distribution': {'stay_default':0.90, 'opt_out':0.10},
             'window_days': 35

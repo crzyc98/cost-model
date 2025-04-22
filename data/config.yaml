@@ -12,7 +12,8 @@ eligibility:
 auto_enrollment:
   enabled: true
   proactive_enrollment_probability: 0.05  # Non-zero to activate proactive enrollment
-  default_rate: 0.06 # Example: 6% as a decimal rate
+  proactive_rate_range: [0.01, 0.05]
+  default_rate: 0.02 # Example: 2% as a decimal rate
   # NEW: Distribution of outcomes for those auto-enrolled
   outcome_distribution:
     prob_opt_out: 0.10       # Probability of choosing 0%

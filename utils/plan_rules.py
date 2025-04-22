@@ -179,8 +179,15 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
         if len(idxs) > 0:
             draws = np.random.rand(len(idxs))
             selected = idxs[draws < proactive_p]
+            # Determine deferral rate using configured distribution for proactive enrollment
+            distribution = ae_rules.get('proactive_rate_range', None)
+            if distribution is not None:
+                min_rate, max_rate = distribution
+                rates = np.random.uniform(min_rate, max_rate, size=len(selected))
+                df.loc[selected, 'deferral_rate'] = rates
+            else:
+                df.loc[selected, 'deferral_rate'] = ae_default_rate
             # Set enrollment flags and dates
-            df.loc[selected, 'deferral_rate'] = ae_rules.get('default_rate', 0.0)
             df.loc[selected, 'is_participating'] = True
             df.loc[selected, 'proactive_enrolled'] = True
             df.loc[selected, 'enrollment_date'] = df.loc[selected, 'eligibility_entry_date']
@@ -242,8 +249,14 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
     for i, outcome in enumerate(assigned_outcomes):
         idx = target_indices[i]
         if outcome == 'stay_default':
-            # Auto-enrollment at window closure
-            df.loc[idx, 'deferral_rate'] = ae_default_rate
+            # Auto-enrollment at window closure with variable rate
+            distribution = ae_rules.get('proactive_rate_range', None)
+            if distribution is not None:
+                min_r, max_r = distribution
+                rate = np.random.uniform(min_r, max_r)
+                df.loc[idx, 'deferral_rate'] = rate
+            else:
+                df.loc[idx, 'deferral_rate'] = ae_default_rate
             df.loc[idx, 'is_participating'] = True
             df.loc[idx, 'auto_enrolled'] = True
             df.loc[idx, 'enrollment_date'] = df.loc[idx, 'ae_window_end']
