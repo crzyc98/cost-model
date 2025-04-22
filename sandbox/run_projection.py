@@ -355,9 +355,14 @@ if __name__ == "__main__":
                 raw_file = f"{base_output_path}_{scenario_name}_raw.xlsx"
                 try:
                     with pd.ExcelWriter(raw_file) as writer:
+                        # Write each year to its own sheet
                         for year, df in data_dict.items():
                             df.to_excel(writer, sheet_name=f'Year_{year}', index=False)
-                    print(f"Saved raw agent-level results for '{scenario_name}' to: {raw_file}")
+                        # Combine all years with a Year column into one sheet
+                        combined_df = pd.concat([
+                            df.assign(Year=year) for year, df in data_dict.items()
+                        ], ignore_index=True)
+                        combined_df.to_excel(writer, sheet_name='Combined_Raw', index=False)
                 except Exception as e:
                     print(f"Error saving raw data for '{scenario_name}' to {raw_file}: {e}")
     else:

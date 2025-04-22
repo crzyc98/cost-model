@@ -14,18 +14,12 @@ def calculate_age(birth_date, current_date):
 
 
 def calculate_tenure(hire_date, current_date):
-    """Calculate tenure in months based on hire_date and current_date. Supports scalar and pandas Series."""
-    def _tenure(x):
-        if pd.isna(x):
-            return 0
-        x_ts = pd.Timestamp(x)
-        dy = current_date.year - x_ts.year
-        dm = current_date.month - x_ts.month
-        total = dy * 12 + dm
-        if current_date.day < x_ts.day:
-            total -= 1
-        return max(0, total)
-
+    """Calculate tenure in fractional years based on hire_date and current_date. Supports scalar and pandas Series."""
     if isinstance(hire_date, pd.Series):
-        return hire_date.apply(_tenure)
-    return _tenure(hire_date)
+        hd = pd.to_datetime(hire_date)
+        delta_days = (current_date - hd).dt.days.fillna(0)
+        return delta_days / 365.25
+    if pd.isna(hire_date):
+        return 0.0
+    delta = current_date - pd.Timestamp(hire_date)
+    return delta.days / 365.25
