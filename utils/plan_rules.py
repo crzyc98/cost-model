@@ -313,7 +313,9 @@ def apply_auto_increase(df, scenario_config, simulation_year):
     # Initialize flags if missing
     if 'ai_opted_out' not in df.columns:
         df['ai_opted_out'] = False
-    df['ai_enrolled'] = False
+    # Preserve prior AI enrollment; initialize flag only if missing
+    if 'ai_enrolled' not in df.columns:
+        df['ai_enrolled'] = False
     # Determine eligible mask
     is_active = (df['status'] == 'Active') if 'status' in df.columns else True
     mask = is_active & df['is_participating'] & (~df['ai_opted_out']) & (df['deferral_rate'] < ai_max_deferral_rate)
