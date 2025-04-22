@@ -6,3 +6,5 @@ auto annual increase, no one is in it?  if we run a new hire ae program, the peo
 
 if somoene opts out, the opt out date would be a random date beween the window start and window end
 
+became eligible during year is always false?
+

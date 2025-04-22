@@ -194,6 +194,25 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
             df.loc[selected, 'first_contribution_date'] = df.loc[selected, 'eligibility_entry_date']
             print(f"  {len(selected)} proactively enrolled at eligibility (p={proactive_p:.2%})")
 
+    # NEW: Re-enroll existing active eligible participants below default rate
+    re_enroll_existing = ae_rules.get('re_enroll_existing', False)
+    if re_enroll_existing:
+        if 'auto_reenrolled' not in df.columns:
+            df['auto_reenrolled'] = False
+        mask_reenroll = (
+            (df.get('status') == 'Active') &
+            (df.get('is_eligible', False)) &
+            (df.get('is_participating', False)) &
+            (df['deferral_rate'] > 0) &
+            (df['deferral_rate'] < ae_default_rate)
+        )
+        if mask_reenroll.any():
+            df.loc[mask_reenroll, 'deferral_rate'] = ae_default_rate
+            df.loc[mask_reenroll, 'is_participating'] = True
+            df.loc[mask_reenroll, 'enrollment_method'] = 'AE'
+            df.loc[mask_reenroll, 'auto_reenrolled'] = True
+            print(f"  Re-enrolled {mask_reenroll.sum()} existing participants at default rate {ae_default_rate:.2%}")
+
     # --- Define AE Target Window ---
     # Employees whose AE window closes in this simulation year
     within_window_closure = (
