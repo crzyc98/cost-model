@@ -1,112 +1,115 @@
-# Retirement Plan Cost Model
+# Retirement Plan Cost Model (Projection Tool)
 
-An agent-based simulation model of a retirement plan built using the Mesa framework. This project estimates participation, deferral behavior, employer contributions, and overall plan cost over a multi-year projection.
+A scenario-driven projection engine for retirement plan outcomes. Customize plan rules, demographic assumptions, and IRS limits, then generate both summary and detailed agent‑level outputs over multiple years.
 
 ## Features
 
-- **Agent-Based Modeling** with Mesa to simulate individual employee behaviors
-- Configurable plan rules (eligibility, auto-enrollment, auto-increase) via `config.yaml`
-- Handles population dynamics (new hires and terminations)
-- Precise financial calculations using Python's `Decimal`
-- Output of model- and agent-level results to CSV/Excel
+- Configurable scenarios via `data/config.yaml` (start year, projection length, comp increases, hire/term rates).
+- Plan rules: eligibility, auto‑enrollment (AE), auto‑increase (AI), employer match/NEC formulas.
+- Population dynamics: hires and terminations (rule‑based or ML‑based).
+- Precise financials with `Decimal`, pandas and NumPy.
+- Outputs:
+  - Summary Excel per scenario (yearly metrics).
+  - Combined summary across scenarios (`*_all_summaries.xlsx`).
+  - Raw agent‑level Excel (`--raw-output`): each year sheet + `Combined_Raw` sheet with **Year** column.
 
 ## Requirements
 
-- Python 3.8 or higher
-- See [requirements.txt](requirements.txt) for full dependency list
+- Python 3.8+
+- pandas
+- numpy
+- scipy
+- joblib
 
-## Installation
-
+Install via:
 ```bash
-# Clone the repository
-git clone <repo_url> cost-model
-cd cost-model
-
-# (Optional) create a virtual environment
-env=$(python3 -m venv venv) && source $env/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
 ## Configuration
 
-Edit `config.yaml` to adjust:
+Edit `data/config.yaml` to define scenarios. Key fields:
 
-- Simulation start year and projection length
-- Plan eligibility criteria
-- Auto-enrollment (AE) and auto-increase (AI) rates
-- Contribution formulas and IRS limits
-- Demographic and turnover rates
-- Veteran attrition handling: `use_expected_attrition` (boolean) to toggle expected vs. realized veteran terminations in hires
-- Monthly attrition transitions: `monthly_transition` (boolean) to enable monthly hazard-based terminations using fitted hazard model
-- Hazard model parameters: `hazard_model_params.file` pointing to YAML file with Cox coefficients and Kaplan–Meier median time
+```yaml
+scenarios:
+  - scenario_name: Baseline
+    start_year: 2025
+    projection_years: 5
+    comp_increase_rate: 0.03
+    hire_rate: 0.10
+    termination_rate: 0.08
+    maintain_headcount: false
+    plan_rules:
+      eligibility:
+        min_age: 21
+        min_service_months: 0
+      auto_enrollment:
+        enabled: true
+        default_rate: 0.02
+        window_days: 35
+      auto_increase:
+        enabled: false
+      employer_match_formula: "50% up to 6%"
+      employer_non_elective_formula: "0%"
+    irs_limits:
+      ...
+    use_ml_turnover: true
+    ml_model_path: termination_model_pipeline.joblib
+    model_features_path: termination_model_features.joblib
+```
+
+Additional settings include new‑hire generation parameters, veteran attrition toggles, and hazard model options under `hazard_model_params`.
 
 ## Data
 
-Place your initial census data in CSV format as `census_data.csv`. The expected columns include:
-
-- `employee_id`, `birth_date`, `start_date`, `salary`, etc.
-
-Example data file is provided in the root directory.
+Provide initial census CSV (e.g., `census_data.csv`) with columns:
+- `ssn` (or employee_id)
+- `birth_date`
+- `hire_date`
+- `gross_compensation`
+- `pre_tax_deferral_percentage` (optional)
+- any other attributes (role, salary, etc.)
 
 ## Usage
 
-Run the retirement plan simulation:
-
 ```bash
-python scripts/run_retirement_plan_abm.py \
-  --config config.yaml \
-  --census census_data.csv \
-  --output results/
+python sandbox/run_projection.py <census_csv> --output <base_name> [--raw-output]
 ```
 
-- `--config`: path to your YAML configuration file
-- `--census`: path to your initial census CSV
-- `--output`: directory to write model and agent result files
+- `<census_csv>`: path to initial census file.
+- `--output`: base path/name for Excel outputs (appends scenario and extension).
+- `--raw-output`: include detailed agent‑level results in `<base>_<scenario>_raw.xlsx`.
 
-**Monthly attrition** can be activated by setting `monthly_transition: true` and specifying `hazard_model_params.file` in your `config.yaml`. The simulation CLI remains the same.
-
-After completion, results will be saved as:
-
-- `results/model_results.csv`
-- `results/agent_results.csv`
-
-## Reporting Dynamics
-After running the ABM simulation, generate visual reports with:
-
+Examples:
 ```bash
-python3 scripts/report_dynamics.py \
-  --model_csv output/<prefix>_model_results.csv \
-  --agent_csv output/<prefix>_agent_results.csv \
-  --output_dir output
+python sandbox/run_projection.py census_data.csv --output projection_results --raw-output
 ```
 
-This will produce:
-
-- `output/net_growth_decomposition.png`
-- `output/cohort_counts.png`
-- `output/hire_termination_dynamics.png`
+After running, you’ll have:
+- `projection_results_Baseline.xlsx`, `projection_results_AIP_New_Hires.xlsx`, etc.
+- `projection_results_all_summaries.xlsx`
+- `projection_results_<scenario>_raw.xlsx` (per‑scenario raw data).
 
 ## Project Structure
 
 ```
 cost-model/
-├── agents/
-│   └── employee_agent.py       # EmployeeAgent class definition
-├── model/
-│   └── retirement_model.py     # RetirementPlanModel implementation
-├── scripts/
-│   └── run_retirement_plan_abm.py  # Main simulation runner
-├── config.yaml                 # Simulation parameters and plan rules
-├── census_data.csv             # Sample initial employee data
+├── sandbox/
+│   ├── run_projection.py       # Main projection runner
+│   └── projection_utils.py     # Core simulation logic
+├── utils/
+│   ├── date_utils.py           # Age and tenure functions
+│   └── plan_rules.py           # Eligibility, AE/AI, contributions
+├── data/
+│   └── config.yaml             # Scenario configurations and IRS limits
+├── docs/                       # Documentation and debugging notes
 ├── requirements.txt            # Python dependencies
-└── README.md                   # This file
+└── README.md                   # Project overview and instructions
 ```
 
 ## Contributing
 
-Pull requests are welcome. Please open an issue to discuss major changes.
+Feedback and pull requests are welcome. Please open issues for major features or bug reports.
 
 ## License
 
