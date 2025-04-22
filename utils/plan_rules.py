@@ -355,7 +355,7 @@ def apply_auto_increase(df, scenario_config, simulation_year):
     if increase_mask.sum() > 0:
         print("  Debug AI: sample pre-bump rates:", df.loc[increase_mask, 'deferral_rate'].head(5).tolist())
 
-    if flagged, only bump those hired this simulation year
+    # NEW: only bump those hired this simulation year
     if ai_config.get('apply_to_new_hires_only', False):
         year_start = pd.Timestamp(f"{simulation_year}-01-01")
         year_end   = pd.Timestamp(f"{simulation_year}-12-31")
