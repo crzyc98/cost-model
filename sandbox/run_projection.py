@@ -36,7 +36,7 @@ baseline_scenario = {
             'enabled': True,
             'proactive_enrollment_probability': 0.05,  # enable proactive AE
             'proactive_rate_range': (0.01, 0.05),      # variable deferral range
-            'default_rate': 0.06,
+            'default_rate': 0.02,
             'ae_outcome_distribution': {'stay_default':0.90, 'opt_out':0.10},
             'window_days': 35
         },
@@ -59,7 +59,7 @@ aip_new_hires = {
     'plan_rules': {**baseline_scenario['plan_rules'], 
                    'auto_enrollment': {**baseline_scenario['plan_rules']['auto_enrollment'], 
                                        'proactive_enrollment_probability': 0.05},  # enable proactive AE
-                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10, 'apply_to_new_hires_only':True}}
+                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.06, 'apply_to_new_hires_only':True}}
 }
 
 # Scenario: AIP for all eligible
@@ -69,7 +69,7 @@ aip_all_eligible = {
     'plan_rules': {**baseline_scenario['plan_rules'], 
                    'auto_enrollment': {**baseline_scenario['plan_rules']['auto_enrollment'], 
                                        'proactive_enrollment_probability': 0.05},  # enable proactive AE
-                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.10}}
+                   'auto_increase': {'enabled': True, 'increase_rate':0.01, 'cap_rate':0.06}}
 }
 
 # List of scenarios to run
