@@ -326,17 +326,30 @@ def apply_auto_increase(df, scenario_config, simulation_year):
     else:
          is_active = (df['status'] == 'Active')
 
+    # NEW: initialize AI enrollment flag
+    if 'ai_enrolled' not in df.columns:
+        df['ai_enrolled'] = False
+
+    # NEW: only include employees deferring above AE default rate
+    ae_rules = plan_rules.get('auto_enrollment', {})
+    ae_default_rate = ae_rules.get('default_rate', 0.0)
+
     # Identify employees eligible for auto-increase:
     # - Must be Active
     # - Must be Participating
     # - Must NOT have opted out of AI
-    # - Must have a current deferral rate BELOW the maximum AI rate
+    # - Must have a current deferral rate BELOW the max AI rate
+    # - Must be deferring above AE default rate (NEW)
     increase_mask = (
-        is_active &
-        (df['is_participating'] == True) &
-        (df['ai_opted_out'] == False) &
-        (df['deferral_rate'] < ai_max_deferral_rate)
+         is_active &
+         (df['is_participating'] == True) &
+         (df['ai_opted_out'] == False) &
+         (df['deferral_rate'] < ai_max_deferral_rate) &
+         (df['deferral_rate'] > ae_default_rate)
     )
+    # NEW: mark AI enrollment for those flagged
+    df.loc[increase_mask, 'ai_enrolled'] = True
+
     # if flagged, only bump those hired this simulation year
     if ai_config.get('apply_to_new_hires_only', False):
         year_start = pd.Timestamp(f"{simulation_year}-01-01")
@@ -654,7 +667,7 @@ def apply_plan_change_deferral_response(df, current_scenario_config, baseline_sc
         return
     if 'status' not in df.columns:
         print("  Warning: 'status' column missing. Assuming all are Active.")
-        is_active = pd.Series(True, index=df.index)
+        is_active = True
     else:
         is_active = (df['status'] == 'Active')
 
