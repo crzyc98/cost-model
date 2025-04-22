@@ -275,7 +275,8 @@ def project_census(
              ai_count = current_df['ai_enrolled'].sum() if 'ai_enrolled' in current_df.columns else 0
              print(f"  DEBUG AI: total ai_enrolled: {ai_count}")
              if ai_count > 0:
-                 sample_rates = current_df.loc[current_df['ai_enrolled'], 'deferral_rate'].head(5).tolist()
+                 # Ensure ai_enrolled mask has no NA values
+                 sample_rates = current_df.loc[current_df['ai_enrolled'].fillna(False), 'deferral_rate'].head(5).tolist()
                  print(f"  DEBUG AI: sample ai_enrolled deferral rates: {sample_rates}")
 
         print(f"DEBUG: Before calculate_contributions - Type: {type(current_df)}")
