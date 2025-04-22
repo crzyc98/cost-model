@@ -301,85 +301,33 @@ def apply_auto_enrollment(df, scenario_config, simulation_year_start_date, simul
 def apply_auto_increase(df, scenario_config, simulation_year):
     """
     Applies auto-increase rules to participating employees who haven't opted out.
-    Updates 'deferral_rate' column inplace.
+    Updates 'deferral_rate' and 'ai_enrolled' columns inplace.
     """
-    print(f"  Applying auto-increase for {simulation_year}...")
-    # Debug: AI config and sample deferral rates
-    print(f"  Debug AI: ai_enabled={ai_enabled}, increase_rate={ai_increase_rate:.2%}, cap_rate={ai_max_deferral_rate:.2%}")
-    if 'deferral_rate' in df.columns:
-        print("  Debug AI: deferral_rate head before AI:", df['deferral_rate'].head(5).tolist())
     plan_rules = scenario_config.get('plan_rules', {})
     ai_config = plan_rules.get('auto_increase', {})
     ai_enabled = ai_config.get('enabled', False)
-    ai_increase_rate = ai_config.get('increase_rate', 0.01) # Default 1% increase
-    # Use scenario cap_rate or fallback to legacy key/default
+    ai_increase_rate = ai_config.get('increase_rate', 0.01)
     ai_max_deferral_rate = ai_config.get('cap_rate', ai_config.get('max_deferral_rate', 0.10))
-    # Debug AI settings and sample deferral rates before bump
-    print(f"  Debug AI: enabled={ai_enabled}, increase_rate={ai_increase_rate:.2%}, cap_rate={ai_max_deferral_rate:.2%}")
-    if 'deferral_rate' in df.columns:
-        print("  Debug AI: deferral_rate before AI:", df['deferral_rate'].head(5).tolist())
-
     if not ai_enabled:
-        print("  Auto-increase is disabled for this scenario.")
-        return df # Return df
-
-    # Ensure required columns exist
-    if 'is_participating' not in df.columns or 'deferral_rate' not in df.columns:
-        print("  Warning: 'is_participating' or 'deferral_rate' columns missing. Cannot apply auto-increase.")
-        return df # Return df
+        return df
+    # Initialize flags if missing
     if 'ai_opted_out' not in df.columns:
-        df['ai_opted_out'] = False # Assume not opted out if column missing
-    if 'status' not in df.columns:
-         print("  Warning: 'status' column missing. Assuming all are Active for AI.")
-         is_active = True
-    else:
-         is_active = (df['status'] == 'Active')
-
-    # Identify employees eligible for auto-increase:
-    # - Must be Active
-    # - Must be Participating
-    # - Must NOT have opted out of AI
-    # - Must have a current deferral rate BELOW the cap
-    increase_mask = (
-        is_active &
-        (df['is_participating'] == True) &
-        (df['ai_opted_out'] == False) &
-        (df['deferral_rate'] < ai_max_deferral_rate)
-    )
-    # Debug: candidate count for auto-increase
-    print(f"  Debug AI: {increase_mask.sum()} candidates for auto-increase (rate < {ai_max_deferral_rate:.2%})")
-    if increase_mask.sum() > 0:
-        print("  Debug AI: sample pre-bump rates:", df.loc[increase_mask, 'deferral_rate'].head(5).tolist())
-
-    # NEW: only bump those hired this simulation year
+        df['ai_opted_out'] = False
+    df['ai_enrolled'] = False
+    # Determine eligible mask
+    is_active = (df['status'] == 'Active') if 'status' in df.columns else True
+    mask = is_active & df['is_participating'] & (~df['ai_opted_out']) & (df['deferral_rate'] < ai_max_deferral_rate)
+    # Optionally restrict to new hires
     if ai_config.get('apply_to_new_hires_only', False):
         year_start = pd.Timestamp(f"{simulation_year}-01-01")
-        year_end   = pd.Timestamp(f"{simulation_year}-12-31")
-        new_hires  = (df['hire_date'] >= year_start) & (df['hire_date'] <= year_end)
-        increase_mask &= new_hires
-        print(f"  Auto-increase restricted to new hires for {simulation_year}.")
-    num_to_increase = increase_mask.sum()
-    # Mark AI enrollment only for those receiving auto-increase
-    df.loc[increase_mask, 'ai_enrolled'] = True
-    # Debug: how many candidates and their current rates
-    print(f"  Debug AI: {num_to_increase} employees eligible for auto-increase (deferral_rate < {ai_max_deferral_rate:.2%})")
-    if num_to_increase > 0:
-        print("  Debug AI: sample pre-bump rates:", df.loc[increase_mask, 'deferral_rate'].head(5).tolist())
-
-    if num_to_increase > 0:
-        # Apply the increase, ensuring it doesn't exceed the max rate
-        # Calculate the new rate first
-        new_rate = df.loc[increase_mask, 'deferral_rate'] + ai_increase_rate
-        # Cap the new rate at the maximum
-        capped_rate = np.minimum(new_rate, ai_max_deferral_rate)
-        # Apply the capped rate
-        df.loc[increase_mask, 'deferral_rate'] = capped_rate
-        print("  Debug AI: sample post-bump rates:", df.loc[increase_mask, 'deferral_rate'].head(5).tolist())
-        print(f"  Applied auto-increase to {num_to_increase} employees (Rate: +{ai_increase_rate:.2%}, Cap: {ai_max_deferral_rate:.2%}).")
-    else:
-        print("  No employees met the criteria for auto-increase this year.")
-
-    return df # Return df
+        year_end = pd.Timestamp(f"{simulation_year}-12-31")
+        mask &= (df['hire_date'] >= year_start) & (df['hire_date'] <= year_end)
+    # Apply increase
+    if mask.any():
+        new_rates = np.minimum(df.loc[mask, 'deferral_rate'] + ai_increase_rate, ai_max_deferral_rate)
+        df.loc[mask, 'deferral_rate'] = new_rates
+        df.loc[mask, 'ai_enrolled'] = True
+    return df
 
 
 def calculate_contributions(df, scenario_config, simulation_year, year_start_date, year_end_date):
