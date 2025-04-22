@@ -335,10 +335,6 @@ def apply_auto_increase(df, scenario_config, simulation_year):
     else:
          is_active = (df['status'] == 'Active')
 
-    # NEW: initialize AI enrollment flag
-    if 'ai_enrolled' not in df.columns:
-        df['ai_enrolled'] = False
-
     # Identify employees eligible for auto-increase:
     # - Must be Active
     # - Must be Participating
@@ -363,6 +359,8 @@ def apply_auto_increase(df, scenario_config, simulation_year):
         increase_mask &= new_hires
         print(f"  Auto-increase restricted to new hires for {simulation_year}.")
     num_to_increase = increase_mask.sum()
+    # Mark AI enrollment only for those receiving auto-increase
+    df.loc[increase_mask, 'ai_enrolled'] = True
     # Debug: how many candidates and their current rates
     print(f"  Debug AI: {num_to_increase} employees eligible for auto-increase (deferral_rate < {ai_max_deferral_rate:.2%})")
     if num_to_increase > 0:
@@ -622,7 +620,7 @@ def parse_match_formula(formula_str):
 
     formula_str = formula_str.strip()
     # Simple case: Flat match rate (e.g., "5%") - Treat as having no cap implicitly
-    match_simple = re.match(r"(\d+\.?\d*)\s*%", formula_str)
+    match_simple = re.match(r"\s*(\d+\.?\d*)\s*%", formula_str)
     if match_simple and "up to" not in formula_str.lower():
         match_rate = float(match_simple.group(1)) / 100.0
         return match_rate, 1.0 # Assume cap is effectively 100% deferral if not specified
