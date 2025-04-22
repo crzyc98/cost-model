@@ -51,6 +51,10 @@ scenarios:
         enabled: false
       employer_match_formula: "50% up to 6%"
       employer_non_elective_formula: "0%"
+      match_change_response:
+        enabled: true
+        increase_probability: 0.25  # Probability of bump to optimal
+        increase_target: optimal    # Only 'optimal' supported currently
     irs_limits:
       ...
     use_ml_turnover: true
@@ -99,7 +103,15 @@ cost-model/
 │   └── projection_utils.py     # Core simulation logic
 ├── utils/
 │   ├── date_utils.py           # Age and tenure functions
-│   └── plan_rules.py           # Eligibility, AE/AI, contributions
+│   ├── status_enums.py         # Enrollment and status enums
+│   ├── plan_rules.py           # Façade to rule modules
+│   └── rules/                  # Rule implementations
+│       ├── eligibility.py      # Eligibility logic
+│       ├── auto_enrollment.py  # Auto-enrollment logic
+│       ├── auto_increase.py    # Auto-increase logic
+│       ├── formula_parsers.py  # Match/NEC parsing helpers
+│       ├── contributions.py    # Contributions and limit engine
+│       └── response.py         # Plan-change deferral response
 ├── data/
 │   └── config.yaml             # Scenario configurations and IRS limits
 ├── docs/                       # Documentation and debugging notes

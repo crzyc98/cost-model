@@ -8,6 +8,7 @@ from datetime import datetime # Added for IRS limits
 import argparse # Keep argparse for input/output files
 import joblib # Import joblib for loading the model
 import numpy as np # Import numpy for np.where
+import logging
 
 # --- Define Scenario Configurations (Based on updates.md) ---
 
@@ -44,7 +45,12 @@ baseline_scenario = {
         'employer_match_formula': '50% up to 6%',
         'employer_non_elective_formula': '0%',
         'min_hours_worked': 1000,
-        'last_day_work_rule': True
+        'last_day_work_rule': True,
+        'match_change_response': {
+            'enabled': True,
+            'increase_probability': 1.0,
+            'increase_target': 'optimal'
+        }
     },
     'irs_limits': DEFAULT_IRS_LIMITS,
     'use_ml_turnover': True,
@@ -302,6 +308,7 @@ def run_scenario_simulation(scenario_name, scenario_config, start_census_df, bas
 # --- Main Execution --- 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description='Run retirement plan projection simulations for multiple scenarios.')
     parser.add_argument('input_csv', help='Path to the initial census CSV file.')
     parser.add_argument('--output', help='Optional base path/name for output Excel file (e.g., projection_results). Scenario name and .xlsx will be appended.')
