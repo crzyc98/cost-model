@@ -335,6 +335,15 @@ if __name__ == "__main__":
                     print(f"Saved results for scenario '{scenario_name}' to: {output_file}")
                 except Exception as e:
                     print(f"Error saving results for scenario '{scenario_name}' to {output_file}: {e}")
+            # NEW: save combined summary sheet for all scenarios
+            try:
+                combined_df = pd.concat(all_summary_results, names=['Scenario','Year']).reset_index()
+                combined_file = f"{base_output_path}_all_summaries.xlsx"
+                with pd.ExcelWriter(combined_file) as writer:
+                    combined_df.to_excel(writer, index=False, sheet_name='Comparison')
+                print(f"Saved combined summary to: {combined_file}")
+            except Exception as e:
+                print(f"Error saving combined summary: {e}")
         if args.raw_output:
             # Save raw agent-level data for each scenario
             for scenario_name, data_dict in all_raw_results.items():
