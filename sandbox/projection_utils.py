@@ -269,8 +269,8 @@ def project_census(
 
         # Apply Auto-Increase only if enabled
         if scenario_config.get('plan_rules', {}).get('auto_increase', {}).get('enabled', False):
-             # Apply auto-increase with proper configuration keys
-             current_df = apply_auto_increase(current_df, scenario_config, year_end_date.year, cap_rate=scenario_config['plan_rules']['auto_increase']['cap_rate'])
+             # Apply auto-increase per scenario config
+             current_df = apply_auto_increase(current_df, scenario_config, year_end_date.year)
 
         print(f"DEBUG: Before calculate_contributions - Type: {type(current_df)}")
         if current_df is not None:
