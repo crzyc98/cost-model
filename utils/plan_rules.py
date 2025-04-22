@@ -308,7 +308,8 @@ def apply_auto_increase(df, scenario_config, simulation_year):
     ai_config = plan_rules.get('auto_increase', {})
     ai_enabled = ai_config.get('enabled', False)
     ai_increase_rate = ai_config.get('increase_rate', 0.01) # Default 1% increase
-    ai_max_deferral_rate = ai_config.get('max_deferral_rate', 0.10) # Default 10% cap
+    # Use scenario cap_rate if provided, fallback to legacy max_deferral_rate or default 10%
+    ai_max_deferral_rate = ai_config.get('cap_rate', ai_config.get('max_deferral_rate', 0.10))
 
     if not ai_enabled:
         print("  Auto-increase is disabled for this scenario.")
@@ -330,22 +331,16 @@ def apply_auto_increase(df, scenario_config, simulation_year):
     if 'ai_enrolled' not in df.columns:
         df['ai_enrolled'] = False
 
-    # NEW: only include employees deferring above AE default rate
-    ae_rules = plan_rules.get('auto_enrollment', {})
-    ae_default_rate = ae_rules.get('default_rate', 0.0)
-
     # Identify employees eligible for auto-increase:
     # - Must be Active
     # - Must be Participating
     # - Must NOT have opted out of AI
-    # - Must have a current deferral rate BELOW the max AI rate
-    # - Must be deferring above AE default rate (NEW)
+    # - Must have a current deferral rate BELOW the cap
     increase_mask = (
-         is_active &
-         (df['is_participating'] == True) &
-         (df['ai_opted_out'] == False) &
-         (df['deferral_rate'] < ai_max_deferral_rate) &
-         (df['deferral_rate'] > ae_default_rate)
+        is_active &
+        (df['is_participating'] == True) &
+        (df['ai_opted_out'] == False) &
+        (df['deferral_rate'] < ai_max_deferral_rate)
     )
     # NEW: mark AI enrollment for those flagged
     df.loc[increase_mask, 'ai_enrolled'] = True

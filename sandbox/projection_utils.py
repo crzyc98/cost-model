@@ -269,7 +269,8 @@ def project_census(
 
         # Apply Auto-Increase only if enabled
         if scenario_config.get('plan_rules', {}).get('auto_increase', {}).get('enabled', False):
-             current_df = apply_auto_increase(current_df, scenario_config, year_end_date.year) # Pass simulation_year (int)
+             # Apply auto-increase with proper configuration keys
+             current_df = apply_auto_increase(current_df, scenario_config, year_end_date.year, cap_rate=scenario_config['plan_rules']['auto_increase']['cap_rate'])
 
         print(f"DEBUG: Before calculate_contributions - Type: {type(current_df)}")
         if current_df is not None:
@@ -284,6 +285,27 @@ def project_census(
         # Align terminated to same columns
         terminated_aligned = terminated_employees.reindex(columns=current_df.columns, fill_value=pd.NA)
         year_snapshot = pd.concat([terminated_aligned, current_df], ignore_index=True)
+        # Classify status into five categories per year
+        conditions = [
+            # Previously terminated (before this period)
+            year_snapshot['termination_date'].notna() & (year_snapshot['termination_date'] < year_start_date),
+            # Experienced employees terminating this period
+            year_snapshot['termination_date'].notna() & (year_snapshot['termination_date'] >= year_start_date) & (year_snapshot['hire_date'] < year_start_date),
+            # New hires terminating this period
+            year_snapshot['termination_date'].notna() & (year_snapshot['termination_date'] >= year_start_date) & (year_snapshot['hire_date'] >= year_start_date),
+            # Continuous active (hired before period, not terminated)
+            year_snapshot['termination_date'].isna() & (year_snapshot['hire_date'] < year_start_date),
+            # New hire active (hired this period, not terminated)
+            year_snapshot['termination_date'].isna() & (year_snapshot['hire_date'] >= year_start_date)
+        ]
+        choices = [
+            'Previously Terminated',
+            'Experienced Terminated',
+            'New Hire Terminated',
+            'Continuous Active',
+            'New Hire Active'
+        ]
+        year_snapshot['status_category'] = np.select(conditions, choices, default='Unknown')
         projected_data[year_num] = year_snapshot.copy()
         active_count = len(current_df)
         print(f"End of Year {current_sim_year} Active Headcount: {active_count}")
