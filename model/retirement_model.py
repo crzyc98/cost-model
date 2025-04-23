@@ -57,6 +57,7 @@ class RetirementPlanModel(mesa.Model):
                 "DeferralRate": lambda a: getattr(a, "deferral_rate", None),
                 "IsParticipating": lambda a: getattr(a, "is_participating", None),
                 "EmploymentStatus": lambda a: getattr(a, "employment_status", None),
+                "Age": lambda a: a._calculate_age(pd.Timestamp(f"{a.model.year}-12-31")),
                 "TenureMonths": lambda a: a._calculate_tenure_months(pd.Timestamp(f"{a.model.year}-12-31")),
                 "Cohort": lambda a: (
                     "0-1yr" if a._calculate_tenure_months(pd.Timestamp(f"{a.model.year}-12-31")) <= 12

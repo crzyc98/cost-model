@@ -252,6 +252,11 @@ def project_census(
             new_hires_df = new_hires_df.reindex(columns=current_df.columns, fill_value=pd.NA)
             current_df = pd.concat([current_df, new_hires_df], ignore_index=True)
             print(f"Generated {len(new_hires_df)} new hires.")
+            # Recalculate age and tenure for all employees (including new hires)
+            if 'birth_date' in current_df.columns:
+                current_df['age'] = calculate_age(current_df['birth_date'], year_end_date)
+            if 'hire_date' in current_df.columns:
+                current_df['tenure'] = calculate_tenure(current_df['hire_date'], year_end_date)
         
         print("Applying Plan Rule Engine...")
         # --- Apply Plan Rules --- 
