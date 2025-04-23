@@ -132,9 +132,14 @@ def load_and_initialize_data(csv_path):
         if 'deferral_rate' not in df.columns:
             raw_pct = pd.to_numeric(df['pre_tax_deferral_percentage'], errors='coerce')
             df['deferral_rate'] = raw_pct.where(raw_pct <= 1, raw_pct / 100.0).fillna(0.0)
+            # Seed participation flags for any existing deferral_rate > 0
+            df['is_participating'] = df['deferral_rate'] > 0
     elif 'deferral_rate' not in df.columns:
         df['deferral_rate'] = 0.0 # Default if no source column
         print("Warning: 'pre_tax_deferral_percentage' or 'deferral_rate' not found. Initializing deferral rate to 0.")
+    else:
+        # Seed participation flags for any existing deferral_rate > 0
+        df['is_participating'] = df['deferral_rate'] > 0
 
     # Ensure essential columns exist for projection logic (add more as identified)
     required_cols = ['ssn', 'birth_date', 'hire_date', 'gross_compensation']
