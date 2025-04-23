@@ -120,6 +120,12 @@ def load_and_initialize_data(csv_path):
     if 'is_participating' not in df.columns: df['is_participating'] = False # Placeholder
     if 'ae_opted_out' not in df.columns: df['ae_opted_out'] = False
     if 'ai_opted_out' not in df.columns: df['ai_opted_out'] = False
+    # make sure we always have an AI‑enrollment flag
+    if 'ai_enrolled' not in df.columns:
+        df['ai_enrolled'] = False
+    # make sure we always have an AE‑enrollment flag
+    if 'ae_enrolled' not in df.columns:
+        df['ae_enrolled'] = False
     # Initial deferral rate from percentage column
     if 'pre_tax_deferral_percentage' in df.columns:
         # Convert percentage or fraction to rate (<=1 treated as fraction, >1 as percent)
@@ -308,7 +314,7 @@ def run_scenario_simulation(scenario_name, scenario_config, start_census_df, bas
 # --- Main Execution --- 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
     parser = argparse.ArgumentParser(description='Run retirement plan projection simulations for multiple scenarios.')
     parser.add_argument('input_csv', help='Path to the initial census CSV file.')
     parser.add_argument('--output', help='Optional base path/name for output Excel file (e.g., projection_results). Scenario name and .xlsx will be appended.')

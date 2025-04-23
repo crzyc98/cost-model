@@ -28,7 +28,10 @@ def apply(df, plan_rules, simulation_year):
 
     # Determine mask: active participating and not opted out and below cap
     is_active = (df['status'] == 'Active') if 'status' in df.columns else True
-    mask = is_active & df.get('is_participating', False) & (~df['ai_opted_out']) & (df['deferral_rate'] < ai_max_deferral_rate)
+    # Ensure participation mask is a Series, not a scalar False
+    participating = df['is_participating'] if 'is_participating' in df.columns else pd.Series(False, index=df.index)
+    mask = is_active & participating & (~df['ai_opted_out']) & (df['deferral_rate'] < ai_max_deferral_rate)
+    logger.debug(f"AI candidates: {mask.sum()} / {len(df)}")
 
     # Optionally restrict to new hires
     if ai_config.get('apply_to_new_hires_only', False):

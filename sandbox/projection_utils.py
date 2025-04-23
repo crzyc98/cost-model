@@ -260,7 +260,12 @@ def project_census(
         
         # Apply Auto-Enrollment only if enabled
         if scenario_config.get('plan_rules', {}).get('auto_enrollment', {}).get('enabled', False):
-            current_df = apply_auto_enrollment(current_df, scenario_config, year_start_date, year_end_date)
+            current_df = apply_auto_enrollment(
+                current_df,
+                scenario_config['plan_rules'],
+                year_start_date,
+                year_end_date
+            )
 
         # Apply Deferral Response to Plan Changes (Optional Feature) - Check if enabled/configured
         # Assuming logic for this function exists and config keys are defined if used.
@@ -270,7 +275,11 @@ def project_census(
         # Apply Auto-Increase only if enabled
         if scenario_config.get('plan_rules', {}).get('auto_increase', {}).get('enabled', False):
              # Apply auto-increase per scenario config
-             current_df = apply_auto_increase(current_df, scenario_config, year_end_date.year)
+             current_df = apply_auto_increase(
+                 current_df,
+                 scenario_config['plan_rules'],
+                 year_end_date.year
+             )
              # Debug AI: report flagged count and sample rates
              ai_count = current_df['ai_enrolled'].sum() if 'ai_enrolled' in current_df.columns else 0
              print(f"  DEBUG AI: total ai_enrolled: {ai_count}")
