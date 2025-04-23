@@ -35,4 +35,7 @@ env/
 
 # Output
 output/
+
+# Ignore Excel files
 *.xlsx
+*.xls
