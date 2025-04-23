@@ -35,3 +35,4 @@ env/
 
 # Output
 output/
+*.xlsx
