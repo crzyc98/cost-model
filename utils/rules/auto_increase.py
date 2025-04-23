@@ -26,19 +26,30 @@ def apply(df, plan_rules, simulation_year):
     else:
         df['ai_enrolled'] = df['ai_enrolled'].fillna(False)
 
-    # Determine mask: active participating and not opted out and below cap
+    # Determine mask: by default only active participants
     is_active = (df['status'] == 'Active') if 'status' in df.columns else True
-    # Ensure participation mask is a Series, not a scalar False
     participating = df['is_participating'] if 'is_participating' in df.columns else pd.Series(False, index=df.index)
-    mask = is_active & participating & (~df['ai_opted_out']) & (df['deferral_rate'] < ai_max_deferral_rate)
-    logger.debug(f"AI candidates: {mask.sum()} / {len(df)}")
-
-    # Optionally restrict to new hires
+    # Build mask depending on new-hire-only flag
     if ai_config.get('apply_to_new_hires_only', False):
+        # Include new hires from this year regardless of prior participation
         start = pd.Timestamp(f"{simulation_year}-01-01")
         end = pd.Timestamp(f"{simulation_year}-12-31")
         hire_dates = pd.to_datetime(df.get('hire_date', pd.NaT), errors='coerce')
-        mask &= (hire_dates >= start) & (hire_dates <= end)
+        mask = (
+            is_active &
+            (~df['ai_opted_out']) &
+            (df['deferral_rate'] < ai_max_deferral_rate) &
+            (hire_dates >= start) &
+            (hire_dates <= end)
+        )
+    else:
+        mask = (
+            is_active &
+            participating &
+            (~df['ai_opted_out']) &
+            (df['deferral_rate'] < ai_max_deferral_rate)
+        )
+    logger.debug(f"AI candidates: {mask.sum()} / {len(df)}")
 
     # Apply increase
     if mask.any():
