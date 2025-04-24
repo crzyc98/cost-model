@@ -207,7 +207,13 @@ def project_census(
         if termination_probs is None: # Triggered if ML disabled, failed, or wasn't requested
             print("Using rule-based turnover scoring...")
             # (Ensure age/tenure were calculated above for rule-based too)
-            current_df = apply_rule_based_turnover(current_df, termination_rate, year_end_date)
+            # Apply rule-based terminations with random dates across the year
+            current_df = apply_rule_based_turnover(
+                current_df,
+                termination_rate,
+                year_start_date,
+                year_end_date
+            )
             # Count how many were actually terminated by the rule-based logic
             # This assumes apply_terminations adds 'termination_date'
             term_count_this_year = current_df['termination_date'].notna().sum() - start_df['termination_date'].notna().sum() if 'termination_date' in start_df.columns else current_df['termination_date'].notna().sum()

@@ -110,8 +110,19 @@ def apply_contributions(df, scenario_config, simulation_year, year_start_date, y
     if calc_mask.any():
         # --- Calculate Plan Year Compensation & Capped Compensation ---
         # Use gross_compensation for simplicity (or refine if needed)
+        # Full-year compensation for active & eligible
         df.loc[calc_mask, 'plan_year_compensation'] = df.loc[calc_mask, 'gross_compensation'].fillna(0)
         df.loc[calc_mask, 'capped_compensation'] = np.minimum(df.loc[calc_mask, 'plan_year_compensation'], statutory_comp_limit)
+        # Prorate for terminated employees within the year
+        term_mask = (df['status'] == 'Terminated') & df['termination_date'].notna() \
+            & df['termination_date'].between(year_start_date, year_end_date)
+        if term_mask.any():
+            total_days = (year_end_date - year_start_date).days
+            days_worked = (df.loc[term_mask, 'termination_date'] - year_start_date).dt.days.clip(lower=0, upper=total_days)
+            frac = days_worked / total_days
+            # Prorate compensation and cap
+            df.loc[term_mask, 'plan_year_compensation'] = df.loc[term_mask, 'gross_compensation'] * frac
+            df.loc[term_mask, 'capped_compensation'] = np.minimum(df.loc[term_mask, 'plan_year_compensation'], statutory_comp_limit * frac)
 
         # --- Calculate Employee Deferrals (including Catch-up) ---
         # Calculate age only where needed

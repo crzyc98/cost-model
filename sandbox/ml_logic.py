@@ -5,7 +5,7 @@ Functions related to the machine learning turnover model.
 import pandas as pd
 import numpy as np
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 
 # --- ML Dependencies ---
@@ -270,13 +270,14 @@ def apply_terminations(df, terminated_ids, termination_date):
         df.loc[terminated_ids, 'status'] = 'Terminated'
     return df
 
-def apply_rule_based_turnover(df, termination_rate, termination_date):
-    """Applies deterministic termination based on rule-based scores and a target rate.
+def apply_rule_based_turnover(df, termination_rate, period_start_date, period_end_date):
+    """Applies deterministic termination with randomized dates over the year.
 
     Args:
         df (pd.DataFrame): The census dataframe (must have age, tenure, gross_compensation).
         termination_rate (float): The target gross termination rate (e.g., 0.10 for 10%).
-        termination_date (pd.Timestamp): The date of termination.
+        period_start_date (pd.Timestamp): The start date of the period.
+        period_end_date (pd.Timestamp): The end date of the period.
 
     Returns:
         pd.DataFrame: The updated dataframe with terminations applied.
@@ -290,11 +291,10 @@ def apply_rule_based_turnover(df, termination_rate, termination_date):
         print("Warning: Missing columns required for rule-based scoring. Skipping rule-based termination.")
         return df
 
-    # Calculate age and tenure for scoring
-    # Avoid modifying df directly if it's just for scoring
+    # Calculate age and tenure for scoring (as of period_end_date)
     temp_df = df.copy()
-    temp_df['age_for_scoring'] = calculate_age(temp_df['birth_date'], termination_date)
-    temp_df['tenure_for_scoring'] = calculate_tenure(temp_df['hire_date'], termination_date)
+    temp_df['age_for_scoring'] = calculate_age(temp_df['birth_date'], period_end_date)
+    temp_df['tenure_for_scoring'] = calculate_tenure(temp_df['hire_date'], period_end_date)
     
     comp_p25 = temp_df['gross_compensation'].quantile(0.25)
     rule_based_scores = temp_df.apply(
@@ -314,7 +314,12 @@ def apply_rule_based_turnover(df, termination_rate, termination_date):
     rule_based_scores.index = df.index 
     terminating_indices = rule_based_scores.nlargest(target_terminations).index
 
-    # Apply terminations
-    df = apply_terminations(df, terminating_indices, termination_date)
-    
+    # Assign terminations at random dates between start and end of period
+    total_days = (period_end_date - period_start_date).days
+    # Draw random offsets
+    offsets = np.random.randint(0, total_days+1, size=len(terminating_indices))
+    for idx, offset in zip(terminating_indices, offsets):
+        term_date = period_start_date + timedelta(days=int(offset))
+        df.loc[idx, 'termination_date'] = term_date
+        df.loc[idx, 'status'] = 'Terminated'
     return df
