@@ -74,9 +74,9 @@ def apply_contributions(df, scenario_config, simulation_year, year_start_date, y
     # Ensure deferral_rate is numeric
     df['deferral_rate'] = pd.to_numeric(df['deferral_rate'], errors='coerce').fillna(0.0)
 
-    # --- Filter for Active & Eligible Employees Only ---
-    # Align status check with determine_eligibility (handle 'Unknown' from NaN fill)
-    active_mask = df['status'].isin(['Active', 'Unknown'])
+    # --- Filter for Eligible Employees (including terminated for prorated contributions) ---
+    # Include Active, Unknown, and Terminated to calculate prorated contributions
+    active_mask = df['status'].isin(['Active', 'Unknown', 'Terminated'])
     # Ensure is_eligible column exists and is boolean
     if 'is_eligible' not in df.columns:
         print("  Warning: 'is_eligible' column missing. Assuming all active employees are eligible for calculation.")
