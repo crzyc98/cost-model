@@ -76,6 +76,9 @@ def apply_contributions(df, scenario_config, simulation_year, year_start_date, y
 
     # --- Filter for Eligible Employees (including terminated for prorated contributions) ---
     # Include Active, Unknown, and Terminated to calculate prorated contributions
+    print("\nDEBUG: Status counts before contribution calculation:")
+    print(df['status'].value_counts())
+    print("DEBUG: Number of 'Terminated' employees:", (df['status'] == 'Terminated').sum())
     active_mask = df['status'].isin(['Active', 'Unknown', 'Terminated'])
     # Ensure is_eligible column exists and is boolean
     if 'is_eligible' not in df.columns:
@@ -113,16 +116,38 @@ def apply_contributions(df, scenario_config, simulation_year, year_start_date, y
         # Full-year compensation for active & eligible
         df.loc[calc_mask, 'plan_year_compensation'] = df.loc[calc_mask, 'gross_compensation'].fillna(0)
         df.loc[calc_mask, 'capped_compensation'] = np.minimum(df.loc[calc_mask, 'plan_year_compensation'], statutory_comp_limit)
-        # Prorate for terminated employees within the year
+
+        # --- Prorate for terminated employees within the year (robust logging) ---
+        import logging
+        logger = logging.getLogger(__name__)
         term_mask = (df['status'] == 'Terminated') & df['termination_date'].notna() \
             & df['termination_date'].between(year_start_date, year_end_date)
         if term_mask.any():
-            total_days = (year_end_date - year_start_date).days
-            days_worked = (df.loc[term_mask, 'termination_date'] - year_start_date).dt.days.clip(lower=0, upper=total_days)
-            frac = days_worked / total_days
-            # Prorate compensation and cap
-            df.loc[term_mask, 'plan_year_compensation'] = df.loc[term_mask, 'gross_compensation'] * frac
-            df.loc[term_mask, 'capped_compensation'] = np.minimum(df.loc[term_mask, 'plan_year_compensation'], statutory_comp_limit * frac)
+            total_days = (year_end_date - year_start_date).days + 1
+            # Ensure termination_date is datetime
+            df.loc[term_mask, 'termination_date'] = pd.to_datetime(df.loc[term_mask, 'termination_date'])
+            days_worked = (df.loc[term_mask, 'termination_date'] - year_start_date).dt.days + 1
+            days_worked = days_worked.clip(lower=0, upper=total_days)
+            proration_factor = days_worked / total_days
+            # Logging examples
+            logger.debug(f"Termination proration debug output:")
+            debug_rows = df[term_mask].copy()
+            debug_rows['days_worked'] = days_worked
+            debug_rows['total_days'] = total_days
+            debug_rows['proration_factor'] = proration_factor
+            debug_rows['gross_compensation'] = df.loc[term_mask, 'gross_compensation']
+            debug_rows['plan_year_compensation_new'] = debug_rows['gross_compensation'] * debug_rows['proration_factor']
+            for i, row in debug_rows.head(5).iterrows():
+                logger.debug(
+                    f"Row {i}: term_date={row['termination_date'].date()}, gross_comp={row['gross_compensation']:.2f}, "
+                    f"days_worked={row['days_worked']}, total_days={row['total_days']}, "
+                    f"proration_factor={row['proration_factor']:.4f}, plan_year_compensation_new={row['plan_year_compensation_new']:.2f}"
+                )
+            # Prorate compensation and cap (avoid chained assignment)
+            df.loc[term_mask, 'plan_year_compensation'] = debug_rows['plan_year_compensation_new']
+            df.loc[term_mask, 'capped_compensation'] = np.minimum(df.loc[term_mask, 'plan_year_compensation'], statutory_comp_limit * proration_factor)
+            logger.info(f"Prorated plan_year_compensation for {term_mask.sum()} terminated participants.")
+            logger.debug(f"Proration factor stats: min={proration_factor.min():.4f}, max={proration_factor.max():.4f}, mean={proration_factor.mean():.4f}")
 
         # --- Calculate Employee Deferrals (including Catch-up) ---
         # Calculate age only where needed
@@ -240,6 +265,14 @@ def apply_contributions(df, scenario_config, simulation_year, year_start_date, y
     return df # <-- Added: Explicitly return the modified DataFrame
 
 def calculate_contributions(df, scenario_config, simulation_year, year_start_date, year_end_date):
+    print("\n=== DEBUG: calculate_contributions() called ===")
+    if 'status' in df.columns:
+        print("DEBUG: status value counts:\n", df['status'].value_counts())
+        print("DEBUG: Any 'Terminated' in DataFrame?", (df['status'] == 'Terminated').any())
+    else:
+        print("DEBUG: 'status' column not present in DataFrame!")
+    print("=== END DEBUG ===\n")
+
     return apply_contributions(df, scenario_config, simulation_year, year_start_date, year_end_date)
 
 def apply_plan_change_deferral_response(df, current_scenario_config, baseline_scenario_config, simulation_year, start_year):

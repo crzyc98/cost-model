@@ -222,12 +222,20 @@ def project_census(
 
 
         # --- Post-Termination Processing ---
-        terminated_employees = current_df[current_df['termination_date'].notna()].copy()
-        continuing_employees = current_df[current_df['termination_date'].isna()].copy()
-        term_count_actual = len(terminated_employees)
-        print(f"Identified {term_count_actual} terminations. Continuing: {len(continuing_employees)}")
-        # Use only continuing employees for next iteration
-        current_df = continuing_employees.copy()
+        # Employees who terminated before the current year
+        terminated_prior = current_df[(current_df['termination_date'].notna()) & (current_df['termination_date'] < year_start_date)].copy()
+        # Employees who are active at year-end or terminated during this year
+        active_or_terminated_this_year = current_df[
+            (current_df['termination_date'].isna()) |
+            ((current_df['termination_date'] >= year_start_date) & (current_df['termination_date'] <= year_end_date))
+        ].copy()
+        term_count_actual = ((current_df['termination_date'].notna()) & (current_df['termination_date'] >= year_start_date) & (current_df['termination_date'] <= year_end_date)).sum()
+        print(f"Identified {term_count_actual} terminations during {current_sim_year}. Continuing: {active_or_terminated_this_year['termination_date'].isna().sum()}")
+        print("DEBUG: Status counts after termination logic (before filtering):")
+        print(active_or_terminated_this_year['status'].value_counts())
+        print("DEBUG: Number of 'Terminated' employees (post-termination):", (active_or_terminated_this_year['status'] == 'Terminated').sum())
+        # Use this DataFrame for plan rules and contributions
+        current_df = active_or_terminated_this_year.copy()
 
         # 3. Generate New Hires
         target_headcount = len(start_df) # Aim to return to original size (simple assumption)
@@ -321,6 +329,8 @@ def project_census(
         current_df = calculate_contributions(current_df, scenario_config, year_end_date.year, year_start_date, year_end_date)
 
         # --- Snapshot Yearly Results with Terminations Included ---
+        # Define terminated_employees as those who terminated during this year
+        terminated_employees = current_df[(current_df['termination_date'].notna()) & (current_df['termination_date'] >= year_start_date) & (current_df['termination_date'] <= year_end_date)].copy()
         # Align terminated to same columns
         terminated_aligned = terminated_employees.reindex(columns=current_df.columns, fill_value=pd.NA)
         year_snapshot = pd.concat([terminated_aligned, current_df], ignore_index=True)

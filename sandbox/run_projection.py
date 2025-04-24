@@ -319,7 +319,20 @@ def run_scenario_simulation(scenario_name, scenario_config, start_census_df, bas
 # --- Main Execution --- 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    # Logging setup: writes all logs to 'projection.log' and also shows WARNING+ in terminal
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename='projection.log',  # Log file name
+        filemode='w',               # Overwrite log each run
+        format='%(asctime)s %(levelname)s:%(message)s'
+    )
+    # Optional: also show WARNING+ in terminal
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING)
+    formatter = logging.Formatter('%(levelname)s: %(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+
     parser = argparse.ArgumentParser(description='Run retirement plan projection simulations for multiple scenarios.')
     parser.add_argument('input_csv', help='Path to the initial census CSV file.')
     parser.add_argument('--output', help='Optional base path/name for output Excel file (e.g., projection_results). Scenario name and .xlsx will be appended.')
