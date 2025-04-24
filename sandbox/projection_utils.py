@@ -278,20 +278,32 @@ def project_census(
         #    current_df = apply_plan_change_deferral_response(current_df, scenario_config, baseline_scenario_config, year_end_date)
 
         # Apply Auto-Increase only if enabled
-        if scenario_config.get('plan_rules', {}).get('auto_increase', {}).get('enabled', False):
-             # Apply auto-increase per scenario config
-             current_df = apply_auto_increase(
-                 current_df,
-                 scenario_config['plan_rules'],
-                 year_end_date.year
-             )
-             # Debug AI: report flagged count and sample rates
-             ai_count = current_df['ai_enrolled'].sum() if 'ai_enrolled' in current_df.columns else 0
-             print(f"  DEBUG AI: total ai_enrolled: {ai_count}")
-             if ai_count > 0:
-                 # Ensure ai_enrolled mask has no NA values
-                 sample_rates = current_df.loc[current_df['ai_enrolled'].fillna(False), 'deferral_rate'].head(5).tolist()
-                 print(f"  DEBUG AI: sample ai_enrolled deferral rates: {sample_rates}")
+        ai_cfg = scenario_config.get('plan_rules', {}).get('auto_increase', {})
+        if ai_cfg.get('enabled', False):
+            # ensure ai_enrolled column exists
+            if 'ai_enrolled' not in current_df.columns:
+                current_df['ai_enrolled'] = False
+            # initial AI enrollment
+            if ai_cfg.get('apply_to_new_hires_only', False):
+                # flag employees hired this year
+                mask_new = current_df['hire_date'].dt.year == year_end_date.year
+                current_df.loc[mask_new, 'ai_enrolled'] = True
+            else:
+                # flag all eligible employees
+                current_df.loc[current_df['is_eligible'], 'ai_enrolled'] = True
+            # Apply auto-increase per scenario config
+            current_df = apply_auto_increase(
+                current_df,
+                scenario_config['plan_rules'],
+                year_end_date.year
+            )
+            # Debug AI: report flagged count and sample rates
+            ai_count = current_df['ai_enrolled'].sum() if 'ai_enrolled' in current_df.columns else 0
+            print(f"  DEBUG AI: total ai_enrolled: {ai_count}")
+            if ai_count > 0:
+                # Ensure ai_enrolled mask has no NA values
+                sample_rates = current_df.loc[current_df['ai_enrolled'].fillna(False), 'deferral_rate'].head(5).tolist()
+                print(f"  DEBUG AI: sample ai_enrolled deferral rates: {sample_rates}")
 
         print(f"DEBUG: Before calculate_contributions - Type: {type(current_df)}")
         if current_df is not None:
