@@ -78,20 +78,21 @@ def project_census(
     # Determine the actual starting date for the loop based on config start_year
     # Assume the input df's date is the end of the year *before* the projection starts.
     last_plan_year_end_date = pd.Timestamp(f"{start_year - 1}-12-31")
-    # Warm-start: pull prior-year terminations from initial census
-    start_prev_year = start_year - 1
+    
+    # --- Warm-start distributions from initial census ---
     census = start_df.copy()
-    baseline_term_mask = (
-        census['termination_date'].notna() &
-        census['termination_date'].between(
-            pd.Timestamp(f"{start_prev_year}-01-01"),
-            pd.Timestamp(f"{start_prev_year}-12-31")
-        )
-    )
-    prev_terms = census.loc[baseline_term_mask, 'plan_year_compensation']
-    if prev_terms.empty:
-        prev_terms = census.loc[census['status'] == 'Active', 'plan_year_compensation']
-    previous_year_terms = prev_terms * (1 + comp_increase_rate)
+    py = start_year - 1
+    # Hires in prior year
+    hire_mask0 = census['hire_date'].between(f"{py}-01-01", f"{py}-12-31")
+    prev_hire_salaries = census.loc[hire_mask0, 'gross_compensation'].dropna()
+    if prev_hire_salaries.empty:
+        prev_hire_salaries = census['gross_compensation'].dropna()
+    # Terms in prior year
+    term_mask0 = census['termination_date'].between(f"{py}-01-01", f"{py}-12-31")
+    prev_term_salaries = census.loc[term_mask0, 'gross_compensation'].dropna()
+    if prev_term_salaries.empty:
+        prev_term_salaries = census['gross_compensation'].dropna()
+    # These will be updated each year
 
     # Load ML model and features if specified
     if use_ml_turnover and ml_model_path and model_features_path and ML_LIBS_AVAILABLE:
@@ -171,6 +172,12 @@ def project_census(
             current_df.loc[mask_others, 'gross_compensation'] *= (1 + comp_increase_rate)
         else:
             print("Warning: 'gross_compensation' column not found. Skipping comp increase.")
+
+        # --- Sample compensation for terminations from previous year's term salary distribution ---
+        term_here = current_df['termination_date'].between(year_start_date, year_end_date)
+        if term_here.any() and not prev_term_salaries.empty:
+            draws = np.random.choice(prev_term_salaries.values, size=term_here.sum(), replace=True)
+            current_df.loc[term_here, 'gross_compensation'] = draws
 
         # === Termination Logic ===
         term_count_this_year = 0
@@ -306,6 +313,10 @@ def project_census(
                 max_working_age=max_working_age,
                 scenario_config=scenario_config # Pass full config for flexibility
             )
+            # --- Sample new hire comp from prev_hire_salaries ---
+            if not prev_hire_salaries.empty:
+                draws = np.random.choice(prev_hire_salaries.values, size=len(new_hires_df), replace=True)
+                new_hires_df['gross_compensation'] = draws
             # Ensure columns match before concatenating
             new_hires_df = new_hires_df.reindex(columns=current_df.columns, fill_value=pd.NA)
             current_df = pd.concat([current_df, new_hires_df], ignore_index=True)
@@ -368,14 +379,6 @@ def project_census(
         else:
             print("DEBUG: Before calculate_contributions - current_df is None!")
         assert current_df is not None, "current_df became None before calculate_contributions call!"
-        # Sample full-year salary for this year's terminations from last year's term distribution
-        term_mask = (
-            current_df['termination_date'].notna() &
-            current_df['termination_date'].between(year_start_date, year_end_date)
-        )
-        if term_mask.any() and previous_year_terms is not None and not previous_year_terms.empty:
-            draws = np.random.choice(previous_year_terms.values, size=term_mask.sum(), replace=True)
-            current_df.loc[term_mask, 'gross_compensation'] = draws
         # Calculate contributions (deferrals, match, NEC)
         current_df = calculate_contributions(current_df, scenario_config, year_end_date.year, year_start_date, year_end_date)
 
@@ -415,6 +418,16 @@ def project_census(
         projected_data[year_num] = year_snapshot.copy()
         active_count = len(current_df)
         print(f"End of Year {current_sim_year} Active Headcount: {active_count}")
+
+        # --- Refresh distributions for next iteration ---
+        # For hires: use this year's new hires' compensation (before proration)
+        new_hires_this_year = current_df[(current_df['hire_date'] >= year_start_date) & (current_df['hire_date'] <= year_end_date)]
+        if not new_hires_this_year.empty:
+            prev_hire_salaries = new_hires_this_year['gross_compensation'].dropna()
+        # For terms: use this year's terminated employees' compensation (before proration)
+        terms_this_year = current_df[(current_df['termination_date'] >= year_start_date) & (current_df['termination_date'] <= year_end_date)]
+        if not terms_this_year.empty:
+            prev_term_salaries = terms_this_year['gross_compensation'].dropna()
 
     print("\n--- Projection Complete ---")
     return projected_data
