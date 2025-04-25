@@ -78,6 +78,20 @@ def project_census(
     # Determine the actual starting date for the loop based on config start_year
     # Assume the input df's date is the end of the year *before* the projection starts.
     last_plan_year_end_date = pd.Timestamp(f"{start_year - 1}-12-31")
+    # Warm-start: pull prior-year terminations from initial census
+    start_prev_year = start_year - 1
+    census = start_df.copy()
+    baseline_term_mask = (
+        census['termination_date'].notna() &
+        census['termination_date'].between(
+            pd.Timestamp(f"{start_prev_year}-01-01"),
+            pd.Timestamp(f"{start_prev_year}-12-31")
+        )
+    )
+    prev_terms = census.loc[baseline_term_mask, 'plan_year_compensation']
+    if prev_terms.empty:
+        prev_terms = census.loc[census['status'] == 'Active', 'plan_year_compensation']
+    previous_year_terms = prev_terms * (1 + comp_increase_rate)
 
     # Load ML model and features if specified
     if use_ml_turnover and ml_model_path and model_features_path and ML_LIBS_AVAILABLE:
@@ -115,6 +129,20 @@ def project_census(
         year_end_date = pd.Timestamp(f"{current_sim_year}-12-31")
         print(f"\n--- Projecting Year {year_num} ({current_sim_year}) ---")
 
+        # Capture previous year's terminations comp distribution
+        if year_num > 1:
+            prev_snapshot = projected_data.get(year_num - 1)
+            if prev_snapshot is not None:
+                prev_terms = prev_snapshot[
+                    (prev_snapshot['status'] == 'Terminated') &
+                    prev_snapshot['termination_date'].between(
+                        pd.Timestamp(f"{current_sim_year-1}-01-01"),
+                        pd.Timestamp(f"{current_sim_year-1}-12-31")
+                    )
+                ]['plan_year_compensation']
+                # Apply comp increase for each new year
+                previous_year_terms = prev_terms * (1 + comp_increase_rate)
+
         # 0. Check if current_df is empty (e.g., all terminated)
         if current_df.empty:
             print(f"Warning: No employees remaining at the start of year {current_sim_year}. Stopping projection for this scenario.")
@@ -123,10 +151,26 @@ def project_census(
         # 1. Apply Comp Increase to continuing employees
         # Ensure column exists and is numeric
         if 'gross_compensation' in current_df.columns:
-             current_df['gross_compensation'] = pd.to_numeric(current_df['gross_compensation'], errors='coerce').fillna(0)
-             current_df['gross_compensation'] *= (1 + comp_increase_rate)
+            current_df['gross_compensation'] = pd.to_numeric(current_df['gross_compensation'], errors='coerce').fillna(0)
+            # 1a. Identify second-year employees and apply distribution if provided
+            current_df['tenure'] = calculate_tenure(current_df['hire_date'], year_end_date)
+            mask_2nd_year = current_df['tenure'] == 1
+            dist = scenario_config.get('second_year_compensation_dist', {})
+            if mask_2nd_year.any():
+                if 'mean' in dist and 'std' in dist:
+                    draws = np.random.normal(dist['mean'], dist['std'], size=mask_2nd_year.sum())
+                    current_df.loc[mask_2nd_year, 'gross_compensation'] = draws
+                elif 'samples' in dist:
+                    draws = np.random.choice(dist['samples'], size=mask_2nd_year.sum())
+                    current_df.loc[mask_2nd_year, 'gross_compensation'] = draws
+                else:
+                    # Fallback to comp increase for second-year hires
+                    current_df.loc[mask_2nd_year, 'gross_compensation'] *= (1 + comp_increase_rate)
+            # 1b. Apply comp increase to all other employees
+            mask_others = ~mask_2nd_year
+            current_df.loc[mask_others, 'gross_compensation'] *= (1 + comp_increase_rate)
         else:
-             print("Warning: 'gross_compensation' column not found. Skipping comp increase.")
+            print("Warning: 'gross_compensation' column not found. Skipping comp increase.")
 
         # === Termination Logic ===
         term_count_this_year = 0
@@ -274,7 +318,6 @@ def project_census(
         
         print("Applying Plan Rule Engine...")
         # --- Apply Plan Rules --- 
-        # Replace the single call with the sequence of rule functions
         current_df = determine_eligibility(current_df, scenario_config, year_end_date)
         
         # Apply Auto-Enrollment only if enabled
@@ -325,6 +368,14 @@ def project_census(
         else:
             print("DEBUG: Before calculate_contributions - current_df is None!")
         assert current_df is not None, "current_df became None before calculate_contributions call!"
+        # Sample full-year salary for this year's terminations from last year's term distribution
+        term_mask = (
+            current_df['termination_date'].notna() &
+            current_df['termination_date'].between(year_start_date, year_end_date)
+        )
+        if term_mask.any() and previous_year_terms is not None and not previous_year_terms.empty:
+            draws = np.random.choice(previous_year_terms.values, size=term_mask.sum(), replace=True)
+            current_df.loc[term_mask, 'gross_compensation'] = draws
         # Calculate contributions (deferrals, match, NEC)
         current_df = calculate_contributions(current_df, scenario_config, year_end_date.year, year_start_date, year_end_date)
 
@@ -334,6 +385,12 @@ def project_census(
         # Align terminated to same columns
         terminated_aligned = terminated_employees.reindex(columns=current_df.columns, fill_value=pd.NA)
         year_snapshot = pd.concat([terminated_aligned, current_df], ignore_index=True)
+        # --- De-duplicate by 'ssn' (keep last, i.e., the most recent record for each employee) ---
+        if 'ssn' in year_snapshot.columns:
+            before_dedup = len(year_snapshot)
+            year_snapshot = year_snapshot.drop_duplicates(subset=['ssn'], keep='last').reset_index(drop=True)
+            after_dedup = len(year_snapshot)
+            print(f"De-duplication: Dropped {before_dedup - after_dedup} duplicate rows based on 'ssn'.")
         # Classify status into five categories per year
         conditions = [
             # Previously terminated (before this period)
