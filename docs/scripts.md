@@ -50,21 +50,30 @@ Outputs year-by-year CSVs in `output/` by default.
 
 ---
 
-## sandbox/run_projection.py
+## scripts/run_projection.py
 Runs the scenario-driven retirement plan projection simulation and outputs scenario results to Excel.
 
 Usage:
 ```
-python3 sandbox/run_projection.py <input_census.csv> --output <output_prefix>
+python3 scripts/run_projection.py <input_census.csv> --config configs/config.yaml --output <output_prefix> [--raw-output]
 ```
 - `<input_census.csv>`: Path to the initial census CSV file.
+- `--config`: Path to the scenario YAML configuration file (see `configs/`).
 - `--output`: (optional) Base path/name for output Excel files (scenario name and .xlsx will be appended).
 - `--raw-output`: (optional) Save raw agent-level results to Excel.
 
 ### Logging
-- All logs (level DEBUG and above) are written to `projection.log` in the current directory for each run (overwrites each time).
+- All logs (level DEBUG and above) are written to `output/projection.log` in the output directory for each run (overwrites each time).
 - Warnings and errors (level WARNING and above) also appear in the terminal.
-- To change log verbosity or log file location, edit the `logging.basicConfig(...)` call in `sandbox/run_projection.py`.
+- To change log verbosity or log file location, edit the `logging.basicConfig(...)` call in `scripts/run_projection.py`.
+
+### Developer Note
+- Plan rule logic is now centralized in `utils/rules/`.
+- Use the new `utils/plan_rules.py` facade for all plan rule imports:
+  ```python
+  from utils.plan_rules import apply_eligibility, apply_auto_enrollment, ...
+  ```
+  This ensures all rule logic is modular, testable, and stable for future expansion.
 
 ---
 

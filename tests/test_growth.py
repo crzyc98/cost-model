@@ -1,9 +1,11 @@
+"""
+Tests for RetirementPlanModel (ABM) population growth and attrition logic.
+"""
 import pandas as pd
-import os
 from decimal import Decimal
 import statistics
 import pytest
-
+# Update this import if RetirementPlanModel has moved:
 from model.retirement_model import RetirementPlanModel
 
 

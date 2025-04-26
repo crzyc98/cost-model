@@ -1,295 +1,100 @@
-2025-04-24 21:27:44,205 INFO:Determining eligibility for 2025
-2025-04-24 21:27:44,420 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:44,420 INFO:Eligibility determined: 9456 eligible employees.
-2025-04-24 21:27:44,420 INFO:Applying Auto Enrollment for 2025
-2025-04-24 21:27:44,421 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:44,421 DEBUG:[Proactive AE] newly eligible count=978
-2025-04-24 21:27:44,422 DEBUG:[Proactive AE] candidate count=978
-2025-04-24 21:27:44,423 INFO:39 proactively enrolled at eligibility.
-2025-04-24 21:27:44,423 INFO:Targeting 839 employees for AE.
-2025-04-24 21:27:44,688 INFO:AE Applied: 756 enrolled, -673 opted out.
-2025-04-24 21:27:44,702 DEBUG:Termination proration debug output:
-2025-04-24 21:27:44,704 DEBUG:Row 0: term_date=2025-10-14, gross_comp=37931.55, days_worked=287, total_days=365, proration_factor=0.7863, plan_year_compensation_new=29825.63
-2025-04-24 21:27:44,704 DEBUG:Row 7: term_date=2025-07-29, gross_comp=42865.44, days_worked=210, total_days=365, proration_factor=0.5753, plan_year_compensation_new=24662.31
-2025-04-24 21:27:44,704 DEBUG:Row 11: term_date=2025-12-21, gross_comp=44788.39, days_worked=355, total_days=365, proration_factor=0.9726, plan_year_compensation_new=43561.31
-2025-04-24 21:27:44,704 DEBUG:Row 18: term_date=2025-04-01, gross_comp=203069.12, days_worked=91, total_days=365, proration_factor=0.2493, plan_year_compensation_new=50628.19
-2025-04-24 21:27:44,704 DEBUG:Row 19: term_date=2025-12-11, gross_comp=46494.96, days_worked=345, total_days=365, proration_factor=0.9452, plan_year_compensation_new=43947.29
-2025-04-24 21:27:44,704 INFO:Prorated plan_year_compensation for 800 terminated participants.
-2025-04-24 21:27:44,704 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4985
-2025-04-24 21:27:45,204 INFO:Determining eligibility for 2026
-2025-04-24 21:27:45,425 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:45,426 INFO:Eligibility determined: 9743 eligible employees.
-2025-04-24 21:27:45,426 INFO:Applying Auto Enrollment for 2026
-2025-04-24 21:27:45,426 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:45,426 DEBUG:[Proactive AE] newly eligible count=1017
-2025-04-24 21:27:45,427 DEBUG:[Proactive AE] candidate count=1008
-2025-04-24 21:27:45,428 INFO:59 proactively enrolled at eligibility.
-2025-04-24 21:27:45,428 INFO:Targeting 897 employees for AE.
-2025-04-24 21:27:45,726 INFO:AE Applied: 817 enrolled, -737 opted out.
-2025-04-24 21:27:45,741 DEBUG:Termination proration debug output:
-2025-04-24 21:27:45,743 DEBUG:Row 39: term_date=2026-01-22, gross_comp=192492.00, days_worked=22, total_days=365, proration_factor=0.0603, plan_year_compensation_new=11602.26
-2025-04-24 21:27:45,743 DEBUG:Row 120: term_date=2026-04-17, gross_comp=38476.66, days_worked=107, total_days=365, proration_factor=0.2932, plan_year_compensation_new=11279.46
-2025-04-24 21:27:45,743 DEBUG:Row 122: term_date=2026-10-11, gross_comp=35235.24, days_worked=284, total_days=365, proration_factor=0.7781, plan_year_compensation_new=27415.91
-2025-04-24 21:27:45,743 DEBUG:Row 128: term_date=2026-06-27, gross_comp=45016.44, days_worked=178, total_days=365, proration_factor=0.4877, plan_year_compensation_new=21953.22
-2025-04-24 21:27:45,743 DEBUG:Row 169: term_date=2026-04-09, gross_comp=36594.42, days_worked=99, total_days=365, proration_factor=0.2712, plan_year_compensation_new=9925.61
-2025-04-24 21:27:45,743 INFO:Prorated plan_year_compensation for 823 terminated participants.
-2025-04-24 21:27:45,743 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4858
-2025-04-24 21:27:46,273 INFO:Determining eligibility for 2027
-2025-04-24 21:27:46,494 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:46,494 INFO:Eligibility determined: 10026 eligible employees.
-2025-04-24 21:27:46,495 INFO:Applying Auto Enrollment for 2027
-2025-04-24 21:27:46,495 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:46,495 DEBUG:[Proactive AE] newly eligible count=1047
-2025-04-24 21:27:46,496 DEBUG:[Proactive AE] candidate count=1036
-2025-04-24 21:27:46,497 INFO:69 proactively enrolled at eligibility.
-2025-04-24 21:27:46,497 INFO:Targeting 896 employees for AE.
-2025-04-24 21:27:46,810 INFO:AE Applied: 808 enrolled, -720 opted out.
-2025-04-24 21:27:46,824 DEBUG:Termination proration debug output:
-2025-04-24 21:27:46,825 DEBUG:Row 120: term_date=2027-06-10, gross_comp=36292.29, days_worked=161, total_days=365, proration_factor=0.4411, plan_year_compensation_new=16008.38
-2025-04-24 21:27:46,825 DEBUG:Row 126: term_date=2027-12-21, gross_comp=46366.93, days_worked=355, total_days=365, proration_factor=0.9726, plan_year_compensation_new=45096.60
-2025-04-24 21:27:46,825 DEBUG:Row 167: term_date=2027-09-18, gross_comp=37692.25, days_worked=261, total_days=365, proration_factor=0.7151, plan_year_compensation_new=26952.54
-2025-04-24 21:27:46,825 DEBUG:Row 249: term_date=2027-01-15, gross_comp=38190.62, days_worked=15, total_days=365, proration_factor=0.0411, plan_year_compensation_new=1569.48
-2025-04-24 21:27:46,825 DEBUG:Row 281: term_date=2027-01-22, gross_comp=44937.22, days_worked=22, total_days=365, proration_factor=0.0603, plan_year_compensation_new=2708.54
-2025-04-24 21:27:46,826 INFO:Prorated plan_year_compensation for 847 terminated participants.
-2025-04-24 21:27:46,826 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5218
-2025-04-24 21:27:47,379 INFO:Determining eligibility for 2028
-2025-04-24 21:27:47,614 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:47,614 INFO:Eligibility determined: 10303 eligible employees.
-2025-04-24 21:27:47,614 INFO:Applying Auto Enrollment for 2028
-2025-04-24 21:27:47,615 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:47,615 DEBUG:[Proactive AE] newly eligible count=1068
-2025-04-24 21:27:47,615 DEBUG:[Proactive AE] candidate count=1052
-2025-04-24 21:27:47,616 INFO:71 proactively enrolled at eligibility.
-2025-04-24 21:27:47,616 INFO:Targeting 895 employees for AE.
-2025-04-24 21:27:47,907 INFO:AE Applied: 794 enrolled, -693 opted out.
-2025-04-24 21:27:47,921 DEBUG:Termination proration debug output:
-2025-04-24 21:27:47,922 DEBUG:Row 277: term_date=2028-03-08, gross_comp=46285.33, days_worked=68, total_days=366, proration_factor=0.1858, plan_year_compensation_new=8599.46
-2025-04-24 21:27:47,922 DEBUG:Row 297: term_date=2028-10-14, gross_comp=45302.48, days_worked=288, total_days=366, proration_factor=0.7869, plan_year_compensation_new=35647.86
-2025-04-24 21:27:47,923 DEBUG:Row 322: term_date=2028-10-18, gross_comp=47134.13, days_worked=292, total_days=366, proration_factor=0.7978, plan_year_compensation_new=37604.27
-2025-04-24 21:27:47,923 DEBUG:Row 351: term_date=2028-09-19, gross_comp=49560.65, days_worked=263, total_days=366, proration_factor=0.7186, plan_year_compensation_new=35613.26
-2025-04-24 21:27:47,923 DEBUG:Row 408: term_date=2028-06-12, gross_comp=51808.01, days_worked=164, total_days=366, proration_factor=0.4481, plan_year_compensation_new=23214.52
-2025-04-24 21:27:47,923 INFO:Prorated plan_year_compensation for 872 terminated participants.
-2025-04-24 21:27:47,923 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5074
-2025-04-24 21:27:48,467 INFO:Determining eligibility for 2029
-2025-04-24 21:27:48,707 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:48,708 INFO:Eligibility determined: 10640 eligible employees.
-2025-04-24 21:27:48,708 INFO:Applying Auto Enrollment for 2029
-2025-04-24 21:27:48,708 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:48,708 DEBUG:[Proactive AE] newly eligible count=1115
-2025-04-24 21:27:48,709 DEBUG:[Proactive AE] candidate count=1094
-2025-04-24 21:27:48,710 INFO:48 proactively enrolled at eligibility.
-2025-04-24 21:27:48,710 INFO:Targeting 965 employees for AE.
-2025-04-24 21:27:49,046 INFO:AE Applied: 864 enrolled, -763 opted out.
-2025-04-24 21:27:49,061 DEBUG:Termination proration debug output:
-2025-04-24 21:27:49,062 DEBUG:Row 277: term_date=2029-11-10, gross_comp=47673.89, days_worked=314, total_days=365, proration_factor=0.8603, plan_year_compensation_new=41012.61
-2025-04-24 21:27:49,062 DEBUG:Row 297: term_date=2029-06-22, gross_comp=46661.56, days_worked=173, total_days=365, proration_factor=0.4740, plan_year_compensation_new=22116.30
-2025-04-24 21:27:49,062 DEBUG:Row 322: term_date=2029-12-05, gross_comp=48548.15, days_worked=339, total_days=365, proration_factor=0.9288, plan_year_compensation_new=45089.92
-2025-04-24 21:27:49,062 DEBUG:Row 351: term_date=2029-12-30, gross_comp=51047.47, days_worked=364, total_days=365, proration_factor=0.9973, plan_year_compensation_new=50907.62
-2025-04-24 21:27:49,062 DEBUG:Row 408: term_date=2029-07-19, gross_comp=53362.26, days_worked=200, total_days=365, proration_factor=0.5479, plan_year_compensation_new=29239.59
-2025-04-24 21:27:49,063 INFO:Prorated plan_year_compensation for 897 terminated participants.
-2025-04-24 21:27:49,063 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5099
-2025-04-24 21:27:49,625 INFO:Determining eligibility for 2025
-2025-04-24 21:27:49,827 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:49,828 INFO:Eligibility determined: 9454 eligible employees.
-2025-04-24 21:27:49,828 INFO:Applying Auto Enrollment for 2025
-2025-04-24 21:27:49,829 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:49,829 DEBUG:[Proactive AE] newly eligible count=976
-2025-04-24 21:27:49,829 DEBUG:[Proactive AE] candidate count=976
-2025-04-24 21:27:49,830 INFO:48 proactively enrolled at eligibility.
-2025-04-24 21:27:49,830 INFO:Targeting 852 employees for AE.
-2025-04-24 21:27:50,102 INFO:AE Applied: 764 enrolled, -676 opted out.
-2025-04-24 21:27:50,105 DEBUG:AI candidates: 1000 / 10278
-2025-04-24 21:27:50,105 INFO:Auto Increase applied to 1000 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:50,117 DEBUG:Termination proration debug output:
-2025-04-24 21:27:50,118 DEBUG:Row 0: term_date=2025-06-29, gross_comp=37931.55, days_worked=180, total_days=365, proration_factor=0.4932, plan_year_compensation_new=18705.97
-2025-04-24 21:27:50,118 DEBUG:Row 7: term_date=2025-08-24, gross_comp=42865.44, days_worked=236, total_days=365, proration_factor=0.6466, plan_year_compensation_new=27715.74
-2025-04-24 21:27:50,119 DEBUG:Row 11: term_date=2025-11-07, gross_comp=44788.39, days_worked=311, total_days=365, proration_factor=0.8521, plan_year_compensation_new=38162.16
-2025-04-24 21:27:50,119 DEBUG:Row 18: term_date=2025-06-15, gross_comp=203069.12, days_worked=166, total_days=365, proration_factor=0.4548, plan_year_compensation_new=92354.73
-2025-04-24 21:27:50,119 DEBUG:Row 19: term_date=2025-06-09, gross_comp=46494.96, days_worked=160, total_days=365, proration_factor=0.4384, plan_year_compensation_new=20381.35
-2025-04-24 21:27:50,119 INFO:Prorated plan_year_compensation for 800 terminated participants.
-2025-04-24 21:27:50,119 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5109
-2025-04-24 21:27:50,635 INFO:Determining eligibility for 2026
-2025-04-24 21:27:50,843 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:50,844 INFO:Eligibility determined: 9740 eligible employees.
-2025-04-24 21:27:50,844 INFO:Applying Auto Enrollment for 2026
-2025-04-24 21:27:50,844 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:50,845 DEBUG:[Proactive AE] newly eligible count=1012
-2025-04-24 21:27:50,845 DEBUG:[Proactive AE] candidate count=1003
-2025-04-24 21:27:50,846 INFO:50 proactively enrolled at eligibility.
-2025-04-24 21:27:50,846 INFO:Targeting 860 employees for AE.
-2025-04-24 21:27:51,131 INFO:AE Applied: 773 enrolled, -686 opted out.
-2025-04-24 21:27:51,132 DEBUG:AI candidates: 2027 / 10587
-2025-04-24 21:27:51,133 INFO:Auto Increase applied to 2027 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:51,147 DEBUG:Termination proration debug output:
-2025-04-24 21:27:51,148 DEBUG:Row 39: term_date=2026-08-17, gross_comp=192492.00, days_worked=229, total_days=365, proration_factor=0.6274, plan_year_compensation_new=120768.95
-2025-04-24 21:27:51,148 DEBUG:Row 120: term_date=2026-12-14, gross_comp=38476.66, days_worked=348, total_days=365, proration_factor=0.9534, plan_year_compensation_new=36684.59
-2025-04-24 21:27:51,148 DEBUG:Row 122: term_date=2026-11-30, gross_comp=35235.24, days_worked=334, total_days=365, proration_factor=0.9151, plan_year_compensation_new=32242.65
-2025-04-24 21:27:51,148 DEBUG:Row 128: term_date=2026-07-17, gross_comp=45016.44, days_worked=198, total_days=365, proration_factor=0.5425, plan_year_compensation_new=24419.88
-2025-04-24 21:27:51,148 DEBUG:Row 169: term_date=2026-02-10, gross_comp=36594.42, days_worked=41, total_days=365, proration_factor=0.1123, plan_year_compensation_new=4110.61
-2025-04-24 21:27:51,149 INFO:Prorated plan_year_compensation for 823 terminated participants.
-2025-04-24 21:27:51,149 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4920
-2025-04-24 21:27:51,678 INFO:Determining eligibility for 2027
-2025-04-24 21:27:51,908 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:51,908 INFO:Eligibility determined: 10027 eligible employees.
-2025-04-24 21:27:51,908 INFO:Applying Auto Enrollment for 2027
-2025-04-24 21:27:51,909 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:51,909 DEBUG:[Proactive AE] newly eligible count=1057
-2025-04-24 21:27:51,909 DEBUG:[Proactive AE] candidate count=1043
-2025-04-24 21:27:51,910 INFO:46 proactively enrolled at eligibility.
-2025-04-24 21:27:51,911 INFO:Targeting 897 employees for AE.
-2025-04-24 21:27:52,212 INFO:AE Applied: 807 enrolled, -717 opted out.
-2025-04-24 21:27:52,213 DEBUG:AI candidates: 2310 / 10889
-2025-04-24 21:27:52,213 INFO:Auto Increase applied to 2310 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:52,227 DEBUG:Termination proration debug output:
-2025-04-24 21:27:52,228 DEBUG:Row 120: term_date=2027-03-23, gross_comp=36292.29, days_worked=82, total_days=365, proration_factor=0.2247, plan_year_compensation_new=8153.34
-2025-04-24 21:27:52,228 DEBUG:Row 126: term_date=2027-03-12, gross_comp=46366.93, days_worked=71, total_days=365, proration_factor=0.1945, plan_year_compensation_new=9019.32
-2025-04-24 21:27:52,228 DEBUG:Row 167: term_date=2027-10-04, gross_comp=37692.25, days_worked=277, total_days=365, proration_factor=0.7589, plan_year_compensation_new=28604.80
-2025-04-24 21:27:52,228 DEBUG:Row 249: term_date=2027-01-01, gross_comp=38190.62, days_worked=1, total_days=365, proration_factor=0.0027, plan_year_compensation_new=104.63
-2025-04-24 21:27:52,228 DEBUG:Row 281: term_date=2027-09-15, gross_comp=44937.22, days_worked=258, total_days=365, proration_factor=0.7068, plan_year_compensation_new=31763.84
-2025-04-24 21:27:52,229 INFO:Prorated plan_year_compensation for 847 terminated participants.
-2025-04-24 21:27:52,229 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4954
-2025-04-24 21:27:52,760 INFO:Determining eligibility for 2028
-2025-04-24 21:27:52,996 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:52,996 INFO:Eligibility determined: 10298 eligible employees.
-2025-04-24 21:27:52,997 INFO:Applying Auto Enrollment for 2028
-2025-04-24 21:27:52,997 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:52,997 DEBUG:[Proactive AE] newly eligible count=1071
-2025-04-24 21:27:52,997 DEBUG:[Proactive AE] candidate count=1061
-2025-04-24 21:27:52,999 INFO:59 proactively enrolled at eligibility.
-2025-04-24 21:27:52,999 INFO:Targeting 909 employees for AE.
-2025-04-24 21:27:53,303 INFO:AE Applied: 828 enrolled, -747 opted out.
-2025-04-24 21:27:53,304 DEBUG:AI candidates: 2528 / 11197
-2025-04-24 21:27:53,305 INFO:Auto Increase applied to 2528 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:53,318 DEBUG:Termination proration debug output:
-2025-04-24 21:27:53,319 DEBUG:Row 277: term_date=2028-04-01, gross_comp=46285.33, days_worked=92, total_days=366, proration_factor=0.2514, plan_year_compensation_new=11634.56
-2025-04-24 21:27:53,320 DEBUG:Row 297: term_date=2028-08-28, gross_comp=45302.48, days_worked=241, total_days=366, proration_factor=0.6585, plan_year_compensation_new=29830.32
-2025-04-24 21:27:53,320 DEBUG:Row 322: term_date=2028-03-21, gross_comp=47134.13, days_worked=81, total_days=366, proration_factor=0.2213, plan_year_compensation_new=10431.32
-2025-04-24 21:27:53,320 DEBUG:Row 351: term_date=2028-05-12, gross_comp=49560.65, days_worked=133, total_days=366, proration_factor=0.3634, plan_year_compensation_new=18009.75
-2025-04-24 21:27:53,320 DEBUG:Row 408: term_date=2028-11-22, gross_comp=51808.01, days_worked=327, total_days=366, proration_factor=0.8934, plan_year_compensation_new=46287.49
-2025-04-24 21:27:53,320 INFO:Prorated plan_year_compensation for 872 terminated participants.
-2025-04-24 21:27:53,320 DEBUG:Proration factor stats: min=0.0055, max=1.0000, mean=0.5014
-2025-04-24 21:27:53,879 INFO:Determining eligibility for 2029
-2025-04-24 21:27:54,119 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:54,119 INFO:Eligibility determined: 10615 eligible employees.
-2025-04-24 21:27:54,119 INFO:Applying Auto Enrollment for 2029
-2025-04-24 21:27:54,120 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:54,120 DEBUG:[Proactive AE] newly eligible count=1109
-2025-04-24 21:27:54,120 DEBUG:[Proactive AE] candidate count=1095
-2025-04-24 21:27:54,121 INFO:56 proactively enrolled at eligibility.
-2025-04-24 21:27:54,122 INFO:Targeting 941 employees for AE.
-2025-04-24 21:27:54,440 INFO:AE Applied: 861 enrolled, -781 opted out.
-2025-04-24 21:27:54,441 DEBUG:AI candidates: 2718 / 11535
-2025-04-24 21:27:54,441 INFO:Auto Increase applied to 2718 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:54,457 DEBUG:Termination proration debug output:
-2025-04-24 21:27:54,459 DEBUG:Row 277: term_date=2029-01-17, gross_comp=47673.89, days_worked=17, total_days=365, proration_factor=0.0466, plan_year_compensation_new=2220.43
-2025-04-24 21:27:54,459 DEBUG:Row 297: term_date=2029-01-21, gross_comp=46661.56, days_worked=21, total_days=365, proration_factor=0.0575, plan_year_compensation_new=2684.64
-2025-04-24 21:27:54,459 DEBUG:Row 322: term_date=2029-01-18, gross_comp=48548.15, days_worked=18, total_days=365, proration_factor=0.0493, plan_year_compensation_new=2394.16
-2025-04-24 21:27:54,459 DEBUG:Row 351: term_date=2029-01-26, gross_comp=51047.47, days_worked=26, total_days=365, proration_factor=0.0712, plan_year_compensation_new=3636.26
-2025-04-24 21:27:54,459 DEBUG:Row 408: term_date=2029-06-14, gross_comp=53362.26, days_worked=165, total_days=365, proration_factor=0.4521, plan_year_compensation_new=24122.66
-2025-04-24 21:27:54,459 INFO:Prorated plan_year_compensation for 896 terminated participants.
-2025-04-24 21:27:54,459 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4940
-2025-04-24 21:27:55,001 INFO:Determining eligibility for 2025
-2025-04-24 21:27:55,212 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:55,213 INFO:Eligibility determined: 9456 eligible employees.
-2025-04-24 21:27:55,213 INFO:Applying Auto Enrollment for 2025
-2025-04-24 21:27:55,214 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:55,214 DEBUG:[Proactive AE] newly eligible count=978
-2025-04-24 21:27:55,214 DEBUG:[Proactive AE] candidate count=978
-2025-04-24 21:27:55,215 INFO:55 proactively enrolled at eligibility.
-2025-04-24 21:27:55,216 INFO:Re-enrolled 18 existing participants at default rate 2.00%
-2025-04-24 21:27:55,216 INFO:Targeting 833 employees for AE.
-2025-04-24 21:27:55,490 INFO:AE Applied: 753 enrolled, -673 opted out.
-2025-04-24 21:27:55,491 DEBUG:AI candidates: 7259 / 10278
-2025-04-24 21:27:55,491 INFO:Auto Increase applied to 7259 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:55,504 DEBUG:Termination proration debug output:
-2025-04-24 21:27:55,505 DEBUG:Row 0: term_date=2025-05-26, gross_comp=37931.55, days_worked=146, total_days=365, proration_factor=0.4000, plan_year_compensation_new=15172.62
-2025-04-24 21:27:55,505 DEBUG:Row 7: term_date=2025-09-02, gross_comp=42865.44, days_worked=245, total_days=365, proration_factor=0.6712, plan_year_compensation_new=28772.69
-2025-04-24 21:27:55,505 DEBUG:Row 11: term_date=2025-01-26, gross_comp=44788.39, days_worked=26, total_days=365, proration_factor=0.0712, plan_year_compensation_new=3190.41
-2025-04-24 21:27:55,505 DEBUG:Row 18: term_date=2025-08-20, gross_comp=203069.12, days_worked=232, total_days=365, proration_factor=0.6356, plan_year_compensation_new=129074.07
-2025-04-24 21:27:55,505 DEBUG:Row 19: term_date=2025-03-23, gross_comp=46494.96, days_worked=82, total_days=365, proration_factor=0.2247, plan_year_compensation_new=10445.44
-2025-04-24 21:27:55,506 INFO:Prorated plan_year_compensation for 800 terminated participants.
-2025-04-24 21:27:55,506 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5056
-2025-04-24 21:27:56,022 INFO:Determining eligibility for 2026
-2025-04-24 21:27:56,245 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:56,245 INFO:Eligibility determined: 9738 eligible employees.
-2025-04-24 21:27:56,246 INFO:Applying Auto Enrollment for 2026
-2025-04-24 21:27:56,246 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:56,246 DEBUG:[Proactive AE] newly eligible count=1013
-2025-04-24 21:27:56,246 DEBUG:[Proactive AE] candidate count=1003
-2025-04-24 21:27:56,247 INFO:47 proactively enrolled at eligibility.
-2025-04-24 21:27:56,248 INFO:Re-enrolled 958 existing participants at default rate 2.00%
-2025-04-24 21:27:56,248 INFO:Targeting 873 employees for AE.
-2025-04-24 21:27:56,543 INFO:AE Applied: 779 enrolled, -685 opted out.
-2025-04-24 21:27:56,544 DEBUG:AI candidates: 7434 / 10585
-2025-04-24 21:27:56,544 INFO:Auto Increase applied to 7434 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:56,558 DEBUG:Termination proration debug output:
-2025-04-24 21:27:56,559 DEBUG:Row 39: term_date=2026-07-01, gross_comp=192492.00, days_worked=182, total_days=365, proration_factor=0.4986, plan_year_compensation_new=95982.31
-2025-04-24 21:27:56,560 DEBUG:Row 120: term_date=2026-02-10, gross_comp=38476.66, days_worked=41, total_days=365, proration_factor=0.1123, plan_year_compensation_new=4322.04
-2025-04-24 21:27:56,560 DEBUG:Row 122: term_date=2026-08-17, gross_comp=35235.24, days_worked=229, total_days=365, proration_factor=0.6274, plan_year_compensation_new=22106.49
-2025-04-24 21:27:56,560 DEBUG:Row 128: term_date=2026-05-21, gross_comp=45016.44, days_worked=141, total_days=365, proration_factor=0.3863, plan_year_compensation_new=17389.91
-2025-04-24 21:27:56,560 DEBUG:Row 169: term_date=2026-09-09, gross_comp=36594.42, days_worked=252, total_days=365, proration_factor=0.6904, plan_year_compensation_new=25265.19
-2025-04-24 21:27:56,560 INFO:Prorated plan_year_compensation for 823 terminated participants.
-2025-04-24 21:27:56,560 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4991
-2025-04-24 21:27:57,084 INFO:Determining eligibility for 2027
-2025-04-24 21:27:57,312 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:57,312 INFO:Eligibility determined: 10024 eligible employees.
-2025-04-24 21:27:57,313 INFO:Applying Auto Enrollment for 2027
-2025-04-24 21:27:57,313 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:57,313 DEBUG:[Proactive AE] newly eligible count=1047
-2025-04-24 21:27:57,314 DEBUG:[Proactive AE] candidate count=1036
-2025-04-24 21:27:57,314 INFO:45 proactively enrolled at eligibility.
-2025-04-24 21:27:57,315 INFO:Re-enrolled 63 existing participants at default rate 2.00%
-2025-04-24 21:27:57,316 INFO:Targeting 887 employees for AE.
-2025-04-24 21:27:57,614 INFO:AE Applied: 806 enrolled, -725 opted out.
-2025-04-24 21:27:57,615 DEBUG:AI candidates: 6891 / 10893
-2025-04-24 21:27:57,615 INFO:Auto Increase applied to 6891 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:57,630 DEBUG:Termination proration debug output:
-2025-04-24 21:27:57,631 DEBUG:Row 120: term_date=2027-07-20, gross_comp=36292.29, days_worked=201, total_days=365, proration_factor=0.5507, plan_year_compensation_new=19985.62
-2025-04-24 21:27:57,631 DEBUG:Row 126: term_date=2027-09-29, gross_comp=46366.93, days_worked=272, total_days=365, proration_factor=0.7452, plan_year_compensation_new=34552.89
-2025-04-24 21:27:57,631 DEBUG:Row 167: term_date=2027-05-04, gross_comp=37692.25, days_worked=124, total_days=365, proration_factor=0.3397, plan_year_compensation_new=12805.04
-2025-04-24 21:27:57,631 DEBUG:Row 249: term_date=2027-07-03, gross_comp=38190.62, days_worked=184, total_days=365, proration_factor=0.5041, plan_year_compensation_new=19252.26
-2025-04-24 21:27:57,631 DEBUG:Row 281: term_date=2027-07-01, gross_comp=44937.22, days_worked=182, total_days=365, proration_factor=0.4986, plan_year_compensation_new=22407.05
-2025-04-24 21:27:57,632 INFO:Prorated plan_year_compensation for 847 terminated participants.
-2025-04-24 21:27:57,632 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4993
-2025-04-24 21:27:58,193 INFO:Determining eligibility for 2028
-2025-04-24 21:27:58,430 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:58,430 INFO:Eligibility determined: 10309 eligible employees.
-2025-04-24 21:27:58,430 INFO:Applying Auto Enrollment for 2028
-2025-04-24 21:27:58,431 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:58,431 DEBUG:[Proactive AE] newly eligible count=1078
-2025-04-24 21:27:58,431 DEBUG:[Proactive AE] candidate count=1061
-2025-04-24 21:27:58,432 INFO:49 proactively enrolled at eligibility.
-2025-04-24 21:27:58,433 INFO:Re-enrolled 65 existing participants at default rate 2.00%
-2025-04-24 21:27:58,433 INFO:Targeting 919 employees for AE.
-2025-04-24 21:27:58,739 INFO:AE Applied: 818 enrolled, -717 opted out.
-2025-04-24 21:27:58,740 DEBUG:AI candidates: 3728 / 11209
-2025-04-24 21:27:58,741 INFO:Auto Increase applied to 3728 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:58,755 DEBUG:Termination proration debug output:
-2025-04-24 21:27:58,756 DEBUG:Row 277: term_date=2028-02-10, gross_comp=46285.33, days_worked=41, total_days=366, proration_factor=0.1120, plan_year_compensation_new=5184.97
-2025-04-24 21:27:58,756 DEBUG:Row 297: term_date=2028-01-27, gross_comp=45302.48, days_worked=27, total_days=366, proration_factor=0.0738, plan_year_compensation_new=3341.99
-2025-04-24 21:27:58,756 DEBUG:Row 322: term_date=2028-02-09, gross_comp=47134.13, days_worked=40, total_days=366, proration_factor=0.1093, plan_year_compensation_new=5151.27
-2025-04-24 21:27:58,756 DEBUG:Row 351: term_date=2028-03-02, gross_comp=49560.65, days_worked=62, total_days=366, proration_factor=0.1694, plan_year_compensation_new=8395.52
-2025-04-24 21:27:58,756 DEBUG:Row 408: term_date=2028-05-06, gross_comp=51808.01, days_worked=127, total_days=366, proration_factor=0.3470, plan_year_compensation_new=17977.10
-2025-04-24 21:27:58,757 INFO:Prorated plan_year_compensation for 872 terminated participants.
-2025-04-24 21:27:58,757 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.4931
-2025-04-24 21:27:59,309 INFO:Determining eligibility for 2029
-2025-04-24 21:27:59,555 WARNING:'hours_worked' missing; skipping hours requirement.
-2025-04-24 21:27:59,555 INFO:Eligibility determined: 10631 eligible employees.
-2025-04-24 21:27:59,556 INFO:Applying Auto Enrollment for 2029
-2025-04-24 21:27:59,556 DEBUG:[Proactive AE] probability=5.00%
-2025-04-24 21:27:59,556 DEBUG:[Proactive AE] newly eligible count=1108
-2025-04-24 21:27:59,557 DEBUG:[Proactive AE] candidate count=1095
-2025-04-24 21:27:59,558 INFO:56 proactively enrolled at eligibility.
-2025-04-24 21:27:59,559 INFO:Re-enrolled 70 existing participants at default rate 2.00%
-2025-04-24 21:27:59,559 INFO:Targeting 940 employees for AE.
-2025-04-24 21:27:59,890 INFO:AE Applied: 853 enrolled, -766 opted out.
-2025-04-24 21:27:59,890 DEBUG:AI candidates: 3552 / 11553
-2025-04-24 21:27:59,891 INFO:Auto Increase applied to 3552 employees: +1.0% (cap 6.0%)
-2025-04-24 21:27:59,904 DEBUG:Termination proration debug output:
-2025-04-24 21:27:59,906 DEBUG:Row 277: term_date=2029-04-27, gross_comp=47673.89, days_worked=117, total_days=365, proration_factor=0.3205, plan_year_compensation_new=15281.77
-2025-04-24 21:27:59,906 DEBUG:Row 297: term_date=2029-11-06, gross_comp=46661.56, days_worked=310, total_days=365, proration_factor=0.8493, plan_year_compensation_new=39630.36
-2025-04-24 21:27:59,906 DEBUG:Row 322: term_date=2029-01-01, gross_comp=48548.15, days_worked=1, total_days=365, proration_factor=0.0027, plan_year_compensation_new=133.01
-2025-04-24 21:27:59,906 DEBUG:Row 351: term_date=2029-10-16, gross_comp=51047.47, days_worked=289, total_days=365, proration_factor=0.7918, plan_year_compensation_new=40418.41
-2025-04-24 21:27:59,906 DEBUG:Row 408: term_date=2029-11-28, gross_comp=53362.26, days_worked=332, total_days=365, proration_factor=0.9096, plan_year_compensation_new=48537.72
-2025-04-24 21:27:59,906 INFO:Prorated plan_year_compensation for 897 terminated participants.
-2025-04-24 21:27:59,906 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5073
+2025-04-26 11:57:18,784 INFO:Determining eligibility for 2025
+2025-04-26 11:57:18,997 INFO:Eligibility determined: 8635 eligible employees.
+2025-04-26 11:57:18,998 INFO:Applying Auto Enrollment for 2025
+2025-04-26 11:57:18,999 DEBUG:[Proactive AE] probability=5.00%
+2025-04-26 11:57:18,999 DEBUG:[Proactive AE] newly eligible count=537
+2025-04-26 11:57:18,999 DEBUG:[Proactive AE] candidate count=488
+2025-04-26 11:57:19,000 INFO:25 proactively enrolled at eligibility.
+2025-04-26 11:57:19,001 INFO:Re-enrolled 5 existing participants at default rate 2.00%
+2025-04-26 11:57:19,001 INFO:Targeting 424 employees for AE.
+2025-04-26 11:57:19,001 WARNING:AE outcome probabilities invalid; skipping outcomes.
+2025-04-26 11:57:19,003 DEBUG:AI candidates: 7411 / 10000
+2025-04-26 11:57:19,004 INFO:Auto Increase applied to 7411 employees: +1.0% (cap 10.0%)
+2025-04-26 11:57:19,019 DEBUG:Termination proration debug output:
+2025-04-26 11:57:19,020 DEBUG:Row 0: term_date=2025-10-08, gross_comp=49797.82, days_worked=281, total_days=365, proration_factor=0.7699, plan_year_compensation_new=38337.50
+2025-04-26 11:57:19,020 DEBUG:Row 1: term_date=2025-08-02, gross_comp=37931.55, days_worked=214, total_days=365, proration_factor=0.5863, plan_year_compensation_new=22239.32
+2025-04-26 11:57:19,020 DEBUG:Row 2: term_date=2025-07-02, gross_comp=122206.71, days_worked=183, total_days=365, proration_factor=0.5014, plan_year_compensation_new=61270.76
+2025-04-26 11:57:19,020 DEBUG:Row 3: term_date=2025-11-11, gross_comp=53530.24, days_worked=315, total_days=365, proration_factor=0.8630, plan_year_compensation_new=46197.33
+2025-04-26 11:57:19,020 DEBUG:Row 4: term_date=2025-10-29, gross_comp=72895.07, days_worked=302, total_days=365, proration_factor=0.8274, plan_year_compensation_new=60313.18
+2025-04-26 11:57:19,021 INFO:Prorated plan_year_compensation for 1349 terminated participants.
+2025-04-26 11:57:19,021 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5156
+2025-04-26 11:57:19,622 INFO:Determining eligibility for 2026
+2025-04-26 11:57:19,833 INFO:Eligibility determined: 8603 eligible employees.
+2025-04-26 11:57:19,834 INFO:Applying Auto Enrollment for 2026
+2025-04-26 11:57:19,834 DEBUG:[Proactive AE] probability=5.00%
+2025-04-26 11:57:19,834 DEBUG:[Proactive AE] newly eligible count=702
+2025-04-26 11:57:19,835 DEBUG:[Proactive AE] candidate count=609
+2025-04-26 11:57:19,836 INFO:24 proactively enrolled at eligibility.
+2025-04-26 11:57:19,837 INFO:Re-enrolled 866 existing participants at default rate 2.00%
+2025-04-26 11:57:19,837 INFO:Targeting 533 employees for AE.
+2025-04-26 11:57:19,837 WARNING:AE outcome probabilities invalid; skipping outcomes.
+2025-04-26 11:57:19,838 DEBUG:AI candidates: 8020 / 10000
+2025-04-26 11:57:19,838 INFO:Auto Increase applied to 8020 employees: +1.0% (cap 10.0%)
+2025-04-26 11:57:19,855 DEBUG:Termination proration debug output:
+2025-04-26 11:57:19,856 DEBUG:Row 0: term_date=2026-11-14, gross_comp=39069.50, days_worked=318, total_days=365, proration_factor=0.8712, plan_year_compensation_new=34038.63
+2025-04-26 11:57:19,856 DEBUG:Row 1: term_date=2026-04-29, gross_comp=44151.40, days_worked=119, total_days=365, proration_factor=0.3260, plan_year_compensation_new=14394.57
+2025-04-26 11:57:19,857 DEBUG:Row 2: term_date=2026-03-02, gross_comp=46132.04, days_worked=61, total_days=365, proration_factor=0.1671, plan_year_compensation_new=7709.74
+2025-04-26 11:57:19,857 DEBUG:Row 3: term_date=2026-07-14, gross_comp=47889.81, days_worked=195, total_days=365, proration_factor=0.5342, plan_year_compensation_new=25584.97
+2025-04-26 11:57:19,857 DEBUG:Row 4: term_date=2026-10-24, gross_comp=43541.40, days_worked=297, total_days=365, proration_factor=0.8137, plan_year_compensation_new=35429.58
+2025-04-26 11:57:19,857 INFO:Prorated plan_year_compensation for 1386 terminated participants.
+2025-04-26 11:57:19,857 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5248
+2025-04-26 11:57:20,490 INFO:Determining eligibility for 2027
+2025-04-26 11:57:20,707 INFO:Eligibility determined: 8588 eligible employees.
+2025-04-26 11:57:20,707 INFO:Applying Auto Enrollment for 2027
+2025-04-26 11:57:20,708 DEBUG:[Proactive AE] probability=5.00%
+2025-04-26 11:57:20,708 DEBUG:[Proactive AE] newly eligible count=699
+2025-04-26 11:57:20,708 DEBUG:[Proactive AE] candidate count=599
+2025-04-26 11:57:20,709 INFO:34 proactively enrolled at eligibility.
+2025-04-26 11:57:20,710 INFO:Re-enrolled 11 existing participants at default rate 2.00%
+2025-04-26 11:57:20,710 INFO:Targeting 529 employees for AE.
+2025-04-26 11:57:20,710 WARNING:AE outcome probabilities invalid; skipping outcomes.
+2025-04-26 11:57:20,711 DEBUG:AI candidates: 7971 / 10000
+2025-04-26 11:57:20,712 INFO:Auto Increase applied to 7971 employees: +1.0% (cap 10.0%)
+2025-04-26 11:57:20,726 DEBUG:Termination proration debug output:
+2025-04-26 11:57:20,727 DEBUG:Row 0: term_date=2027-03-25, gross_comp=40241.58, days_worked=84, total_days=365, proration_factor=0.2301, plan_year_compensation_new=9261.08
+2025-04-26 11:57:20,727 DEBUG:Row 1: term_date=2027-10-19, gross_comp=45475.94, days_worked=292, total_days=365, proration_factor=0.8000, plan_year_compensation_new=36380.75
+2025-04-26 11:57:20,727 DEBUG:Row 2: term_date=2027-05-16, gross_comp=47516.00, days_worked=136, total_days=365, proration_factor=0.3726, plan_year_compensation_new=17704.59
+2025-04-26 11:57:20,727 DEBUG:Row 3: term_date=2027-02-04, gross_comp=49326.51, days_worked=35, total_days=365, proration_factor=0.0959, plan_year_compensation_new=4729.94
+2025-04-26 11:57:20,727 DEBUG:Row 4: term_date=2027-12-13, gross_comp=44847.65, days_worked=347, total_days=365, proration_factor=0.9507, plan_year_compensation_new=42635.98
+2025-04-26 11:57:20,728 INFO:Prorated plan_year_compensation for 1398 terminated participants.
+2025-04-26 11:57:20,728 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5188
+2025-04-26 11:57:21,384 INFO:Determining eligibility for 2028
+2025-04-26 11:57:21,607 INFO:Eligibility determined: 8596 eligible employees.
+2025-04-26 11:57:21,607 INFO:Applying Auto Enrollment for 2028
+2025-04-26 11:57:21,607 DEBUG:[Proactive AE] probability=5.00%
+2025-04-26 11:57:21,607 DEBUG:[Proactive AE] newly eligible count=705
+2025-04-26 11:57:21,608 DEBUG:[Proactive AE] candidate count=615
+2025-04-26 11:57:21,609 INFO:21 proactively enrolled at eligibility.
+2025-04-26 11:57:21,610 INFO:Re-enrolled 3 existing participants at default rate 2.00%
+2025-04-26 11:57:21,610 INFO:Targeting 537 employees for AE.
+2025-04-26 11:57:21,610 WARNING:AE outcome probabilities invalid; skipping outcomes.
+2025-04-26 11:57:21,611 DEBUG:AI candidates: 7893 / 10000
+2025-04-26 11:57:21,611 INFO:Auto Increase applied to 7893 employees: +1.0% (cap 10.0%)
+2025-04-26 11:57:21,626 DEBUG:Termination proration debug output:
+2025-04-26 11:57:21,628 DEBUG:Row 0: term_date=2028-09-04, gross_comp=41448.83, days_worked=248, total_days=366, proration_factor=0.6776, plan_year_compensation_new=28085.55
+2025-04-26 11:57:21,628 DEBUG:Row 1: term_date=2028-02-11, gross_comp=46840.22, days_worked=42, total_days=366, proration_factor=0.1148, plan_year_compensation_new=5375.11
+2025-04-26 11:57:21,628 DEBUG:Row 2: term_date=2028-11-19, gross_comp=48941.48, days_worked=324, total_days=366, proration_factor=0.8852, plan_year_compensation_new=43325.24
+2025-04-26 11:57:21,628 DEBUG:Row 3: term_date=2028-06-16, gross_comp=50806.30, days_worked=168, total_days=366, proration_factor=0.4590, plan_year_compensation_new=23320.92
+2025-04-26 11:57:21,628 DEBUG:Row 4: term_date=2028-05-09, gross_comp=46193.08, days_worked=130, total_days=366, proration_factor=0.3552, plan_year_compensation_new=16407.38
+2025-04-26 11:57:21,628 INFO:Prorated plan_year_compensation for 1386 terminated participants.
+2025-04-26 11:57:21,628 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5152
+2025-04-26 11:57:22,270 INFO:Determining eligibility for 2029
+2025-04-26 11:57:22,478 INFO:Eligibility determined: 8587 eligible employees.
+2025-04-26 11:57:22,479 INFO:Applying Auto Enrollment for 2029
+2025-04-26 11:57:22,479 DEBUG:[Proactive AE] probability=5.00%
+2025-04-26 11:57:22,479 DEBUG:[Proactive AE] newly eligible count=733
+2025-04-26 11:57:22,480 DEBUG:[Proactive AE] candidate count=614
+2025-04-26 11:57:22,481 INFO:33 proactively enrolled at eligibility.
+2025-04-26 11:57:22,481 INFO:Re-enrolled 6 existing participants at default rate 2.00%
+2025-04-26 11:57:22,482 INFO:Targeting 530 employees for AE.
+2025-04-26 11:57:22,482 WARNING:AE outcome probabilities invalid; skipping outcomes.
+2025-04-26 11:57:22,483 DEBUG:AI candidates: 7688 / 10000
+2025-04-26 11:57:22,483 INFO:Auto Increase applied to 7688 employees: +1.0% (cap 10.0%)
+2025-04-26 11:57:22,498 DEBUG:Termination proration debug output:
+2025-04-26 11:57:22,500 DEBUG:Row 0: term_date=2029-05-13, gross_comp=42692.30, days_worked=133, total_days=365, proration_factor=0.3644, plan_year_compensation_new=15556.37
+2025-04-26 11:57:22,500 DEBUG:Row 1: term_date=2029-06-07, gross_comp=48245.43, days_worked=158, total_days=365, proration_factor=0.4329, plan_year_compensation_new=20884.32
+2025-04-26 11:57:22,500 DEBUG:Row 2: term_date=2029-08-26, gross_comp=50409.72, days_worked=238, total_days=365, proration_factor=0.6521, plan_year_compensation_new=32869.90
+2025-04-26 11:57:22,500 DEBUG:Row 3: term_date=2029-03-30, gross_comp=52330.49, days_worked=89, total_days=365, proration_factor=0.2438, plan_year_compensation_new=12760.04
+2025-04-26 11:57:22,500 DEBUG:Row 4: term_date=2029-05-06, gross_comp=47578.87, days_worked=126, total_days=365, proration_factor=0.3452, plan_year_compensation_new=16424.49
+2025-04-26 11:57:22,500 INFO:Prorated plan_year_compensation for 1403 terminated participants.
+2025-04-26 11:57:22,500 DEBUG:Proration factor stats: min=0.0027, max=1.0000, mean=0.5114

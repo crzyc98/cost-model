@@ -1,5 +1,9 @@
+"""
+Tests for ParameterSampler (distribution logic, reproducibility, error handling).
+"""
 import pytest
 import json
+# Update this import if ParameterSampler has moved:
 from cost_model.sampler import ParameterSampler
 
 

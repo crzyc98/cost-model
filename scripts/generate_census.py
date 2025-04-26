@@ -203,12 +203,18 @@ def create_dummy_census_files(
     employer_match_rate=1.00,
     employer_match_cap_deferral_perc=0.03,
     # --- Output Options ---
-    output_dir="data/test_census/", # Directory to save files
+    output_dir=".", # Directory to save files
     file_prefix="dummy_census_" # Changed prefix
-):
+    ):
+    """
+    Creates configurable dummy historical census CSV files with realistic population flow.
+    - Generates initial population for the first year.
+    - For subsequent years, simulates terminations, updates survivors, adds new hires.
+    - Ensures SSN persistence for non-terminated employees.
+    - Calculates derived fields based on IRS limits and plan rules.
+    """
     print(f"\n--- Creating {num_years} Dummy Census Files (Simulating Population Flow) ---")
     os.makedirs(output_dir, exist_ok=True) # Ensure output directory exists
-    print(f"  Output directory: {os.path.abspath(output_dir)}")
     all_ssns = set()
     generated_files = []
     current_population_df = None
@@ -271,19 +277,11 @@ def create_dummy_census_files(
             # Initial population has no termination date set yet
             current_population_df['termination_date'] = pd.NaT
             print(f"  Initial population generated ({len(current_population_df)} rows).")
-            # Save the initial population to CSV
-            output_path = os.path.join(output_dir, f"{file_prefix}{year}.csv")
-            current_population_df.to_csv(output_path, index=False)
-            print(f"  Saved: {output_path}")
 
         else: # Subsequent years: Simulate flow from previous year
             previous_population_df = current_population_df.copy()
             num_previous = len(previous_population_df)
             print(f"  Starting with {num_previous} employees from {year-1}.")
-            # Save the updated population to CSV
-            output_path = os.path.join(output_dir, f"{file_prefix}{year}.csv")
-            current_population_df.to_csv(output_path, index=False)
-            print(f"  Saved: {output_path}")
 
             # --- Simulate Terminations ---
             num_to_terminate = int(round(num_previous * termination_rate))
@@ -300,5 +298,243 @@ def create_dummy_census_files(
                     eligible_df = previous_population_df.copy()
                     epsilon = 1e-6
 
+                    # Define risk factors
+                    LOW_TENURE_THRESHOLD = 2.0
+                    LOW_COMP_PERCENTILE = 0.25
+                    HIGH_RISK_WEIGHT = 10.0
+                    LOW_RISK_WEIGHT = 1.0
+
+                    # Calculate risk indicators
+                    # Tenure Risk
+                    if 'tenure' in eligible_df.columns and pd.api.types.is_numeric_dtype(eligible_df['tenure']):
+                        eligible_df['low_tenure'] = eligible_df['tenure'].fillna(0) < LOW_TENURE_THRESHOLD
+                    else:
+                        print("  Warning: 'tenure' column not suitable for risk calc. Assuming not low tenure.")
+                        eligible_df['low_tenure'] = False
+
+                    # Compensation Risk (within Role if possible)
+                    eligible_df['low_comp'] = False # Default
+                    comp_col = 'gross_compensation'
+                    role_col = 'role' # Assuming 'role' column exists
+
+                    if comp_col in eligible_df.columns and pd.api.types.is_numeric_dtype(eligible_df[comp_col]):
+                        if role_col in eligible_df.columns and eligible_df[role_col].nunique() > 1:
+                            try:
+                                # Calculate percentile within each role
+                                eligible_df['comp_percentile_rank'] = eligible_df.groupby(role_col)[comp_col].rank(pct=True, method='average')
+                                eligible_df['low_comp'] = eligible_df['comp_percentile_rank'] < LOW_COMP_PERCENTILE
+                                print(f"    Calculated compensation risk based on {LOW_COMP_PERCENTILE:.0%} percentile within roles.")
+                            except Exception as e:
+                                print(f"  Warning: Error calculating comp percentile by role: {e}. Falling back to global percentile.")
+                                eligible_df['comp_percentile_rank'] = eligible_df[comp_col].rank(pct=True, method='average')
+                                eligible_df['low_comp'] = eligible_df['comp_percentile_rank'] < LOW_COMP_PERCENTILE
+                        else:
+                            print("    Calculating compensation risk based on global percentile (role column missing or uniform).")
+                            eligible_df['comp_percentile_rank'] = eligible_df[comp_col].rank(pct=True, method='average')
+                            eligible_df['low_comp'] = eligible_df['comp_percentile_rank'] < LOW_COMP_PERCENTILE
+                    else:
+                        print("  Warning: 'gross_compensation' column not suitable for risk calc. Assuming not low comp.")
+                        # low_comp remains False
+
+                    # Assign Weights based on combined risk
+                    eligible_df['is_at_risk'] = eligible_df['low_tenure'] & eligible_df['low_comp']
+                    eligible_df['term_weight'] = np.where(eligible_df['is_at_risk'], HIGH_RISK_WEIGHT, LOW_RISK_WEIGHT)
+
+                    at_risk_count = eligible_df['is_at_risk'].sum()
+                    print(f"    Identified {at_risk_count} employees as 'at-risk' (low tenure & low comp).")
+
+                    # Calculate Probabilities
+                    total_weight = eligible_df['term_weight'].sum()
+                    if total_weight <= 0 or not np.isfinite(total_weight):
+                        print("  Warning: Total termination weight invalid. Falling back to uniform probability.")
+                        probabilities = None
+                    else:
+                        probabilities = eligible_df['term_weight'] / total_weight
+                        if np.any(~np.isfinite(probabilities)) or np.isclose(probabilities.sum(), 0):
+                             print("  Warning: Invalid probabilities calculated (NaN/inf/zero sum). Falling back to uniform probability.")
+                             probabilities = None
+                        elif not np.isclose(probabilities.sum(), 1.0):
+                            print(f"  Warning: Probabilities sum to {probabilities.sum():.4f}. Renormalizing.")
+                            probabilities = probabilities / probabilities.sum()
+
+                    # Perform Weighted Choice
+                    try:
+                        if num_to_terminate > len(eligible_df):
+                            print(f"  Warning: Trying to terminate {num_to_terminate} but only {len(eligible_df)} eligible. Terminating all.")
+                            indices_to_terminate = eligible_df.index
+                        else:
+                            indices_to_terminate = np.random.choice(
+                                eligible_df.index,
+                                size=num_to_terminate,
+                                replace=False,
+                                p=probabilities # Use calculated probabilities or None for uniform
+                            )
+                    except Exception as e: # Broader exception catch for choice issues
+                        print(f"  Error during weighted choice: {e}. Falling back to uniform selection.")
+                        indices_to_terminate = np.random.choice(
+                            previous_population_df.index, size=min(num_to_terminate, num_previous), replace=False
+                        )
+                    # --- End Refined Weighted Termination Logic ---
+
+                # Assign random termination date within the *previous* year
+                term_year = year - 1
+                terminated_records = previous_population_df.loc[indices_to_terminate].copy()
+                terminated_records['termination_date'] = [datetime(term_year, np.random.randint(1, 13), np.random.randint(1, 29)) for _ in range(len(terminated_records))] # Simplified date generation
+
+                # Survivors are those not terminated
+                survivor_df = previous_population_df.drop(indices_to_terminate)
+                print(f"  {len(survivor_df)} survivors remaining.")
+            else:
+                print("  No terminations simulated (rate=0 or zero population).")
+
+
+            # --- Update Survivors for the New Year ---
+            print(f"  Updating {len(survivor_df)} survivors for {year}...")
+            if not survivor_df.empty:
+                # Increment age (implicitly handled by recalculating)
+                # Increment tenure
+                survivor_df['tenure'] = survivor_df['tenure'] + 1
+                # Apply random compensation increase
+                increase_factor = np.random.normal(loc=1 + annual_comp_increase_mean, scale=annual_comp_increase_std, size=len(survivor_df))
+                survivor_df['gross_compensation'] = (survivor_df['gross_compensation'] * increase_factor).round(2)
+                # Update age based on current plan end date
+                survivor_df['birth_date'] = pd.to_datetime(survivor_df['birth_date'])
+                survivor_df['age'] = survivor_df.apply(lambda row: (plan_end_date.year - row['birth_date'].year -
+                                     ((plan_end_date.month, plan_end_date.day) <
+                                      (row['birth_date'].month, row['birth_date'].day))), axis=1)
+
+                # Optionally, re-randomize deferral rates for survivors? (Keep simple for now)
+                # survivor_df['pre_tax_deferral_percentage'] = np.random.choice(list(deferral_distribution.keys()), size=len(survivor_df), p=list(deferral_distribution.values()))
+
+            # --- Add New Hires ---
+            num_survivors = len(survivor_df)
+            num_new_hires_needed = max(0, total_population - num_survivors)
+            print(f"  Adding {num_new_hires_needed} new hires...")
+            new_hire_records = []
+            if num_new_hires_needed > 0:
+                for i in range(num_new_hires_needed):
+                    employee_counter += 1
+                    record = _generate_employee(
+                        year, plan_end_date, is_new_hire=True, existing_ssns=all_ssns, # is_new_hire = True
+                        min_working_age=min_working_age, max_working_age=max_working_age,
+                        age_mean=age_mean, age_std_dev=age_std_dev, # Use general age profile
+                        # Tenure params not used directly for new hires (hire date set in current year)
+                        tenure_mean_years=tenure_mean_years, tenure_std_dev_years=tenure_std_dev_years,
+                        max_tenure_years=max_tenure_years,
+                        role_distribution=role_distribution, role_compensation_params=role_compensation_params,
+                        deferral_distribution=deferral_distribution, unique_id=employee_counter
+                    )
+                    new_hire_records.append(record)
+
+            new_hires_df = pd.DataFrame(new_hire_records)
+
+            # --- Combine Survivors and New Hires for the current year ---
+            current_population_list = []
+            if not survivor_df.empty:
+                 # Drop the calculated 'age' column before concatenating if it exists
+                 if 'age' in survivor_df.columns:
+                     current_population_list.append(survivor_df.drop(columns=['age']))
+                 else:
+                     current_population_list.append(survivor_df)
+
+            if not new_hires_df.empty:
+                 # Drop the calculated 'age' and 'tenure' columns used internally by _generate_employee
+                 cols_to_drop = [col for col in ['age', 'tenure'] if col in new_hires_df.columns]
+                 if cols_to_drop:
+                     current_population_list.append(new_hires_df.drop(columns=cols_to_drop))
+                 else:
+                      current_population_list.append(new_hires_df)
+
+
+            if current_population_list:
+                 current_population_df = pd.concat(current_population_list, ignore_index=True)
+                 print(f"  Combined population for {year}: {len(current_population_df)} employees.")
+            else:
+                 current_population_df = pd.DataFrame() # Handle case of zero population
+                 print(f"  Warning: Combined population for {year} is empty.")
+
+
+            # --- Add back terminated employees from previous year with their term date ---
+            # These employees *contributed* in the previous year but are not active in the current census
+            # For termination modeling, we usually need the census *before* termination.
+            # However, if the goal is just to have historical files, we might include them.
+            # Let's keep the current_population_df as ONLY the active employees at year-end.
+            # The termination model script will compare year N and N+1 to find who is missing.
+
+        # --- Calculate Derived Fields & Save ---
+        if not current_population_df.empty:
+             # Ensure required date columns are datetime objects before calculation
+             current_population_df['birth_date'] = pd.to_datetime(current_population_df['birth_date'])
+             current_population_df['hire_date'] = pd.to_datetime(current_population_df['hire_date'])
+             current_population_df['termination_date'] = pd.to_datetime(current_population_df['termination_date'], errors='coerce')
+
+             # Recalculate age/tenure precisely based on plan_end_date for final output (if needed)
+             # Or rely on the stored values from _generate_employee / survivor update step
+             # Let's recalculate derived fields which depend on year-end status
+
+             df_final_year = _calculate_derived_fields(
+                 current_population_df, year, IRS_LIMITS,
+                 employer_nec_rate, employer_match_rate, employer_match_cap_deferral_perc
+             )
+
+             # Format dates for CSV output
+             df_final_year['birth_date'] = df_final_year['birth_date'].dt.strftime('%Y-%m-%d')
+             df_final_year['hire_date'] = df_final_year['hire_date'].dt.strftime('%Y-%m-%d')
+             # Convert NaT to empty string for termination date
+             df_final_year['termination_date'] = df_final_year['termination_date'].dt.strftime('%Y-%m-%d').fillna('')
+
+
+             # Save to CSV
+             output_filename = os.path.join(output_dir, f"{file_prefix}{year}.csv")
+             df_final_year.to_csv(output_filename, index=False)
+             generated_files.append(output_filename)
+             print(f"  Saved: {output_filename} ({len(df_final_year)} rows)")
+        else:
+            print(f"  Skipping save for {year} due to empty population.")
+
+
+    print("\n--- Dummy file creation complete ---")
+    return generated_files
+
 if __name__ == "__main__":
-    create_dummy_census_files()
+    # Example call demonstrating role-based compensation
+    generated_files_custom = create_dummy_census_files(
+        num_years=5,
+        base_year=2024,
+        total_population=5000, # Smaller population for example
+        termination_rate=0.12,
+        # --- Age Distribution ---
+        age_mean=40,
+        age_std_dev=10,
+        min_working_age=22,
+        max_working_age=68,
+        # --- Tenure Distribution ---
+        tenure_mean_years=6,
+        tenure_std_dev_years=4,
+        max_tenure_years=35,
+        # --- Role Configuration ---
+        role_distribution={'Analyst': 0.6, 'Manager': 0.3, 'Director': 0.1},
+        role_compensation_params={
+            'Analyst': {'comp_base_salary': 60000, 'comp_increase_per_age_year': 350, 'comp_increase_per_tenure_year': 600, 'comp_log_mean_factor': 1.0, 'comp_spread_sigma': 0.18, 'comp_min_salary': 40000},
+            'Manager': {'comp_base_salary': 100000, 'comp_increase_per_age_year': 700, 'comp_increase_per_tenure_year': 1200, 'comp_log_mean_factor': 1.05, 'comp_spread_sigma': 0.22, 'comp_min_salary': 75000},
+            'Director': {'comp_base_salary': 180000, 'comp_increase_per_age_year': 1800, 'comp_increase_per_tenure_year': 3500, 'comp_log_mean_factor': 1.15, 'comp_spread_sigma': 0.30, 'comp_min_salary': 130000}
+        },
+        # --- Deferral Distribution ---
+        deferral_distribution={
+            0: 0.15, 1: 0.05, 2: 0.05, 3: 0.10, 4: 0.10, 5: 0.15,
+            6: 0.10, 7: 0.05, 8: 0.05, 9: 0.05, 10: 0.10, 12: 0.03, 15: 0.02
+        },
+        # --- Compensation Increase ---
+        annual_comp_increase_mean=0.035,
+        annual_comp_increase_std=0.01,
+        # --- Employer Contributions ---
+        employer_nec_rate=0.03,
+        employer_match_rate=0.50,
+        employer_match_cap_deferral_perc=0.06,
+        # --- Output Options ---
+        output_dir="./termination_model_example", # Separate dir for example
+        file_prefix="example_census_"
+    )
+    print("\nGenerated example files:")
+    for f in generated_files_custom:
+        print(f" - {f}")

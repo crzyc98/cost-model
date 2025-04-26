@@ -1,6 +1,77 @@
 # Retirement Plan Cost Model (Projection Tool)
 
+## Project Directory Structure
+
+```
+cost-model/
+├── agents/                  # Agent-based model logic (Mesa, agent classes, behaviors)
+├── configs/                 # YAML scenario/config files
+├── data/                    # Input census data, reference data
+├── docs/                    # Documentation and design notes
+├── engine/                  # Core config loader, orchestration logic
+├── loaders/                 # Data loading utilities
+├── model/                   # Core model logic
+├── notebooks/               # Jupyter/analysis notebooks
+├── output/                  # Output artifacts and results
+├── scripts/                 # Main entry points and batch scripts
+│   ├── run_projection.py
+│   ├── generate_census.py
+│   ├── train_termination_model.py
+│   └── ...
+├── tests/                   # Unit and integration tests
+├── utils/                   # Plan rules, helpers, ML logic, utilities
+│   ├── rules/               # Modular plan rule implementations
+│   │   ├── eligibility.py
+│   │   ├── auto_enrollment.py
+│   │   ├── auto_increase.py
+│   │   ├── contributions.py
+│   │   ├── response.py
+│   │   └── formula_parsers.py
+│   ├── plan_rules.py        # Facade: stable import for all plan rules
+│   ├── ml_logic.py
+│   ├── projection_utils.py
+│   ├── sandbox_utils.py
+│   └── ...
+├── requirements.txt         # Python dependencies
+└── README.md
+```
+
+
 A scenario-driven projection engine for retirement plan outcomes. Customize plan rules, demographic assumptions, and IRS limits, then generate both summary and detailed agent‑level outputs over multiple years.
+
+## Onboarding: Plan Rules and Utilities
+
+### Plan Rule Usage Example
+
+All plan rule logic is modularized in `utils/rules/` and can be accessed via the stable facade `utils/plan_rules.py`.
+
+**Importing and using plan rules:**
+```python
+from utils.plan_rules import apply_eligibility, apply_auto_enrollment, apply_auto_increase, apply_contributions
+
+df = ...  # your census DataFrame
+scenario_config = ...  # scenario dict from YAML
+simulation_year_end_date = ...  # datetime object
+
+# Apply eligibility rule
+eligible_df = apply_eligibility(df, scenario_config['plan_rules'], simulation_year_end_date)
+
+# Apply auto-enrollment
+enrolled_df = apply_auto_enrollment(eligible_df, scenario_config['plan_rules'], simulation_year_end_date)
+
+# Apply auto-increase
+increased_df = apply_auto_increase(enrolled_df, scenario_config['plan_rules'], simulation_year_end_date)
+
+# Calculate contributions
+contrib_df = apply_contributions(increased_df, scenario_config, year, year_start, year_end)
+```
+
+### Extending Plan Rules
+- To add or modify a rule, edit or add a module in `utils/rules/` (e.g., `eligibility.py`, `contributions.py`).
+- To expose a new rule for project-wide use, add it to `utils/plan_rules.py` for stable imports.
+- All rule modules are designed for easy testing and extension.
+
+---
 
 ## Features
 
@@ -77,7 +148,7 @@ Provide initial census CSV (e.g., `census_data.csv`) with columns:
 ## Usage
 
 ```bash
-python sandbox/run_projection.py <census_csv> --output <base_name> [--raw-output]
+python scripts/run_projection.py <census_csv> --output <base_name> [--raw-output]
 ```
 
 - `<census_csv>`: path to initial census file.
@@ -86,7 +157,7 @@ python sandbox/run_projection.py <census_csv> --output <base_name> [--raw-output
 
 Examples:
 ```bash
-python sandbox/run_projection.py census_data.csv --output projection_results --raw-output
+python scripts/run_projection.py census_data.csv --output projection_results --raw-output
 ```
 
 After running, you’ll have:
@@ -94,16 +165,6 @@ After running, you’ll have:
 - `projection_results_all_summaries.xlsx`
 - `projection_results_<scenario>_raw.xlsx` (per‑scenario raw data).
 
-## Project Structure
-
-```
-cost-model/
-├── sandbox/
-│   ├── run_projection.py       # Main projection runner
-│   └── projection_utils.py     # Core simulation logic
-├── utils/
-│   ├── date_utils.py           # Age and tenure functions
-│   ├── status_enums.py         # Enrollment and status enums
 │   ├── plan_rules.py           # Façade to rule modules
 │   └── rules/                  # Rule implementations
 │       ├── eligibility.py      # Eligibility logic
