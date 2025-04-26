@@ -250,7 +250,7 @@ if __name__ == "__main__":
     # Logging setup: writes all logs to 'projection.log' and also shows WARNING+ in terminal
     logging.basicConfig(
         level=logging.DEBUG,
-        filename='projection.log',  # Log file name
+        filename=os.path.join('output', 'projection.log'),  # Log file in output/ directory
         filemode='w',               # Overwrite log each run
         format='%(asctime)s %(levelname)s:%(message)s'
     )
@@ -291,29 +291,36 @@ if __name__ == "__main__":
 
         # 3. Process and Save Results
         if args.output:
-            base_output_path = args.output
+            # Always write to output/ directory
+            os.makedirs('output', exist_ok=True)
+            base_output_path = os.path.join('output', os.path.basename(args.output))
             # Save summary metrics for each scenario
             for scenario_name, yearly_data in all_summary_results.items():
                 output_file = f"{base_output_path}_{scenario_name}.xlsx"
+                csv_file = f"{base_output_path}_{scenario_name}.csv"
                 try:
                     with pd.ExcelWriter(output_file) as writer:
                         yearly_data.to_excel(writer, index=True)
-                    print(f"Saved results for scenario '{scenario_name}' to: {output_file}")
+                    yearly_data.to_csv(csv_file, index=True)
+                    print(f"Saved results for scenario '{scenario_name}' to: {output_file} and {csv_file}")
                 except Exception as e:
-                    print(f"Error saving results for scenario '{scenario_name}' to {output_file}: {e}")
+                    print(f"Error saving results for scenario '{scenario_name}' to {output_file} or {csv_file}: {e}")
             # NEW: save combined summary sheet for all scenarios
             try:
                 combined_df = pd.concat(all_summary_results, names=['Scenario','Year']).reset_index()
                 combined_file = f"{base_output_path}_all_summaries.xlsx"
+                combined_csv = f"{base_output_path}_all_summaries.csv"
                 with pd.ExcelWriter(combined_file) as writer:
                     combined_df.to_excel(writer, index=False, sheet_name='Comparison')
-                print(f"Saved combined summary to: {combined_file}")
+                combined_df.to_csv(combined_csv, index=False)
+                print(f"Saved combined summary to: {combined_file} and {combined_csv}")
             except Exception as e:
                 print(f"Error saving combined summary: {e}")
         if args.raw_output:
             # Save raw agent-level data for each scenario
             for scenario_name, data_dict in all_raw_results.items():
                 raw_file = f"{base_output_path}_{scenario_name}_raw.xlsx"
+                raw_csv = f"{base_output_path}_{scenario_name}_raw.csv"
                 try:
                     with pd.ExcelWriter(raw_file) as writer:
                         # Write each year to its own sheet
@@ -324,7 +331,10 @@ if __name__ == "__main__":
                             df.assign(Year=year) for year, df in data_dict.items()
                         ], ignore_index=True)
                         combined_df.to_excel(writer, sheet_name='Combined_Raw', index=False)
+                    # Save combined raw data to CSV
+                    combined_df.to_csv(raw_csv, index=False)
+                    print(f"Saved raw agent-level data for '{scenario_name}' to: {raw_file} and {raw_csv}")
                 except Exception as e:
-                    print(f"Error saving raw data for '{scenario_name}' to {raw_file}: {e}")
+                    print(f"Error saving raw data for '{scenario_name}' to {raw_file} or {raw_csv}: {e}")
     else:
         print("Projection run failed due to data loading/initialization errors.")
