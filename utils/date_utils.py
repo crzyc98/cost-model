@@ -1,6 +1,6 @@
 """Date utility functions for the retirement plan simulation."""
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 from dateutil.relativedelta import relativedelta
 
 

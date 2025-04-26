@@ -1,141 +1,249 @@
-from decimal import Decimal
+import logging
+from decimal import Decimal, InvalidOperation
+import pandas as pd  # type: ignore[import]
 from utils.decimal_helpers import ZERO_DECIMAL  # Shared decimal helper
-import pandas as pd  # For handling dates when capturing participation_date
+from typing import Protocol, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class ModelProtocol(Protocol):
+    year: int
+    scenario_config: dict
+    random: Any
+
 
 class DeferralMixin:
-    """Mixin providing deferral decision logic."""
+    """Mixin providing deferral decision logic (AE, AI, voluntary)
 
-    def _make_deferral_decision(self):
-        """Handles the agent's decision regarding participation and deferral rate.
-           Incorporates AE/AI features and voluntary behavioral changes."""
-        was_participating = self.is_participating
-        is_new_hire_flag = getattr(self, 'is_new_hire', False)
+    Required on self:
+      - is_eligible: bool
+      - is_participating: bool
+      - deferral_rate: Decimal or float
+      - hire_date: pd.Timestamp
+      - participation_date: Optional[pd.Timestamp]
+      - unique_id: Any
+      - random: Random-like
+      - model: ModelProtocol
+    """
+    # Mypy attribute declarations
+    model: ModelProtocol
+    deferral_rate: Decimal
+    is_participating: bool
+    is_eligible: bool
+    hire_date: pd.Timestamp
+    participation_date: Optional[pd.Timestamp]
+    unique_id: Any
+    random: Any
+    enrollment_method: str
 
-        if is_new_hire_flag:
-            print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Entering _make_deferral_decision. Eligible: {self.is_eligible}, Participating: {self.is_participating}, AE Opt-Out: {self.ae_opted_out}, Initial Rate: {self.deferral_rate}")
+    ENROLL_METHOD_NONE = 'none'
+    ENROLL_METHOD_AE = 'ae'
+    ENROLL_METHOD_MANUAL = 'manual'
 
-        # --- Eligibility Check ---
+    def _make_deferral_decision(
+        self,
+        model: Optional[ModelProtocol] = None
+    ) -> None:
+        """Orchestrate AE, AI, and voluntary changes using scenario config."""
+        if model is None:
+            model = self.model
+
+        self.deferral_rate = self._safe_decimal(
+            self.deferral_rate,
+            'deferral_rate'
+        )
+
         if not self.is_eligible:
-            if was_participating:
-                self.is_participating = True
-            else:
-                self.is_participating = False
-                self.deferral_rate = ZERO_DECIMAL
-                self.enrollment_method = self.ENROLL_METHOD_NONE
-            if is_new_hire_flag:
-                print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Ineligible branch. Final Rate: {self.deferral_rate}")
+            self._handle_ineligible()
             return
 
-        # --- Agent is Eligible ---
-        if is_new_hire_flag:
-            print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Eligible branch.")
+        rules = model.scenario_config.get('plan_rules', {})
+        ae_cfg = rules.get('auto_enrollment', {})
+        ai_cfg = rules.get('auto_increase', {})
 
-        ae_enabled = self.model.ae_enabled
-        ai_enabled = self.model.ai_enabled
-        current_rate = self.deferral_rate
-
-        # --- Decision Logic for Eligible Agents ---
-        if not was_participating:
-            if is_new_hire_flag:
-                print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Entering 'not was_participating' block.")
-                print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Was not participating branch.")
-
-            ae_enabled = self.model.ae_enabled
-            if is_new_hire_flag:
-                print(f"DEBUG NH PRE-AE CHECK {self.unique_id} Year {self.model.year}: ae_enabled={ae_enabled}, self.ae_opted_out={self.ae_opted_out}")
-            if ae_enabled and not self.ae_opted_out:
-                if is_new_hire_flag:
-                    print(f"DEBUG NH {self.unique_id} Year {self.model.year}: AE enabled & not opted out branch.")
-
-                prob_opt_out = self.model.ae_prob_opt_out
-                prob_stay_default = self.model.ae_prob_stay_default
-                prob_opt_down = self.model.ae_prob_opt_down
-                prob_increase_match = self.model.ae_prob_increase_match
-                prob_increase_high = self.model.ae_prob_increase_high
-
-                default_rate = self.model.ae_default_rate
-                opt_down_target = self.model.ae_opt_down_target
-                rate_for_match = self.model.rate_for_max_match
-                increase_high_target = self.model.ae_increase_high_target
-
-                if is_new_hire_flag:
-                    print(f"DEBUG NH RATES {self.unique_id} Year {self.model.year}: Default Rate = {default_rate}")
-                    print(f"DEBUG NH RATES {self.unique_id} Year {self.model.year}: Opt Down Target = {opt_down_target}")
-                    print(f"DEBUG NH RATES {self.unique_id} Year {self.model.year}: Rate for Match = {rate_for_match}")
-                    print(f"DEBUG NH RATES {self.unique_id} Year {self.model.year}: Increase High Target = {increase_high_target}")
-
-                rand_choice = Decimal(str(self.random.random()))
-                new_rate = ZERO_DECIMAL
-                self.is_participating = False
-                self.enrollment_method = self.ENROLL_METHOD_NONE
-                self.ae_opted_out = True
-                outcome_desc = "Opt Out"
-
-                cumulative_prob = ZERO_DECIMAL
-                if rand_choice <= (cumulative_prob + prob_opt_out):
-                    pass
-                else:
-                    cumulative_prob += prob_opt_out
-                    if rand_choice <= (cumulative_prob + prob_stay_default):
-                        new_rate = default_rate
-                        self.is_participating = True
-                        self.enrollment_method = self.ENROLL_METHOD_AE
-                        self.ae_opted_out = False
-                        outcome_desc = "Stay Default"
-                    else:
-                        cumulative_prob += prob_stay_default
-                        if rand_choice <= (cumulative_prob + prob_opt_down):
-                            new_rate = opt_down_target
-                            self.is_participating = True
-                            self.enrollment_method = self.ENROLL_METHOD_AE
-                            self.ae_opted_out = False
-                            outcome_desc = "Opt Down"
-                        else:
-                            cumulative_prob += prob_opt_down
-                            if rand_choice <= (cumulative_prob + prob_increase_match):
-                                new_rate = rate_for_match
-                                self.is_participating = True
-                                self.enrollment_method = self.ENROLL_METHOD_AE
-                                self.ae_opted_out = False
-                                outcome_desc = "Increase to Match"
-                            else:
-                                new_rate = increase_high_target
-                                self.is_participating = True
-                                self.enrollment_method = self.ENROLL_METHOD_AE
-                                self.ae_opted_out = False
-                                outcome_desc = "Increase High"
-
-                self.deferral_rate = new_rate
-                if is_new_hire_flag:
-                    print(f"DEBUG NH {self.unique_id} Year {self.model.year}: AE Outcome '{outcome_desc}' (Rand: {rand_choice:.4f}). Rate set to {self.deferral_rate}")
+        # Auto-enrollment
+        if not self.is_participating:
+            if ae_cfg.get('enabled', True):
+                self._handle_auto_enroll(ae_cfg, model)
             else:
-                self.is_participating = False
-                self.deferral_rate = ZERO_DECIMAL
-                self.enrollment_method = self.ENROLL_METHOD_NONE
-                if is_new_hire_flag:
-                    print(f"DEBUG NH NO AE {self.unique_id} Year {self.model.year}: AE skipped. Enabled={ae_enabled}, OptedOut={self.ae_opted_out}")
-                    print(f"DEBUG NH {self.unique_id} Year {self.model.year}: AE disabled or opted out branch. Final Rate: {self.deferral_rate}")
-        elif was_participating:
-            pass
+                logger.debug("%r AE disabled or opted out", self)
+                self._reset_participation()
 
-        if is_new_hire_flag:
-            print(f"DEBUG NH {self.unique_id} Year {self.model.year}: Exiting _make_deferral_decision. Final Rate: {self.deferral_rate}")
+        # Auto-increase
+        if self.is_participating and ai_cfg.get('enabled', False):
+            self._handle_auto_increase(ai_cfg)
+
+        # Voluntary
+        if self.is_participating:
+            self._handle_voluntary_change(model)
 
         self.is_participating = self.deferral_rate > ZERO_DECIMAL
-        # Set participation_date when agent first participates
-        if not was_participating and self.is_participating and (self.participation_date is None or pd.isna(self.participation_date)):
-            # Auto-enrollment: hire_date + window_days
-            if self.enrollment_method == self.ENROLL_METHOD_AE:
-                days = self.model.ae_config.get('window_days', 0)
-                if self.hire_date and not pd.isna(self.hire_date):
-                    self.participation_date = self.hire_date + pd.Timedelta(days=days)
-            # Manual enrollment: random within voluntary window
-            elif self.enrollment_method == self.ENROLL_METHOD_MANUAL:
-                bparams = self.model.scenario_config.get('behavioral_params', {})
-                max_days = bparams.get('voluntary_window_days', 180)
-                if self.hire_date and not pd.isna(self.hire_date):
-                    offset = self.random.randint(0, max_days)
-                    self.participation_date = self.hire_date + pd.Timedelta(days=offset)
-            else:
-                # Fallback: use hire_date
-                self.participation_date = self.hire_date
+
+        if self.is_participating and not self.participation_date:
+            self._assign_participation_date(ae_cfg, model)
+
+    def _handle_ineligible(self) -> None:
+        logger.debug(
+            "%r is not eligible for deferral; resetting participation",
+            self
+        )
+        self._reset_participation()
+
+    def _handle_auto_enroll(
+        self,
+        ae_cfg: dict,
+        model: ModelProtocol
+    ) -> None:
+        """Perform AE decision based on centralized config."""
+        dist = ae_cfg.get('outcome_distribution', {})
+        try:
+            keys = [
+                'prob_opt_out', 'prob_stay_default',
+                'prob_opt_down', 'prob_increase_to_match',
+                'prob_increase_high'
+            ]
+            probs = [Decimal(str(dist.get(k, 0))) for k in keys]
+        except Exception as e:
+            logger.warning(
+                "%r: Error parsing AE outcome_distribution: %s",
+                self,
+                e
+            )
+            probs = [Decimal('0')] * 5
+
+        total = sum(probs)
+        if total > 1:
+            logger.warning(
+                '%r AE probabilities sum to >1: %s',
+                self,
+                total
+            )
+
+        rand = Decimal(str(self.random.random()))
+        cum = ZERO_DECIMAL
+        choices = [
+            ('opt_out', ZERO_DECIMAL),
+            (
+                'stay_default',
+                Decimal(str(ae_cfg.get('default_rate', 0)))
+            ),
+            (
+                'opt_down',
+                Decimal(str(ae_cfg.get('opt_down_target_rate', 0)))
+            ),
+            (
+                'inc_match',
+                Decimal(str(ae_cfg.get('match_target', 0)))
+            ),
+            (
+                'inc_high',
+                Decimal(
+                    str(ae_cfg.get('increase_high_target_rate', 0))
+                )
+            )
+        ]
+        methods = {
+            'opt_out':   (self.ENROLL_METHOD_NONE, False),
+            'stay_default': (self.ENROLL_METHOD_AE, True),
+            'opt_down':  (self.ENROLL_METHOD_AE, True),
+            'inc_match': (self.ENROLL_METHOD_AE, True),
+            'inc_high':  (self.ENROLL_METHOD_AE, True)
+        }
+
+        for prob, (name, rate) in zip(probs, choices):
+            if rand <= cum + prob:
+                method, partake = methods[name]
+                self.enrollment_method = method
+                self.is_participating = partake
+                self.deferral_rate = rate
+                logger.debug(
+                    "%r AE choice=%s rate=%s rand=%s",
+                    self, name, rate, rand
+                )
+                return
+
+            cum += prob
+
+        logger.debug("%r AE fallback to opt_out", self)
+        self._reset_participation()
+
+    def _handle_auto_increase(
+        self,
+        ai_cfg: dict
+    ) -> None:
+        """Increase deferral_rate by step_rate, capped at cap_rate."""
+        step = Decimal(str(ai_cfg.get('increase_rate', 0)))
+        cap = Decimal(str(ai_cfg.get('cap_rate', 1)))
+        new_rate = min(self.deferral_rate + step, cap)
+        logger.debug(
+            "%r AI: bumping deferral_rate from %s to %s (step=%s, cap=%s)",
+            self,
+            self.deferral_rate,
+            new_rate,
+            step,
+            cap,
+        )
+        self.deferral_rate = new_rate
+
+    def _handle_voluntary_change(
+        self,
+        model: ModelProtocol
+    ) -> None:
+        """Handle voluntary change stub."""
+        bp = (
+            model.scenario_config.get('plan_rules', {})
+            .get('behavioral_params', {})
+        )
+        logger.debug(
+            "%r: No voluntary logic implemented yet "
+            "(behavioral_params=%s)",
+            self,
+            bp,
+        )
+
+    def _reset_participation(self) -> None:
+        self.is_participating = False
+        self.deferral_rate = ZERO_DECIMAL
+        self.enrollment_method = self.ENROLL_METHOD_NONE
+
+    def _assign_participation_date(
+        self,
+        ae_cfg: dict,
+        model: ModelProtocol
+    ) -> None:
+        hd = getattr(self, 'hire_date', None)
+        window_days = int(ae_cfg.get('window_days', 0))
+        if (
+            self.enrollment_method == self.ENROLL_METHOD_AE
+            and hd is not None
+        ):
+            self.participation_date = hd + pd.Timedelta(
+                days=window_days
+            )
+        elif (
+            self.enrollment_method == self.ENROLL_METHOD_MANUAL
+            and hd is not None
+        ):
+            offset = self.random.randint(0, 180)
+            self.participation_date = hd + pd.Timedelta(
+                days=offset
+            )
+        else:
+            self.participation_date = hd
+
+    def _safe_decimal(
+        self,
+        value: Any,
+        name: str
+    ) -> Decimal:
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError) as e:
+            logger.warning(
+                "%r: Invalid decimal for %s: %s",
+                self,
+                name,
+                e
+            )
+            return ZERO_DECIMAL

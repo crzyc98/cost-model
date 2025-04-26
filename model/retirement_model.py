@@ -76,12 +76,25 @@ class RetirementPlanModel(mesa.Model):
         # Ensure plan_rules exists in scenario_config for consistent access
         if 'plan_rules' not in self.scenario_config:
             self.scenario_config['plan_rules'] = {}
-            
         # Move top-level config elements into plan_rules if they're not already there
         if 'auto_enrollment' in self.scenario_config and 'auto_enrollment' not in self.scenario_config['plan_rules']:
             self.scenario_config['plan_rules']['auto_enrollment'] = self.scenario_config['auto_enrollment']
-            
         self.plan_rules = self.scenario_config['plan_rules']
+
+        # --- Config validation: catch errors early ---
+        try:
+            ae_dist = self.plan_rules['auto_enrollment']['outcome_distribution']
+            total = sum(float(v) for v in ae_dist.values())
+            if total > 1:
+                raise ValueError(f"AE outcome_distribution probabilities sum to {total} (>1)")
+        except Exception as e:
+            raise ValueError(f"Invalid AE outcome_distribution config: {e}")
+        try:
+            ai_cfg = self.plan_rules.get('auto_increase', {})
+            if ai_cfg and float(ai_cfg.get('increase_rate', 0)) > float(ai_cfg.get('cap_rate', 1)):
+                raise ValueError(f"auto_increase.increase_rate ({ai_cfg.get('increase_rate')}) > cap_rate ({ai_cfg.get('cap_rate')})")
+        except Exception as e:
+            raise ValueError(f"Invalid auto_increase config: {e}")
         self.ae_config = self.plan_rules.get('auto_enrollment', {})
         self.ae_enabled = str(self.ae_config.get('enabled', 'False')).lower() in ('true', '1', 't', 'y', 'yes')
         self.ae_default_rate = Decimal(str(self.ae_config.get('default_rate', '0.0')))
