@@ -150,6 +150,20 @@ Provide initial census CSV (e.g., `census_data.csv`) with columns:
 ```bash
 python scripts/run_projection.py <census_csv> --output <base_name> [--raw-output]
 ```
+```python
+# Programmatic usage example
+from agents.employee_agent import EmployeeAgent
+import pandas as pd
+
+# Assume `model` is an initialized RetirementPlanModel
+initial_state = {
+    "birth_date": pd.Timestamp("1985-05-01"),
+    "hire_date": pd.Timestamp("2023-01-15"),
+    "gross_compensation": 90000,
+}
+agent = EmployeeAgent(1, model, initial_state)
+agent.step()
+```
 
 - `<census_csv>`: path to initial census file.
 - `--output`: base path/name for Excel outputs (appends scenario and extension).
