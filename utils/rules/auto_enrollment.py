@@ -5,10 +5,16 @@ import pandas as pd
 import numpy as np
 import logging
 from datetime import timedelta
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def apply(df, plan_rules, simulation_year_start_date, simulation_year_end_date):
+def apply(
+    df: pd.DataFrame,
+    plan_rules: Dict[str, Any],
+    simulation_year_start_date: pd.Timestamp,
+    simulation_year_end_date: pd.Timestamp
+) -> pd.DataFrame:
     """Apply auto-enrollment rules to the DataFrame."""
     logger.info(f"Applying Auto Enrollment for {simulation_year_end_date.year}")
     ae_rules = plan_rules.get('auto_enrollment', {})
@@ -32,13 +38,10 @@ def apply(df, plan_rules, simulation_year_start_date, simulation_year_end_date):
         if col not in df.columns:
             df[col] = pd.NaT
 
-    # Setup AE window
-    window_days = ae_rules.get('window_days', None)
+    # Setup AE window (default zero days if not configured)
+    window_days = ae_rules.get('window_days', 0)
     df['ae_window_start'] = df['eligibility_entry_date']
-    if window_days is not None:
-        df['ae_window_end'] = df['eligibility_entry_date'] + timedelta(days=window_days)
-    else:
-        df['ae_window_end'] = pd.NaT
+    df['ae_window_end'] = df['eligibility_entry_date'] + timedelta(days=window_days)
 
     # Initialize flags
     df['proactive_enrolled'] = False

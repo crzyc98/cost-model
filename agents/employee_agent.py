@@ -50,7 +50,13 @@ class EmployeeAgent(BehaviorMixin, StateMixin, CompensationMixin, EligibilityMix
             model: The model instance the agent belongs to.
             initial_state: Dictionary containing initial attributes from the census.
         """
-        super().__init__(unique_id, model)
+        # Initialize without Mesa Agent registration to support DummyModel
+        try:
+            super().__init__(unique_id, model)
+        except AttributeError:
+            # DummyModel lacks register_agent, so assign manually
+            self.unique_id = unique_id
+            self.model = model
 
         # Validate required initial_state keys
         for key in ("birth_date", "hire_date", "gross_compensation"):

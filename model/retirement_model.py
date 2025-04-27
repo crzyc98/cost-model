@@ -82,13 +82,15 @@ class RetirementPlanModel(mesa.Model):
         self.plan_rules = self.scenario_config['plan_rules']
 
         # --- Config validation: catch errors early ---
-        try:
-            ae_dist = self.plan_rules['auto_enrollment']['outcome_distribution']
-            total = sum(float(v) for v in ae_dist.values())
-            if total > 1:
-                raise ValueError(f"AE outcome_distribution probabilities sum to {total} (>1)")
-        except Exception as e:
-            raise ValueError(f"Invalid AE outcome_distribution config: {e}")
+        # Validate auto_enrollment only if configured
+        if 'auto_enrollment' in self.plan_rules:
+            try:
+                ae_dist = self.plan_rules['auto_enrollment']['outcome_distribution']
+                total = sum(float(v) for v in ae_dist.values())
+                if total > 1:
+                    raise ValueError(f"AE outcome_distribution probabilities sum to {total} (>1)")
+            except Exception as e:
+                raise ValueError(f"Invalid AE outcome_distribution config: {e}")
         try:
             ai_cfg = self.plan_rules.get('auto_increase', {})
             if ai_cfg and float(ai_cfg.get('increase_rate', 0)) > float(ai_cfg.get('cap_rate', 1)):

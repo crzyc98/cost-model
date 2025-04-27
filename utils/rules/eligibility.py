@@ -3,12 +3,18 @@ Eligibility rule: age/service/hours + entry-date calc
 """
 import pandas as pd
 import numpy as np
+from typing import Dict, Any
 import logging
 from utils.date_utils import calculate_age, calculate_tenure
+from utils.constants import ACTIVE_STATUSES
 
 logger = logging.getLogger(__name__)
 
-def apply(df, plan_rules, simulation_year_end_date):
+def apply(
+    df: pd.DataFrame,
+    plan_rules: Dict[str, Any],
+    simulation_year_end_date: pd.Timestamp
+) -> pd.DataFrame:
     """Apply eligibility rules to the DataFrame."""
     logger.info(f"Determining eligibility for {simulation_year_end_date.year}")
     eligibility_config = plan_rules.get('eligibility', {})
@@ -52,20 +58,22 @@ def apply(df, plan_rules, simulation_year_end_date):
     combined[combined == pd.Timestamp.min] = pd.NaT
     df['eligibility_entry_date'] = pd.to_datetime(combined, errors='coerce')
 
-    # Determine eligibility
+    # Determine base eligibility (age/service/status)
     eligible_by_date = (df['eligibility_entry_date'] <= simulation_year_end_date) & df['eligibility_entry_date'].notna()
-    active_mask = df['status'].isin(['Active', 'Unknown'])
-    df['is_eligible'] = eligible_by_date & active_mask
+    active_mask = df['status'].isin(ACTIVE_STATUSES)
 
-    # Enforce hours requirement
-    min_hours = plan_rules.get('min_hours_worked', 0)
-    if min_hours > 0:
+    # Hours requirement (optional)
+    min_hours = eligibility_config.get('min_hours_worked', None)
+    if min_hours is not None:
         if 'hours_worked' in df.columns:
-            below = df['hours_worked'] < min_hours
-            df.loc[below, 'is_eligible'] = False
-            logger.info(f"Hours requirement: set {below.sum()} employees ineligible (<{min_hours} hours).")
+            meets_hours = df['hours_worked'] >= min_hours
         else:
-            logger.warning("'hours_worked' missing; skipping hours requirement.")
+            meets_hours = pd.Series(False, index=df.index)
+    else:
+        meets_hours = pd.Series(True, index=df.index)
+
+    # Combine all requirements
+    df['is_eligible'] = eligible_by_date & active_mask & meets_hours
 
     eligible_count = df['is_eligible'].sum()
     logger.info(f"Eligibility determined: {eligible_count} eligible employees.")

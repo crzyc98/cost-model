@@ -2,9 +2,10 @@
 Helper functions for parsing employer match formulas.
 """
 import re
+from typing import Tuple, List, Dict, Any
 
 
-def parse_match_formula(formula_str):
+def parse_match_formula(formula_str: Any) -> Tuple[float, float]:
     """
     Parses an employer match formula string (e.g., "50% up to 6%") into components.
 
@@ -39,7 +40,7 @@ def parse_match_formula(formula_str):
     return 0.0, 0.0
 
 
-def parse_match_tiers(formula_str):
+def parse_match_tiers(formula_str: Any) -> List[Dict[str, float]]:
     """
     Parses a tiered employer match formula string (e.g., "100% up to 3%, 50% up to 5%").
 
