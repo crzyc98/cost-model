@@ -22,9 +22,11 @@ def apply(df, plan_rules, simulation_year):
     if 'ai_opted_out' not in df.columns:
         df['ai_opted_out'] = False
     if 'ai_enrolled' not in df.columns:
-        df['ai_enrolled'] = False
+        # initialize as pandas BooleanArray (extension dtype) to avoid object dtype
+        df['ai_enrolled'] = pd.Series(False, index=df.index, dtype='boolean')
     else:
-        df['ai_enrolled'] = df['ai_enrolled'].fillna(False)
+        # convert to BooleanArray and fill missing without deprecation warning
+        df['ai_enrolled'] = df['ai_enrolled'].astype('boolean').fillna(False)
 
     # Apply auto-increase to all employees enrolled in AI until they hit the cap
     mask = (

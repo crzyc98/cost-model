@@ -5,27 +5,29 @@ import logging
 from utils.date_utils import calculate_age
 from utils.rules.formula_parsers import parse_match_formula, parse_match_tiers
 
+DEBUG_SAMPLE = False  # Set via CLI to throttle proration examples
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Ensure DEBUG logs are not filtered
 logger.propagate = True        # Ensure logs propagate to root logger
 
 def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
-    print("\n=== DEBUG: contributions.apply() called ===")
+    logger.info("\n=== DEBUG: contributions.apply() called ===")
     if 'status' in df.columns:
-        print("DEBUG: status value counts:\n", df['status'].value_counts())
-        print("DEBUG: Any 'Terminated' in DataFrame?", (df['status'] == 'Terminated').any())
+        logger.info("DEBUG: status value counts:\n%s", df['status'].value_counts())
+        logger.info("DEBUG: Any 'Terminated' in DataFrame? %s", (df['status'] == 'Terminated').any())
     else:
-        print("DEBUG: 'status' column not present in DataFrame!")
-    print("=== END DEBUG ===\n")
+        logger.info("DEBUG: 'status' column not present in DataFrame!")
+    logger.info("=== END DEBUG ===\n")
 
     # --- DIAGNOSTIC: Show status counts and presence of 'Terminated' at function entry ---
-    print("\n=== DEBUG: apply() called ===")
+    logger.info("\n=== DEBUG: apply() called ===")
     if 'status' in df.columns:
-        print("DEBUG: status value counts:\n", df['status'].value_counts())
-        print("DEBUG: Any 'Terminated' in DataFrame?", (df['status'] == 'Terminated').any())
+        logger.info("DEBUG: status value counts:\n%s", df['status'].value_counts())
+        logger.info("DEBUG: Any 'Terminated' in DataFrame? %s", (df['status'] == 'Terminated').any())
     else:
-        print("DEBUG: 'status' column not present in DataFrame!")
-    print("=== END DEBUG ===\n")
+        logger.info("DEBUG: 'status' column not present in DataFrame!")
+    logger.info("=== END DEBUG ===\n")
 
     """
     Calculates employee and employer contributions for the simulation year.
@@ -64,11 +66,18 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
     }
     for col, default in output_cols.items():
         if col not in df.columns:
-            df[col] = default
+            # initialize with pandas BooleanArray for eligibility flag
+            if col == 'is_catch_up_eligible':
+                df[col] = pd.Series(default, index=df.index, dtype='boolean')
+            else:
+                df[col] = default
         if 'contribution' in col or 'compensation' in col or 'limit' in col:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
         elif col == 'is_catch_up_eligible':
-            df[col] = df[col].fillna(False).astype(bool)
+            # ensure extension boolean dtype and fill without warning
+            df[col] = df[col].astype('boolean').fillna(False)
+    # Optionally downcast other object dtypes after numeric and boolean casts
+    df = df.infer_objects(copy=False)
 
     df['deferral_rate'] = pd.to_numeric(df['deferral_rate'], errors='coerce').fillna(0.0)
 
@@ -98,12 +107,12 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
             logger.debug(f"Sample termination dates before processing:\n{term_sample['termination_date'].to_string()}")
         
         # Extra diagnostics for proration logic
-        print(f"DEBUG: Checking for proration, year_start_date={year_start_date}, year_end_date={year_end_date}")
-        print(f"DEBUG: Number with termination_date notna: {df['termination_date'].notna().sum()}")
-        print(f"DEBUG: Number with termination_date >= year_start_date: {(df['termination_date'] >= year_start_date).sum()}")
-        print(f"DEBUG: Number with termination_date <= year_end_date: {(df['termination_date'] <= year_end_date).sum()}")
+        logger.debug(f"DEBUG: Checking for proration, year_start_date={year_start_date}, year_end_date={year_end_date}")
+        logger.debug(f"DEBUG: Number with termination_date notna: {df['termination_date'].notna().sum()}")
+        logger.debug(f"DEBUG: Number with termination_date >= year_start_date: {(df['termination_date'] >= year_start_date).sum()}")
+        logger.debug(f"DEBUG: Number with termination_date <= year_end_date: {(df['termination_date'] <= year_end_date).sum()}")
         # Identify terminations that occurred during the plan year
-        print("!!! ENTERED PRORATION BLOCK !!!")  # Diagnostic print
+        logger.debug("!!! ENTERED PRORATION BLOCK !!!")  # Diagnostic print
         term_mask = (
             df['termination_date'].notna() & 
             (df['termination_date'] >= year_start_date) & 
@@ -124,13 +133,16 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
             df['days_worked'] = np.minimum(df['days_worked'], total_days)
             
             # Log some examples for verification
-            logger.debug(f"Termination proration examples:")
-            for i, (idx, row) in enumerate(df[term_mask].head(3).iterrows()):
-                print(f"PRORATION EXAMPLE {i+1}: Termination {row['termination_date'].date()}, Days worked: {row['days_worked']}/{total_days}, Gross comp: ${row['gross_compensation']:.2f}")  # Diagnostic print
+            logger.debug("Termination proration example(s):")
+            num_examples = 3 if DEBUG_SAMPLE else 1
+            for i, (idx, row) in enumerate(df[term_mask].head(num_examples).iterrows()):
                 logger.debug(
-                    f"Example {i+1}: Termination {row['termination_date'].date()}, "
-                    f"Days worked: {row['days_worked']}/{total_days}, "
-                    f"Gross comp: ${row['gross_compensation']:.2f}"
+                    "Example %d: Termination %s, Days worked: %s/%s, Gross comp: $%.2f",
+                    i+1,
+                    row['termination_date'].date(),
+                    row['days_worked'],
+                    total_days,
+                    row['gross_compensation']
                 )
 
     # Calculate proration factor based on days worked

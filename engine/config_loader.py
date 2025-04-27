@@ -1,6 +1,7 @@
 import yaml
 from copy import deepcopy
 from pathlib import Path
+import yaml as _yaml
 
 def _normalize_config(conf: dict):
     # Map YAML keys to engine config keys
@@ -31,8 +32,15 @@ def load_scenarios(config_path: str):
     If 'scenarios' is absent, treat the entire file as one scenario.
     Returns a list of scenario dicts with 'scenario_name' keys.
     """
+    # Load user config
     cfg = yaml.safe_load(Path(config_path).read_text()) or {}
-    global_params = cfg.get('global_parameters', {}) or {}
+    # Start with default globals from config/defaults.yaml
+    defaults_path = Path(__file__).parent.parent / 'config' / 'defaults.yaml'
+    defaults_cfg = _yaml.safe_load(defaults_path.read_text()) or {}
+    global_params = defaults_cfg.get('global_defaults', {})
+    # Merge user global_parameters to override defaults
+    user_globals = cfg.get('global_parameters', {}) or {}
+    global_params.update(user_globals)
     scenarios_cfg = cfg.get('scenarios', {}) or {}
     scenarios = []
     if scenarios_cfg:

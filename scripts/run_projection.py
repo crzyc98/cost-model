@@ -13,6 +13,18 @@ import argparse # Keep argparse for input/output files
 import joblib # Import joblib for loading the model
 import numpy as np # Import numpy for np.where
 import logging
+import structlog
+
+logger = logging.getLogger(__name__)
+
+class ScenarioFilter(logging.Filter):
+    """Logging filter to prefix records with the scenario name."""
+    def __init__(self, scenario_name: str):
+        super().__init__()
+        self.scenario_name = scenario_name
+    def filter(self, record):
+        record.scenario = f"[{self.scenario_name}]"
+        return True
 
 # --- Helper Functions ---
 
@@ -22,12 +34,12 @@ def load_and_initialize_data(csv_path):
     """
     try:
         df = pd.read_csv(csv_path)
-        print(f"Successfully loaded initial census: {csv_path}")
+        logger.info(f"Successfully loaded initial census: {csv_path}")
     except FileNotFoundError:
-        print(f"Error: Input CSV file not found at {csv_path}")
+        logger.error(f"Input CSV file not found at {csv_path}")
         return None
     except Exception as e:
-        print(f"Error loading CSV {csv_path}: {e}")
+        logger.error(f"Error loading CSV {csv_path}: {e}")
         return None
 
     # Basic Date Parsing (add more robust error handling as needed)
@@ -36,8 +48,7 @@ def load_and_initialize_data(csv_path):
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
         else:
-            print(f"Warning: Expected date column '{col}' not found.")
-            # Decide handling: Add empty? Error out? For now, just warn.
+            logger.warning(f"Expected date column '{col}' not found.")
             if col == 'termination_date': # Termination date can be optional
                  df[col] = pd.NaT
 
@@ -64,7 +75,7 @@ def load_and_initialize_data(csv_path):
             df['is_participating'] = df['deferral_rate'] > 0
     elif 'deferral_rate' not in df.columns:
         df['deferral_rate'] = 0.0 # Default if no source column
-        print("Warning: 'pre_tax_deferral_percentage' or 'deferral_rate' not found. Initializing deferral rate to 0.")
+        logger.warning("'pre_tax_deferral_percentage' or 'deferral_rate' not found. Initializing deferral rate to 0.")
     else:
         # Seed participation flags for any existing deferral_rate > 0
         df['is_participating'] = df['deferral_rate'] > 0
@@ -73,7 +84,7 @@ def load_and_initialize_data(csv_path):
     required_cols = ['ssn', 'birth_date', 'hire_date', 'gross_compensation']
     for col in required_cols:
         if col not in df.columns:
-            print(f"Error: Required column '{col}' is missing from the input CSV.")
+            logger.error(f"Required column '{col}' is missing from the input CSV.")
             return None
 
     # Add initial plan_year_end_date based on the LATEST date found in the input
@@ -83,13 +94,13 @@ def load_and_initialize_data(csv_path):
     if pd.isna(latest_date) and 'plan_year_end_date' in df.columns:
          latest_date = pd.to_datetime(df['plan_year_end_date']).max()
     if pd.isna(latest_date):
-        print("Warning: Could not determine latest date from data. Using default end date assumption.")
+        logger.warning("Could not determine latest date from data. Using default end date assumption.")
         # A reasonable default might be end of previous year if start_year is known
         # For now, just add a placeholder column if needed by downstream funcs.
         if 'plan_year_end_date' not in df.columns: df['plan_year_end_date'] = pd.NaT
     elif 'plan_year_end_date' not in df.columns:
         df['plan_year_end_date'] = pd.Timestamp(f"{latest_date.year}-12-31")
-        print(f"Added 'plan_year_end_date' based on latest data: {df['plan_year_end_date'].iloc[0].date()}")
+        logger.info(f"Added 'plan_year_end_date' based on latest data: {df['plan_year_end_date'].iloc[0].date()}")
     else:
          df['plan_year_end_date'] = pd.to_datetime(df['plan_year_end_date'])
 
@@ -97,12 +108,12 @@ def load_and_initialize_data(csv_path):
     if 'status' not in df.columns:
         if 'termination_date' in df.columns:
             df['status'] = np.where(pd.isna(df['termination_date']), 'Active', 'Terminated')
-            print("Initialized 'status' column based on 'termination_date'.")
+            logger.info("Initialized 'status' column based on 'termination_date'.")
         else:
             df['status'] = 'Active' # Assume active if no termination info
-            print("Warning: 'termination_date' not found. Initializing 'status' column to 'Active' for all.")
+            logger.warning("'termination_date' not found. Initializing 'status' column to 'Active' for all.")
     else:
-        print("Column 'status' already exists in input file.")
+        logger.info("Column 'status' already exists in input file.")
     # --- END NEW --- #
 
     return df
@@ -130,7 +141,7 @@ def aggregate_scenario_results(yearly_data, scenario_config):
         active_df = df[df['status'].isin(['Active', 'Unknown'])].copy()
         
         if active_df.empty:
-             print(f"  Warning: No active employees found for year {current_sim_year}. Skipping summary.")
+             logger.warning(f"No active employees found for year {current_sim_year}. Skipping summary.")
              continue
 
         # Calculate Metrics
@@ -168,26 +179,26 @@ def aggregate_scenario_results(yearly_data, scenario_config):
             if pd.api.types.is_numeric_dtype(active_df['plan_year_compensation']):
                 total_plan_year_compensation = active_df['plan_year_compensation'].sum()
                 if pd.isna(total_plan_year_compensation):
-                    print(f"  Warning: Sum of 'plan_year_compensation' is NaN for year {current_sim_year}. Treating as 0.")
+                    logger.warning(f"Sum of 'plan_year_compensation' is NaN for year {current_sim_year}. Treating as 0.")
                     total_plan_year_compensation = 0
             else:
-                print(f"  Warning: 'plan_year_compensation' column is not numeric for year {current_sim_year}. Type: {active_df['plan_year_compensation'].dtype}. Treating as 0.")
+                logger.warning(f"'plan_year_compensation' column is not numeric for year {current_sim_year}. Type: {active_df['plan_year_compensation'].dtype}. Treating as 0.")
                 total_plan_year_compensation = 0
         else:
-            print(f"  Warning: 'plan_year_compensation' column not found for year {current_sim_year}. Cannot calculate compensation-based metrics accurately.")
+            logger.warning(f"'plan_year_compensation' column not found for year {current_sim_year}. Cannot calculate compensation-based metrics accurately.")
 
         total_capped_compensation = 0
         if has_capped_comp:
              if pd.api.types.is_numeric_dtype(active_df['capped_compensation']):
                  total_capped_compensation = active_df['capped_compensation'].sum()
                  if pd.isna(total_capped_compensation):
-                    print(f"  Warning: Sum of 'capped_compensation' is NaN for year {current_sim_year}. Treating as 0.")
+                    logger.warning(f"Sum of 'capped_compensation' is NaN for year {current_sim_year}. Treating as 0.")
                     total_capped_compensation = 0
              else:
-                print(f"  Warning: 'capped_compensation' column is not numeric for year {current_sim_year}. Type: {active_df['capped_compensation'].dtype}. Treating as 0.")
+                logger.warning(f"'capped_compensation' column is not numeric for year {current_sim_year}. Type: {active_df['capped_compensation'].dtype}. Treating as 0.")
                 total_capped_compensation = 0
         else:
-            print(f"  Warning: 'capped_compensation' column not found for year {current_sim_year}. Cannot calculate capped compensation-based metrics accurately.")
+            logger.warning(f"'capped_compensation' column not found for year {current_sim_year}. Cannot calculate capped compensation-based metrics accurately.")
             
         # Employer Cost Percentages
         employer_cost_pct_plan_comp = (total_employer_cost / total_plan_year_compensation) if total_plan_year_compensation > 0 else 0
@@ -222,7 +233,9 @@ def aggregate_scenario_results(yearly_data, scenario_config):
 
 def run_scenario_simulation(scenario_name, scenario_config, start_census_df, baseline_scenario_config):
     """Runs the projection simulation for a single scenario."""
-    print(f"Running simulation for scenario: {scenario_name}...")
+    # Prefix logs with scenario name
+    logging.getLogger().addFilter(ScenarioFilter(scenario_name))
+    logger.info(f"Running simulation for scenario: {scenario_name}...")
     
     # Make a deep copy to avoid modifying the original df across scenarios
     start_df = start_census_df.copy(deep=True)
@@ -247,18 +260,26 @@ def run_scenario_simulation(scenario_name, scenario_config, start_census_df, bas
 # --- Main Execution --- 
 
 if __name__ == "__main__":
-    # Logging setup: writes all logs to 'projection.log' and also shows WARNING+ in terminal
+    # Structured JSON logging with structlog
     logging.basicConfig(
         level=logging.DEBUG,
-        filename=os.path.join('output', 'projection.log'),  # Log file in output/ directory
-        filemode='w',               # Overwrite log each run
-        format='%(asctime)s %(levelname)s:%(message)s'
+        filename=os.path.join('output', 'projection.log'),
+        filemode='w'
     )
-    # Optional: also show WARNING+ in terminal
+    structlog.configure(
+        processors=[
+            structlog.stdlib.filter_by_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer()
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+    # Optional: console output at WARNING+
     console = logging.StreamHandler()
     console.setLevel(logging.WARNING)
-    formatter = logging.Formatter('%(levelname)s: %(message)s')
-    console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
 
     parser = argparse.ArgumentParser(description='Run retirement plan projection simulations for multiple scenarios.')
@@ -266,8 +287,16 @@ if __name__ == "__main__":
     parser.add_argument('--output', help='Optional base path/name for output Excel file (e.g., projection_results). Scenario name and .xlsx will be appended.')
     parser.add_argument('--raw-output', action='store_true', help='Save raw agent-level results to Excel')
     parser.add_argument('--config', default='../configs/config.yaml', help='Path to scenarios YAML')
+    parser.add_argument('--debug-sample', action='store_true', help='Throttle proration debug examples (show one instead of three)')
 
     args = parser.parse_args()
+
+    if args.debug_sample:
+        try:
+            import utils.rules.contributions as contrib_mod
+            contrib_mod.DEBUG_SAMPLE = True
+        except ImportError:
+            logger.warning("Unable to set DEBUG_SAMPLE flag; module not found.")
 
     # 1. Load and Initialize Data ONCE
     initial_census_df = load_and_initialize_data(args.input_csv)
@@ -282,7 +311,7 @@ if __name__ == "__main__":
         if baseline_scenario is None:
             # Fallback to first scenario if 'Baseline' not defined
             baseline_scenario = scenarios[0]
-            print(f"No 'Baseline' scenario found; using first scenario '{baseline_scenario['scenario_name']}' as baseline.")
+            logger.info(f"No 'Baseline' scenario found; using first scenario '{baseline_scenario['scenario_name']}' as baseline.")
         for config in scenarios:
             raw_data, summary_data = run_scenario_simulation(config['scenario_name'], config, initial_census_df, baseline_scenario)
             
@@ -302,9 +331,9 @@ if __name__ == "__main__":
                     with pd.ExcelWriter(output_file) as writer:
                         yearly_data.to_excel(writer, index=True)
                     yearly_data.to_csv(csv_file, index=True)
-                    print(f"Saved results for scenario '{scenario_name}' to: {output_file} and {csv_file}")
+                    logger.info(f"Saved results for scenario '{scenario_name}' to: {output_file} and {csv_file}")
                 except Exception as e:
-                    print(f"Error saving results for scenario '{scenario_name}' to {output_file} or {csv_file}: {e}")
+                    logger.error(f"Error saving results for scenario '{scenario_name}' to {output_file} or {csv_file}: {e}")
             # NEW: save combined summary sheet for all scenarios
             try:
                 combined_df = pd.concat(all_summary_results, names=['Scenario','Year']).reset_index()
@@ -313,9 +342,9 @@ if __name__ == "__main__":
                 with pd.ExcelWriter(combined_file) as writer:
                     combined_df.to_excel(writer, index=False, sheet_name='Comparison')
                 combined_df.to_csv(combined_csv, index=False)
-                print(f"Saved combined summary to: {combined_file} and {combined_csv}")
+                logger.info(f"Saved combined summary to: {combined_file} and {combined_csv}")
             except Exception as e:
-                print(f"Error saving combined summary: {e}")
+                logger.error(f"Error saving combined summary: {e}")
         if args.raw_output:
             # Save raw agent-level data for each scenario
             for scenario_name, data_dict in all_raw_results.items():
@@ -333,8 +362,8 @@ if __name__ == "__main__":
                         combined_df.to_excel(writer, sheet_name='Combined_Raw', index=False)
                     # Save combined raw data to CSV
                     combined_df.to_csv(raw_csv, index=False)
-                    print(f"Saved raw agent-level data for '{scenario_name}' to: {raw_file} and {raw_csv}")
+                    logger.info(f"Saved raw agent-level data for '{scenario_name}' to: {raw_file} and {raw_csv}")
                 except Exception as e:
-                    print(f"Error saving raw data for '{scenario_name}' to {raw_file} or {raw_csv}: {e}")
+                    logger.error(f"Error saving raw data for '{scenario_name}' to {raw_file} or {raw_csv}: {e}")
     else:
-        print("Projection run failed due to data loading/initialization errors.")
+        logger.error("Projection run failed due to data loading/initialization errors.")

@@ -120,14 +120,16 @@ def apply(df, plan_rules, simulation_year_start_date, simulation_year_end_date):
     stay_p = ae_outcome_dist.get('stay_default', 0.0)
     opt_out_p = ae_outcome_dist.get('opt_out', 0.0)
     total_p = stay_p + opt_out_p
+    # Normalize if sum not 1.0
     if total_p > 0 and not np.isclose(total_p, 1.0):
         logger.warning(f"AE outcome probabilities sum to {total_p:.2%}; normalizing.")
         stay_p /= total_p
         opt_out_p /= total_p
+    # Default invalid or empty distribution to stay_default
     if total_p <= 0:
-        logger.warning("AE outcome probabilities invalid; skipping outcomes.")
-        return df
-
+        logger.info("AE outcome distribution missing or zero; defaulting all to stay_default.")
+        stay_p, opt_out_p = 1.0, 0.0
+    
     outcomes = ['stay_default', 'opt_out']
     probs = [stay_p, opt_out_p]
     target_indices = df.index[ae_target]

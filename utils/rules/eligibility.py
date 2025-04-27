@@ -4,7 +4,6 @@ Eligibility rule: age/service/hours + entry-date calc
 import pandas as pd
 import numpy as np
 import logging
-from dateutil.relativedelta import relativedelta
 from utils.date_utils import calculate_age, calculate_tenure
 
 logger = logging.getLogger(__name__)
@@ -44,8 +43,9 @@ def apply(df, plan_rules, simulation_year_end_date):
     else:
         df['eligibility_entry_date'] = pd.to_datetime(df['eligibility_entry_date'], errors='coerce')
 
-    service_met = df['hire_date'] + df['hire_date'].apply(lambda x: relativedelta(months=min_service_months) if pd.notna(x) else pd.NaT)
-    age_met = df['birth_date'] + df['birth_date'].apply(lambda x: relativedelta(years=min_age) if pd.notna(x) else pd.NaT)
+    # Vectorized eligibility entry date calculation
+    service_met = df['hire_date'] + pd.DateOffset(months=min_service_months)
+    age_met = df['birth_date'] + pd.DateOffset(years=min_age)
 
     combined = np.maximum(service_met.fillna(pd.Timestamp.min), age_met.fillna(pd.Timestamp.min))
     combined[service_met.isna() | age_met.isna()] = pd.NaT
