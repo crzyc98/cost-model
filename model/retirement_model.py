@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 import re # Import regular expression module
 import yaml  # For loading hazard model parameters
 from utils.status_enums import EmploymentStatus
+from utils.rules.formula_parsers import parse_match_formula
 
 # Configure logging
 # Set up basic logging for the module if needed, or rely on root config
@@ -280,22 +281,35 @@ class RetirementPlanModel(mesa.Model):
         # Reset hire record for this year (we'll spawn at end)
         self.last_step_hires_list = []
 
-        # 1. Create New Hires for *this* year
-        # 2. Identify Terminations for this year
-        agents_terminating_this_year = self._identify_terminations()
+        # 1. Determine veteran terminations: expected vs. realized attrition
+        h_ex = self.scenario_config.get('annual_termination_rate', 0.0)
+        use_expected = self.scenario_config.get('use_expected_attrition', False)
+        agents_active_at_start = list(self.schedule.agents)
+        if use_expected:
+            # deterministic attrition count
+            T_ex_used = int(round(h_ex * active_at_start))
+            agents_terminating_this_year = self.random.sample(
+                agents_active_at_start, min(T_ex_used, len(agents_active_at_start))
+            )
+        else:
+            # realized attrition: independent chance for each agent
+            agents_terminating_this_year = [
+                a for a in agents_active_at_start if self.random.random() < h_ex
+            ]
+            T_ex_used = len(agents_terminating_this_year)
         agents_terminating_this_year_ids = {a.unique_id for a in agents_terminating_this_year}
-        
-        # 3. Execute Agent Steps for agents active at the START of the year
+
+        # 2. Execute Agent Steps for agents active at the START of the year
         agents_active_at_start = list(self.schedule.agents)
         for agent in agents_active_at_start:
             agent.step() # Perform yearly updates, decisions, calculations
 
-        # 4. Advance the scheduler step
+        # 3. Advance the scheduler step
         logging.debug(f"Executing self.schedule.step() for year {self.year}")
         self.schedule.step()
         logging.debug(f"Finished self.schedule.step() for year {self.year}")
         
-        # 5. Update employment status based on terminations
+        # 4. Update employment status based on terminations
         for agent in self.population.values():
             is_new_hire = agent.unique_id in [a.unique_id for a in self.last_step_hires_list]
             terminates_this_year = agent.unique_id in agents_terminating_this_year_ids
@@ -308,7 +322,7 @@ class RetirementPlanModel(mesa.Model):
                     agent.employment_status = "New Hire Terminated"
                 else:
                     agent.employment_status = "Experienced Terminated"
-                    # self.schedule.remove(agent)  # commented out so termination_date is still collected
+                self.schedule.remove(agent)
                 # Optional: Add debug print for assigned date
                 logging.debug(f"  Termination Processed: Agent {agent.unique_id} terminated on {agent.termination_date.date()} (Year {self.year}) Status: {agent.employment_status}")
 
@@ -332,21 +346,18 @@ class RetirementPlanModel(mesa.Model):
                     # Fallback if logic missed something, or if term date is exactly this year but they weren't in term list
                     agent.employment_status = "Inactive" # A generic inactive status?
 
-        # 6. Calibrate hires using expected or realized veteran terminations and apply head-on attrition
+        # 5. Calibrate hires: compute hires needed after veteran attrition
         growth_rate = self.scenario_config.get('annual_growth_rate', 0.02)
-        h_ex = self.scenario_config.get('annual_termination_rate', 0.0)
         h_nh = self.scenario_config.get('new_hire_termination_rate', h_ex)
         delta = round(active_at_start * growth_rate)
-        T_ex_real = len(agents_terminating_this_year)
-        use_expected = self.scenario_config.get('use_expected_attrition', False)
-        T_ex_used = h_ex * active_at_start if use_expected else T_ex_real
-        # H_t = (delta + T_ex_used) / (1 - h_nh)
+        # Use T_ex_used from attrition step
+        net_needed = delta + T_ex_used
+        # Solve H_t*(1 - h_nh) = net_needed
         if (1 - h_nh) > 0:
-            H_t = int((delta + T_ex_used) / (1 - h_nh))
+            H_t = int(round(net_needed / (1 - h_nh)))
         else:
-            H_t = int(delta + T_ex_used)
-        method = "expected" if use_expected else "realized"
-        logging.debug(f"Creating {H_t} new agents (using {method} T_ex={T_ex_used:.2f}, target_g={growth_rate:.2%}) for year {self.year}...")
+            H_t = int(net_needed)
+        logging.debug(f"Creating {H_t} new agents (using deterministic attrition, net_needed={net_needed:.2f}, target_g={growth_rate:.2%}) for year {self.year}...")
         # Spawn new hires
         new_hires = self._create_new_hires(num_new_hires=H_t)
         # Determine and apply new-hire attrition head-on
@@ -362,11 +373,11 @@ class RetirementPlanModel(mesa.Model):
                 agent.termination_date = term_date
                 agent.is_active = False
                 agent.employment_status = "New Hire Terminated"
-                # self.schedule.remove(agent)  # commented out so termination_date is still collected
+                self.schedule.remove(agent)
         # Keep survivors
         survivors = [a for a in new_hires if a.is_active]
         self.last_step_hires_list = survivors
-        logging.info(f"Δ={delta}, T_ex_real={T_ex_real}, T_ex_used={T_ex_used:.2f}, T_nh={T_nh}, H_t={H_t}")
+        logging.info(f"Δ={delta}, net_needed={net_needed:.2f}, T_ex_real={T_ex_used}, T_nh={T_nh}, H_t={H_t}")
 
         # --- Calculate Prorated Compensation for Reporting --- 
         # Do this *after* final termination dates are set for the year, for *all* agents present
@@ -449,7 +460,7 @@ class RetirementPlanModel(mesa.Model):
         self.datacollector.collect(self)
         logging.debug(f"Data collected for year {self.year}.")
 
-        # 7. Increment Year for the next step
+        # 6. Increment Year for the next step
         self.year += 1 # Use self.year consistently
 
         logging.debug(f"--- Finished model step for year {self.year - 1} ---")
@@ -672,63 +683,7 @@ class RetirementPlanModel(mesa.Model):
 
     def _parse_max_match_rate(self, formula_string):
         """
-        Parses the employer match formula string to find the deferral percentage
-        up to which the match applies (rate needed for max match).
-
-        Example formulas:
-        - "1.0_of_1.0_up_to_6.0_pct" -> returns Decimal('0.06')
-        - "50% up to 6%" -> returns Decimal('0.06')
-        - "0.5 of 1.0 up to 0.05" -> returns Decimal('0.05')
-        - "match 3%" -> returns Decimal('0.03') # Simple case
-        - "100% up to 4% of compensation" -> returns Decimal('0.04')
-
-        Returns:
-            Decimal: The deferral rate required for the maximum match, or
-                     Decimal('0.0') if parsing fails or no match exists.
+        Returns the deferral cap (as a Decimal) parsed from something like "50% up to 6%".
         """
-        if not formula_string or not isinstance(formula_string, str):
-            logging.warning("Employer match formula is missing or not a string. Cannot parse max match rate.")
-            return Decimal('0.0')
-
-        # Regex to find patterns like "up to X%", "up to X pct", "up to X.Y", or just "match X%"
-        # Handles variations in spacing and percentage symbols/words
-        # Prioritize "up to" patterns
-        # Updated regex to allow underscores OR spaces: [\s_]*
-        match_up_to = re.search(r'up[\s_]*to[\s_]*([0-9.]+)[\s_]*(%|pct)?', formula_string, re.IGNORECASE)
-        match_simple = re.search(r'match[\s_]*([0-9.]+)[\s_]*(%|pct)?', formula_string, re.IGNORECASE) # Added simple case
-
-        target_match = match_up_to or match_simple # Prefer "up to" if found
-
-        if target_match:
-            try:
-                rate_str = target_match.group(1)
-                rate_decimal = Decimal(rate_str)
-                # If '%' or 'pct' is present, or if the number is >= 1 (and not like 0.06), assume it's a percentage
-                # Refined check: Explicit %/pct OR number >= 1.0
-                is_percentage = target_match.group(2) is not None or rate_decimal >= Decimal('1.0')
-                if is_percentage:
-                    # Ensure it's not something like "up to 1.0" meaning 100% rate on a portion
-                    # If the number is exactly 1.0 without %/pct, it could be ambiguous
-                    # Let's assume >= 1.0 always means percentage unless explicitly < 1.0
-                    return (rate_decimal / Decimal('100.0')).quantize(Decimal('0.0001')) # Standardize precision
-                else: # Assume it's already a decimal rate (e.g., "up to 0.06")
-                    return rate_decimal.quantize(Decimal('0.0001'))
-            except (InvalidOperation, IndexError) as e:
-                logging.warning(f"Could not parse rate from employer match formula: '{formula_string}'. Found number: '{target_match.group(1) if target_match else 'None'}'. Error: {e}. Defaulting max match rate to 0.")
-                return Decimal('0.0')
-        else:
-            # Fallback: Try extracting any number followed by % or pct if other patterns fail
-            # Updated regex to allow underscores OR spaces: [\s_]*
-            fallback_match = re.search(r'([0-9.]+)[\s_]*(%|pct)', formula_string, re.IGNORECASE)
-            if fallback_match:
-                try:
-                    rate_str = fallback_match.group(1)
-                    rate_decimal = Decimal(rate_str)
-                    logging.warning(f"Used fallback pattern for match formula '{formula_string}'. Found rate {rate_str}%.")
-                    return (rate_decimal / Decimal('100.0')).quantize(Decimal('0.0001'))
-                except (InvalidOperation, IndexError):
-                     logging.warning(f"Fallback parsing failed for '{formula_string}'. Defaulting max match rate to 0.")
-                     return Decimal('0.0')
-
-            logging.warning(f"Could not find a recognizable rate pattern in employer match formula: '{formula_string}'. Defaulting max match rate to 0.")
-            return Decimal('0.0')
+        rate, cap = parse_match_formula(formula_string)
+        return Decimal(str(cap)).quantize(Decimal('0.0001'))
