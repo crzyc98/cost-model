@@ -26,6 +26,10 @@ def apply(df, plan_rules, simulation_year):
     else:
         df['ai_enrolled'] = df['ai_enrolled'].astype('boolean').fillna(False)
 
+    # ensure participating flag exists for seeding logic
+    if 'is_participating' not in df.columns:
+        df['is_participating'] = False
+
     # --- Seed ai_enrolled per scenario flags ---
     # 1) only bump new hires (hired this year)
     if ai_config.get('apply_to_new_hires_only', False):

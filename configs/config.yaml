@@ -4,12 +4,18 @@
 global_parameters:
   start_year: 2025
   projection_years: 5
+  random_seed: 12345
 
   # All of your plan rules now live under plan_rules:
   plan_rules:
     eligibility:
       min_age: 21
       min_service_months: 0
+    
+    onboarding_bump:
+      enabled: true
+      method: sample_plus_rate
+      rate: 0.05
 
     auto_enrollment:
       enabled: true

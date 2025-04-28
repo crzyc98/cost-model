@@ -1,9 +1,14 @@
+# utils/rules/contributions.py
+
+"""
+Calculates employee and employer contributions for the simulation year.
+Extracted from utils.plan_rules.calculate_contributions.
+"""
+
 import pandas as pd
 import numpy as np
-import re
 import logging
 from utils.date_utils import calculate_age
-from utils.rules.formula_parsers import parse_match_formula, parse_match_tiers
 
 DEBUG_SAMPLE = False  # Set via CLI to throttle proration examples
 
@@ -11,42 +16,37 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Ensure DEBUG logs are not filtered
 logger.propagate = True        # Ensure logs propagate to root logger
 
-def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
-    logger.info("\n=== DEBUG: contributions.apply() called ===")
-    if 'status' in df.columns:
-        logger.info("DEBUG: status value counts:\n%s", df['status'].value_counts())
-        logger.info("DEBUG: Any 'Terminated' in DataFrame? %s", (df['status'] == 'Terminated').any())
-    else:
-        logger.info("DEBUG: 'status' column not present in DataFrame!")
-    logger.info("=== END DEBUG ===\n")
-
-    # --- DIAGNOSTIC: Show status counts and presence of 'Terminated' at function entry ---
-    logger.info("\n=== DEBUG: apply() called ===")
-    if 'status' in df.columns:
-        logger.info("DEBUG: status value counts:\n%s", df['status'].value_counts())
-        logger.info("DEBUG: Any 'Terminated' in DataFrame? %s", (df['status'] == 'Terminated').any())
-    else:
-        logger.info("DEBUG: 'status' column not present in DataFrame!")
-    logger.info("=== END DEBUG ===\n")
-
-    """
-    Calculates employee and employer contributions for the simulation year.
-    Extracted from utils.plan_rules.calculate_contributions.
-    """
+def apply(df, plan_rules: dict, simulation_year, year_start_date, year_end_date) -> pd.DataFrame:
+    """Calculate contributions using provided plan_rules mapping."""
+    # Entry debug: show plan_rules keys and status counts
+    logger.debug(
+        "contributions.apply: entering with plan_rules keys=%s, status counts=\n%s",
+        list(plan_rules.keys()),
+        df.get('status', pd.Series()).value_counts()
+    )
     logger.info(f"Calculating contributions for {simulation_year}...")
-    plan_rules = scenario_config.get('plan_rules', {})
-    irs_limits = scenario_config.get('irs_limits', {})
+    # ensure start/end dates are timestamps for proration math
+    year_start_date = pd.to_datetime(year_start_date)
+    year_end_date = pd.to_datetime(year_end_date)
+
+    # Validate plan_rules shape
+    for key in ['irs_limits', 'employer_match', 'employer_nec']:
+        if key not in plan_rules:
+            logger.warning("plan_rules missing '%s'; related logic may be skipped", key)
+
+    irs_limits = plan_rules.get('irs_limits', {})
     year_limits = irs_limits.get(simulation_year, {})
+    logger.debug("contributions.apply: year_limits=%s", year_limits)
     logger.debug(f"IRS Limits for {simulation_year}: {year_limits}")
 
     statutory_comp_limit = year_limits.get('comp_limit', 345000)
     deferral_limit = year_limits.get('deferral_limit', 23000)
     catch_up_limit = year_limits.get('catch_up', 7500)
     overall_limit = year_limits.get('overall_limit', 69000)
-    catch_up_age = plan_rules.get('catch_up_age', 50)
-
-    employer_match_formula = plan_rules.get('employer_match_formula', "")
-    employer_non_elective_formula = plan_rules.get('employer_non_elective_formula', "")
+    catch_up_age = year_limits.get(
+        'catchup_eligibility_age',
+        plan_rules.get('catch_up_age', 50)
+    )
 
     required_input_cols = ['gross_compensation', 'deferral_rate', 'birth_date', 'status', 'hire_date']
     missing_cols = [col for col in required_input_cols if col not in df.columns]
@@ -85,10 +85,6 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
     total_days = (year_end_date - year_start_date).days + 1
     logger.debug(f"Plan year total days: {total_days} ({year_start_date} to {year_end_date})")
 
-    # Ensure critical dates are datetime objects
-    year_start_date = pd.to_datetime(year_start_date)
-    year_end_date = pd.to_datetime(year_end_date)
-    
     # compute days worked for everyone; default full year
     df['days_worked'] = total_days
 
@@ -145,6 +141,13 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
                     row['gross_compensation']
                 )
 
+    # 🔍 Year 1 Proration Stats
+    if simulation_year == year_start_date.year:
+        pr = df['days_worked'] / total_days
+        logger.debug(
+            f"[Year {simulation_year} Proration Stats] "
+            f"min={pr.min():.4f}, max={pr.max():.4f}, mean={pr.mean():.4f}"
+        )
     # Calculate proration factor based on days worked
     df['proration_factor'] = df['days_worked'] / total_days
     
@@ -231,21 +234,24 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
             )
 
         match_tiers = plan_rules.get('employer_match', {}).get('tiers', [])
+        logger.debug("contributions.apply: match_tiers=%s", match_tiers)
         match_dollar_cap = plan_rules.get('employer_match', {}).get('dollar_cap')
         df.loc[calc_mask, 'employer_match_contribution'] = 0.0
         if match_tiers:
-            eligible_deferral_rate = df.loc[calc_mask, 'deferral_rate']
-            eligible_capped_comp = df.loc[calc_mask, 'capped_compensation']
-            calculated_match = pd.Series(0.0, index=df[calc_mask].index)
-            last_deferral_cap = 0.0
-            for tier in match_tiers:
-                cap_pct = tier.get('cap_deferral_pct', 0.0)
-                rate = tier.get('match_rate', 0.0)
-                def_in_range = (eligible_deferral_rate.clip(upper=cap_pct) - last_deferral_cap).clip(lower=0.0)
-                calculated_match += def_in_range * eligible_capped_comp * rate
-                last_deferral_cap = cap_pct
+            # Vectorized multi-tier match calculation
+            caps = np.array([t.get('cap_deferral_pct', 0.0) for t in match_tiers])
+            rates = np.array([t.get('match_rate', 0.0) for t in match_tiers])
+            prev_caps = np.concatenate(([0.0], caps[:-1]))
+            # reshape for broadcasting: rows × tiers
+            def_rates = df.loc[calc_mask, 'deferral_rate'].to_numpy()[:, None]
+            comp_caps = df.loc[calc_mask, 'capped_compensation'].to_numpy()[:, None]
+            # compute deferral amount in each tier
+            def_in_tiers = np.clip(np.minimum(def_rates, caps) - prev_caps, 0.0, None)
+            # compute match per tier and sum
+            match_amounts = (def_in_tiers * comp_caps * rates).sum(axis=1)
             if match_dollar_cap is not None:
-                calculated_match = calculated_match.clip(upper=match_dollar_cap)
+                match_amounts = np.minimum(match_amounts, match_dollar_cap)
+            calculated_match = pd.Series(match_amounts, index=df.loc[calc_mask].index)
             df.loc[calc_mask, 'employer_match_contribution'] = calculated_match
 
         total_calc = (

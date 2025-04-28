@@ -37,5 +37,8 @@ env/
 *.xlsx
 *.xls
 
-# Ignore output files
+# ignore pytest cache
+.pytest_cache
+
+# ignore output
 output/

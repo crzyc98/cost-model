@@ -14,7 +14,9 @@ class SalarySampler(Protocol):
         comp_col: str,
         dist: dict,
         rate: float,
-        rng: Generator
+        rng: Generator = None,
+        seed: int = None,
+        **kwargs
     ) -> pd.Series:
         """
         Apply a rate-based bump or sample distribution-based bump for second-year employees.
@@ -27,7 +29,9 @@ class SalarySampler(Protocol):
         self,
         prev: pd.Series,
         size: int,
-        rng: Generator
+        rng: Generator = None,
+        seed: int = None,
+        **kwargs
     ) -> pd.Series:
         ...
 
@@ -43,7 +47,9 @@ class DefaultSalarySampler:
         comp_col: str,
         dist: dict,
         rate: float,
-        rng: Generator
+        rng: Generator = None,
+        seed: int = None,
+        **kwargs
     ) -> pd.Series:
         """
         Apply a fixed rate bump to second-year employees only (dist ignored).
@@ -54,10 +60,14 @@ class DefaultSalarySampler:
             dist: Distribution params for custom samplers (ignored here).
             rate: Bump rate (e.g., 0.1 for a 10% increase).
             rng: Random number generator.
+            seed: Seed for random number generator (for test compatibility).
 
         Returns:
             Series of updated compensation values.
         """
+        # support seed-based rng
+        if rng is None:
+            rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
         comp = df[comp_col].astype(float)
         # Determine mask for second-year employees (tenure == 1)
         if 'tenure' in df.columns:
@@ -73,7 +83,9 @@ class DefaultSalarySampler:
         self,
         prev: pd.Series,
         size: int,
-        rng: Generator
+        rng: Generator = None,
+        seed: int = None,
+        **kwargs
     ) -> pd.Series:
         """
         Draw termination compensations by sampling with replacement from prior-year values.
@@ -82,12 +94,18 @@ class DefaultSalarySampler:
             prev: Series of prior-year compensation values.
             size: Number of draws to sample.
             rng: Random number generator.
+            seed: Seed for random number generator.
 
         Returns:
             Series of sampled compensation values (length == size).
         """
+        # initialize rng with seed if provided
+        if rng is None:
+            rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
+        # support numpy array or Series for prev data
+        data = np.asarray(prev)
         # Edge cases: no draws or no source data
-        if size <= 0 or prev.empty:
-            return pd.Series([], dtype=prev.dtype)
-        draws = rng.choice(prev.values, size=size, replace=True)
-        return pd.Series(draws, dtype=prev.dtype)
+        if size <= 0 or data.size == 0:
+            return pd.Series([], dtype=prev.dtype if hasattr(prev, 'dtype') else float)
+        draws = rng.choice(data, size=size, replace=True)
+        return pd.Series(draws, dtype=prev.dtype if hasattr(prev, 'dtype') else float)
