@@ -4,38 +4,34 @@
 
 ```
 cost-model/
-├── agents/                  # Agent-based model logic (Mesa, agent classes, behaviors)
-├── configs/                 # YAML scenario/config files
-├── data/                    # Input census data, reference data
-├── docs/                    # Documentation and design notes
-├── engine/                  # Core config loader, orchestration logic
-├── loaders/                 # Data loading utilities
-├── model/                   # Core model logic
-├── notebooks/               # Jupyter/analysis notebooks
-├── output/                  # Output artifacts and results
-├── scripts/                 # Main entry points and batch scripts
+├── cost_model/           # Public Python package façade (stable API)
+├── engine/               # Core config loader & orchestration logic
+├── loaders/              # Data loading utilities (YAML/JSON/CSV)
+├── configs/              # Scenario/config YAML files
+├── defaults/             # Engine default settings (defaults.yaml)
+├── model/                # Core projection & business logic
+├── agents/               # ABM agents (Mesa-based EmployeeAgent)
+├── utils/                # Helpers, plan_rules façade, ML utilities
+│   ├── rules/             # Rule implementations
+│   │   ├── eligibility.py  # Eligibility logic
+│   │   ├── auto_enrollment.py  # Auto-enrollment logic
+│   │   ├── auto_increase.py    # Auto-increase logic
+│   │   ├── formula_parsers.py  # Match/NEC parsing helpers
+│   │   ├── contributions.py    # Contributions and limit engine
+│   │   └── response.py         # Plan-change deferral response
+│   └── plan_rules.py        # Facade to rule modules
+├── data/                 # Input census & reference data
+├── docs/                 # Documentation & design notes
+├── notebooks/            # Jupyter analysis notebooks
+├── scripts/              # CLI entry points & batch scripts
 │   ├── run_projection.py
 │   ├── generate_census.py
-│   ├── train_termination_model.py
 │   └── ...
-├── tests/                   # Unit and integration tests
-├── utils/                   # Plan rules, helpers, ML logic, utilities
-│   ├── rules/               # Modular plan rule implementations
-│   │   ├── eligibility.py
-│   │   ├── auto_enrollment.py
-│   │   ├── auto_increase.py
-│   │   ├── contributions.py
-│   │   ├── response.py
-│   │   └── formula_parsers.py
-│   ├── plan_rules.py        # Facade: stable import for all plan rules
-│   ├── ml_logic.py
-│   ├── projection_utils.py
-│   ├── sandbox_utils.py
-│   └── ...
-├── requirements.txt         # Python dependencies
-└── README.md
+├── tests/                # Unit & integration tests
+├── output/               # Generated output files & logs
+├── requirements.txt      # Python dependencies
+└── README.md             # Project overview
 ```
-
 
 A scenario-driven projection engine for retirement plan outcomes. Customize plan rules, demographic assumptions, and IRS limits, then generate both summary and detailed agent‑level outputs over multiple years.
 
@@ -178,21 +174,6 @@ After running, you’ll have:
 - `projection_results_Baseline.xlsx`, `projection_results_AIP_New_Hires.xlsx`, etc.
 - `projection_results_all_summaries.xlsx`
 - `projection_results_<scenario>_raw.xlsx` (per‑scenario raw data).
-
-│   ├── plan_rules.py           # Façade to rule modules
-│   └── rules/                  # Rule implementations
-│       ├── eligibility.py      # Eligibility logic
-│       ├── auto_enrollment.py  # Auto-enrollment logic
-│       ├── auto_increase.py    # Auto-increase logic
-│       ├── formula_parsers.py  # Match/NEC parsing helpers
-│       ├── contributions.py    # Contributions and limit engine
-│       └── response.py         # Plan-change deferral response
-├── data/
-│   └── config.yaml             # Scenario configurations and IRS limits
-├── docs/                       # Documentation and debugging notes
-├── requirements.txt            # Python dependencies
-└── README.md                   # Project overview and instructions
-```
 
 ## Contributing
 

@@ -4,7 +4,7 @@ Tests for scenario/config YAML loader (file, directory, inheritance, error handl
 import pytest
 import yaml
 # Update this import if scenario_loader has moved:
-from cost_model.scenario_loader import load
+from cost_model import load_scenarios as load
 
 
 def test_simple_load_file(tmp_path):

@@ -1,18 +1,18 @@
 # Core data science and simulation dependencies (April 2025)
-pandas>=2.2.2
-numpy>=1.26.4
-scipy>=1.13.0
-matplotlib>=3.8.4
-seaborn>=0.13.2
-lifelines>=0.28.0
-openpyxl>=3.1.2
-joblib>=1.4.2
-scikit-learn>=1.4.2
-lightgbm>=4.3.0
-PyYAML>=6.0.1
-python-dateutil>=2.9.0
+pandas>=2.2.2,<3.0.0
+numpy>=1.26.4,<2.0.0
+scipy>=1.13.0,<2.0.0
+matplotlib>=3.8.4,<4.0.0
+seaborn>=0.13.2,<0.14.0
+lifelines>=0.28.0,<0.29.0
+openpyxl>=3.1.2,<3.2.0
+joblib>=1.4.2,<2.0.0
+scikit-learn>=1.4.2,<2.0.0
+lightgbm>=4.3.0,<5.0.0
+PyYAML>=6.0.1,<7.0.0
+python-dateutil>=2.9.0,<3.0.0
 pytest>=8.1.1
-mesa>=2.2.0
+mesa>=2.2.0,<3.0.0
 # If you use Jupyter notebooks:
 jupyterlab>=4.1.5
 # Optional: for robust logging and progress bars

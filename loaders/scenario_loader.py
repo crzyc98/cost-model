@@ -20,7 +20,7 @@ def load_yaml_dir(dir_path: str) -> dict:
     """
     Load all .yaml files in dir_path into a dict of configurations,
     resolving 'extends' inheritance.
-    Returns:
+    Returns:å
         Dict[str, dict]: mapping scenario name to merged config dict.
     """
     raw_configs = {}

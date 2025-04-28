@@ -7,8 +7,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pandas as pd
-from utils.projection_utils import project_census
-from engine.config_loader import load_scenarios
+from cost_model import project_census, load_scenarios
 import argparse # Keep argparse for input/output files
 import joblib # Import joblib for loading the model
 import numpy as np # Import numpy for np.where
