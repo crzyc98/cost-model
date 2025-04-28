@@ -249,8 +249,7 @@ def run_scenario_simulation(scenario_name, scenario_config, start_census_df, bas
     # TODO: Modify projection.project_census function extensively.
     projected_data = project_census(
         start_df=start_df,
-        scenario_config=scenario_config,
-        baseline_scenario_config=baseline_scenario_config
+        scenario_config=scenario_config
     )
 
     aggregated_results = aggregate_scenario_results(projected_data, scenario_config)

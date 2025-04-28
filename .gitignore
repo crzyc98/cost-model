@@ -33,9 +33,9 @@ env/
 *.swo
 .DS_Store
 
-# Output
-output/
-
 # Ignore Excel files
 *.xlsx
 *.xls
+
+# Ignore output files
+output/

@@ -1,31 +1,41 @@
 import numpy as np
 import pandas as pd
-from typing import Optional, Protocol
+from typing import Protocol, runtime_checkable
+from numpy.random import Generator
 
 
+@runtime_checkable
 class SalarySampler(Protocol):
     """Protocol defining salary sampling behavior."""
+    # dist: dict of distribution parameters (e.g. {'mean': float, 'std': float}) for sample_second_year
     def sample_second_year(
         self,
         df: pd.DataFrame,
         comp_col: str,
         dist: dict,
         rate: float,
-        seed: Optional[int] = None
+        rng: Generator
     ) -> pd.Series:
+        """
+        Apply a rate-based bump or sample distribution-based bump for second-year employees.
+
+        dist: parameters for custom sampler (e.g. {'mean':..., 'std':...}).
+        """
         ...
 
     def sample_terminations(
         self,
         prev: pd.Series,
         size: int,
-        seed: Optional[int] = None
+        rng: Generator
     ) -> pd.Series:
         ...
 
 
 class DefaultSalarySampler:
-    """Default implementation of SalarySampler using simple bump and uniform sampling."""
+    """Default implementation of SalarySampler.
+    Ignores `dist` parameter and applies a fixed rate bump to second-year only.
+    Custom samplers can override to use dist for distribution-based bumps."""
 
     def sample_second_year(
         self,
@@ -33,17 +43,17 @@ class DefaultSalarySampler:
         comp_col: str,
         dist: dict,
         rate: float,
-        seed: Optional[int] = None
+        rng: Generator
     ) -> pd.Series:
         """
-        Apply a rate-based bump to second-year employees only.
+        Apply a fixed rate bump to second-year employees only (dist ignored).
 
         Args:
             df: DataFrame containing a 'tenure' column.
             comp_col: Name of the compensation column to bump.
-            dist: Unused in default sampler (kept for signature compatibility).
+            dist: Distribution params for custom samplers (ignored here).
             rate: Bump rate (e.g., 0.1 for a 10% increase).
-            seed: Optional random seed (ignored in default sampler).
+            rng: Random number generator.
 
         Returns:
             Series of updated compensation values.
@@ -63,7 +73,7 @@ class DefaultSalarySampler:
         self,
         prev: pd.Series,
         size: int,
-        seed: Optional[int] = None
+        rng: Generator
     ) -> pd.Series:
         """
         Draw termination compensations by sampling with replacement from prior-year values.
@@ -71,7 +81,7 @@ class DefaultSalarySampler:
         Args:
             prev: Series of prior-year compensation values.
             size: Number of draws to sample.
-            seed: Optional random seed for reproducibility.
+            rng: Random number generator.
 
         Returns:
             Series of sampled compensation values (length == size).
@@ -79,7 +89,5 @@ class DefaultSalarySampler:
         # Edge cases: no draws or no source data
         if size <= 0 or prev.empty:
             return pd.Series([], dtype=prev.dtype)
-        if seed is not None:
-            np.random.seed(seed)
-        draws = np.random.choice(prev.values, size=size, replace=True)
+        draws = rng.choice(prev.values, size=size, replace=True)
         return pd.Series(draws, dtype=prev.dtype)

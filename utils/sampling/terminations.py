@@ -1,13 +1,14 @@
 import pandas as pd
 import numpy as np
-from typing import Union
+from typing import Union, Optional
+from numpy.random import Generator
 
 def sample_terminations(
     df: pd.DataFrame,
     hire_col: str,
     termination_rate: Union[float, pd.Series],
     year_end: pd.Timestamp,
-    seed: int = None
+    rng: Generator
 ) -> pd.DataFrame:
     """
     Assign `termination_date` and `status` to rows in `df` probabilistically based on `termination_rate`.
@@ -15,16 +16,14 @@ def sample_terminations(
     """
     df = df.copy()
     days_until_end = (year_end - df[hire_col]).dt.days.clip(lower=0) + 1
-    # Optionally seed RNG
-    if seed is not None:
-        np.random.seed(seed)
+    # Use provided RNG for reproducible draws
     # Normalize termination_rate to per-row probabilities
     if isinstance(termination_rate, pd.Series):
         probs = termination_rate.reindex(df.index).fillna(0.0)
     else:
         probs = pd.Series(termination_rate, index=df.index)
     # Generate random offsets
-    rand_floats = np.random.rand(len(df))
+    rand_floats = rng.random(len(df))
     rand_off = np.floor(rand_floats * days_until_end.values).astype(int)
     rand_td = pd.to_timedelta(rand_off, unit='D')
     # Sample terminations

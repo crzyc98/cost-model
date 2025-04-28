@@ -4,6 +4,8 @@ import re
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import pandas as pd
 from utils.decimal_helpers import ZERO_DECIMAL  # Shared decimal helper
+from utils.rules.validators import load_match_rule
+from typing import Dict, Union
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +26,27 @@ DEFAULT_IRS_LIMITS = {
 }
 
 class ContributionsMixin:
-    """Mixin providing precise, configurable contribution calculation logic.
+    """
+    Mixin providing precise, configurable contribution calculation logic.
 
     Attributes required on self:
-      - self.is_active (bool)
-      - self.is_participating (bool)
-      - self.gross_compensation (Decimal or numeric)
-      - self.deferral_rate (Decimal or numeric)
-      - self.participation_date (datetime-like or None)
-      - self.model.year (int)
-      - self.model.scenario_config (dict) with keys:
-          - 'irs_limits': {year: {lim keys}}
-          - 'employer_match_formula': str, e.g. "1.0_of_1.0_up_to_6.0_pct"
-          - 'employer_nec_formula': str, e.g. "3.0_pct"
+      - is_active (bool)
+      - is_participating (bool)
+      - gross_compensation (Decimal)
+      - deferral_rate (Decimal)
+      - participation_date (datetime-like or None)
+      - model.year (int)
+      - model.scenario_config['plan_rules']['employer_match']: dict with:
+          tiers: List[{
+            match_rate: float,
+            cap_deferral_pct: float,
+            min_tenure_months?: int
+          }]
+          dollar_cap?: float
 
-    After running _calculate_contributions(), the agent will have:
-      self.contributions_current_year: dict with keys:
-        EMP_PRETAX_KEY, EMP_CATCHUP_KEY, EMP_MATCH_KEY,
-        EMP_NEC_KEY, TOTAL_EMP_KEY, TOTAL_ER_KEY
+    After _calculate_contributions(), sets self.contributions_current_year keys:
+      employee_pretax, employee_catchup, employer_match,
+      employer_nec, total_employee, total_employer
     """
 
     def _calculate_contributions(self):
@@ -85,14 +90,14 @@ class ContributionsMixin:
         'catchup_limit': ['catchup_limit', 'catch_up', 'catchup'],
         'catchup_eligibility_age': ['catchup_eligibility_age', 'catch_up_age', 'catchup_age'],
     }
-    def _load_irs_limits(self):
+    def _load_irs_limits(self) -> Dict[str, Union[Decimal, int]]:
         """Retrieve and convert IRS limits for the current year, supporting legacy and canonical keys."""
         cfg = self.model.scenario_config.get('irs_limits', {})
         limits = cfg.get(self.model.year, {})
         if not limits:
             return DEFAULT_IRS_LIMITS.copy()
         out = {}
-        for canon, legacy_keys in self.IRS_KEY_MAP.items():
+        for canon, legacy_keys in ContributionsMixin.IRS_KEY_MAP.items():
             val = None
             for k in legacy_keys:
                 if k in limits:
@@ -123,42 +128,41 @@ class ContributionsMixin:
             catchup = min(remaining, irs['catchup_limit'])
             self.contributions_current_year[EMP_CATCHUP_KEY] = catchup.quantize(Decimal('0.01'), ROUND_HALF_UP)
 
-    def _calc_employer_match(self, comp):
-        """Parse and apply employer match formula, supporting canonical and legacy patterns."""
-        fmt = self.model.scenario_config.get('employer_match_formula', '')
-        total_emp = self.contributions_current_year[EMP_PRETAX_KEY] + self.contributions_current_year[EMP_CATCHUP_KEY]
-        if not fmt or total_emp <= ZERO_DECIMAL:
-            return
-        # Canonical: "1.0_of_1.0_up_to_6.0_pct"
-        # Legacy: "50% up to 6%" or "50pct up to 6pct"
-        m = re.match(r"(?P<rate>[0-9.]+)_of_(?P<on>[0-9.]+)_up_to_(?P<cap>[0-9.]+)_pct", fmt)
-        if not m:
-            m = re.match(r"(?P<rate>[0-9.]+)[%p][c]*\s*up to\s*(?P<cap>[0-9.]+)[%p][c]*", fmt, re.IGNORECASE)
-            if m:
-                # Legacy: treat as match_rate% up to cap% of comp
-                try:
-                    rate = Decimal(m.group('rate')) / Decimal('100')
-                    on = Decimal('1.0')  # Assume 100% of comp
-                    cap_pct = Decimal(m.group('cap')) / Decimal('100')
-                    cap_base = (comp * cap_pct).quantize(Decimal('0.01'), ROUND_HALF_UP)
-                    subj = min(total_emp, cap_base)
-                    match_amt = (subj * rate * on).quantize(Decimal('0.01'), ROUND_HALF_UP)
-                    self.contributions_current_year[EMP_MATCH_KEY] = match_amt
-                except (InvalidOperation, ValueError) as e:
-                    logger.warning("%r: Error computing legacy match from '%s': %s", self, fmt, e)
-                return
-            logger.warning("%r: Unexpected match formula '%s'", self, fmt)
+    def _calc_employer_match(self, comp: Decimal) -> None:
+        """Apply structured tiered employer match including tenure gating and dollar cap."""
+        raw = self.model.scenario_config.get('plan_rules', {}).get('employer_match', {})
+        if not raw:
             return
         try:
-            rate = Decimal(m.group('rate'))
-            on = Decimal(m.group('on'))
-            cap_pct = Decimal(m.group('cap')) / Decimal('100')
-            cap_base = (comp * cap_pct).quantize(Decimal('0.01'), ROUND_HALF_UP)
-            subj = min(total_emp, cap_base)
-            match_amt = (subj * rate * on).quantize(Decimal('0.01'), ROUND_HALF_UP)
-            self.contributions_current_year[EMP_MATCH_KEY] = match_amt
-        except (InvalidOperation, ValueError) as e:
-            logger.warning("%r: Error computing match from '%s': %s", self, fmt, e)
+            rule = load_match_rule(raw)
+        except ValueError as e:
+            logger.warning("%r: Invalid employer_match config: %s", self, e)
+            return
+
+        # compute total employee deferrals
+        emp_contrib = self.contributions_current_year[EMP_PRETAX_KEY] + self.contributions_current_year[EMP_CATCHUP_KEY]
+        match_total = Decimal('0')
+        remaining = emp_contrib
+
+        # compute tenure in months as of year-end
+        as_of = pd.Timestamp(f"{self.model.year}-12-31")
+        tenure_months = self._calculate_tenure_months(as_of)
+
+        for tier in rule.tiers:
+            if tier.min_tenure_months is not None and tenure_months < tier.min_tenure_months:
+                continue
+            cap_amount = (comp * Decimal(str(tier.cap_deferral_pct))).quantize(Decimal('0.01'))
+            eligible = min(remaining, cap_amount)
+            match_amt = eligible * Decimal(str(tier.match_rate))
+            match_total += match_amt
+            remaining -= eligible
+            if remaining <= ZERO_DECIMAL:
+                break
+
+        if rule.dollar_cap is not None:
+            match_total = min(match_total, Decimal(str(rule.dollar_cap)))
+
+        self.contributions_current_year[EMP_MATCH_KEY] = match_total.quantize(Decimal('0.01'))
 
     def _calc_employer_nec(self, comp):
         """Parse and apply non-elective contribution formula."""

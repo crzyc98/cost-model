@@ -33,6 +33,15 @@ def _normalize_config(conf: Dict[str, Any]) -> Dict[str, Any]:
     if plan_rules:
         conf['plan_rules'] = plan_rules
 
+    # support growth settings under plan_rules
+    pr_cfg = conf.get('plan_rules', {})
+    if 'annual_compensation_increase_rate' in pr_cfg:
+        conf['comp_increase_rate'] = pr_cfg.pop('annual_compensation_increase_rate')
+    if 'annual_growth_rate' in pr_cfg:
+        conf['hire_rate'] = pr_cfg.pop('annual_growth_rate')
+    if 'maintain_headcount' in pr_cfg:
+        conf['maintain_headcount'] = pr_cfg.pop('maintain_headcount')
+
     return conf
 
 
@@ -68,7 +77,16 @@ def load_scenarios(config_path: str) -> List[Dict[str, Any]]:
         # multiple named scenarios
         for name, sc in scenarios_cfg.items():
             merged = deepcopy(global_defaults)
-            merged.update(sc or {})
+            # Deep-merge nested plan_rules: preserve defaults and override with scenario-specific
+            scenario_pr = sc.get('plan_rules', None)
+            # Merge top-level except plan_rules
+            top_level = {k: v for k, v in sc.items() if k != 'plan_rules'}
+            merged.update(top_level or {})
+            # Handle plan_rules deep merge
+            default_pr = deepcopy(global_defaults.get('plan_rules', {}))
+            if scenario_pr is not None:
+                default_pr.update(scenario_pr or {})
+            merged['plan_rules'] = default_pr
             _normalize_config(merged)
             merged['scenario_name'] = name
             scenarios.append(merged)

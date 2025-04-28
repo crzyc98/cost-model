@@ -215,15 +215,7 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
             df.loc[calc_mask, 'effective_deferral_limit']
         )
 
-        nec_rate = 0.0
-        if employer_non_elective_formula:
-            match = re.match(r"\s*(\d+\.?\d*)\s*%\s*", employer_non_elective_formula, re.IGNORECASE)
-            if match:
-                nec_rate = float(match.group(1)) / 100.0
-            else:
-                logger.warning(
-                    f"Could not parse non-elective formula: '{employer_non_elective_formula}'. Assuming 0%."
-                )
+        nec_rate = plan_rules.get('employer_nec', {}).get('rate', 0.0)
         df.loc[calc_mask, 'employer_non_elective_contribution'] = (
             df.loc[calc_mask, 'capped_compensation'] * nec_rate
         )
@@ -238,30 +230,23 @@ def apply(df, scenario_config, simulation_year, year_start_date, year_end_date):
                 f"Last day work rule: zeroed match/NEC for {term_mask.sum()} terminated employees."
             )
 
+        match_tiers = plan_rules.get('employer_match', {}).get('tiers', [])
+        match_dollar_cap = plan_rules.get('employer_match', {}).get('dollar_cap')
         df.loc[calc_mask, 'employer_match_contribution'] = 0.0
-        if employer_match_formula:
-            tiers = parse_match_tiers(employer_match_formula)
-            if tiers:
-                eligible_deferral_rate = df.loc[calc_mask, 'deferral_rate']
-                eligible_capped_comp = df.loc[calc_mask, 'capped_compensation']
-                calculated_match = pd.Series(
-                    0.0,
-                    index=df[calc_mask].index
-                )
-                last_deferral_cap = 0.0
-                for tier in tiers:
-                    current_cap_pct = tier['deferral_cap_pct']
-                    tier_match_rate = tier['match_pct']
-                    def_in_range = np.minimum(
-                        eligible_deferral_rate, current_cap_pct
-                    ) - last_deferral_cap
-                    def_in_range = np.maximum(def_in_range, 0)
-                    match_for_tier = (
-                        def_in_range * eligible_capped_comp * tier_match_rate
-                    )
-                    calculated_match += match_for_tier
-                    last_deferral_cap = current_cap_pct
-                df.loc[calc_mask, 'employer_match_contribution'] = calculated_match
+        if match_tiers:
+            eligible_deferral_rate = df.loc[calc_mask, 'deferral_rate']
+            eligible_capped_comp = df.loc[calc_mask, 'capped_compensation']
+            calculated_match = pd.Series(0.0, index=df[calc_mask].index)
+            last_deferral_cap = 0.0
+            for tier in match_tiers:
+                cap_pct = tier.get('cap_deferral_pct', 0.0)
+                rate = tier.get('match_rate', 0.0)
+                def_in_range = (eligible_deferral_rate.clip(upper=cap_pct) - last_deferral_cap).clip(lower=0.0)
+                calculated_match += def_in_range * eligible_capped_comp * rate
+                last_deferral_cap = cap_pct
+            if match_dollar_cap is not None:
+                calculated_match = calculated_match.clip(upper=match_dollar_cap)
+            df.loc[calc_mask, 'employer_match_contribution'] = calculated_match
 
         total_calc = (
             df.loc[calc_mask, 'pre_tax_contributions'] +
