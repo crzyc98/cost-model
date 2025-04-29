@@ -27,6 +27,10 @@ PRE_TAX_CONTR = "pre_tax_contributions"
 IS_ELIGIBLE = "is_eligible"
 IS_PARTICIPATING = "is_participating"
 ELIGIBILITY_ENTRY_DATE = "eligibility_entry_date"
+STATUS_COL = "status"
+HOURS_WORKED = "hours_worked"
+
+DATE_COLS = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE]
 
 # Central raw→standard mapping
 RAW_TO_STD_COLS = {
@@ -48,9 +52,6 @@ RAW_TO_STD_COLS = {
     'employer_match_contribution': EMPLOYER_MATCH,
     'eligibility_entry_date': ELIGIBILITY_ENTRY_DATE,
 }
-
-# Date columns to format post-rename
-DATE_COLS = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, ELIGIBILITY_ENTRY_DATE]
 
 import pandas as pd
 
