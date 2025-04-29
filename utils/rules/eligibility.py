@@ -3,7 +3,7 @@ Eligibility rule: age/service/hours + entry-date calc
 """
 import pandas as pd
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 from utils.date_utils import calculate_age, calculate_tenure
 from utils.constants import ACTIVE_STATUSES
@@ -79,3 +79,39 @@ def apply(
     logger.info(f"Eligibility determined: {eligible_count} eligible employees.")
 
     return df
+
+# Single-agent eligibility check using shared logic
+def agent_is_eligible(
+    birth_date: pd.Timestamp,
+    hire_date: pd.Timestamp,
+    status: Any,
+    hours_worked: Optional[float],
+    eligibility_config: Dict[str, Any],
+    simulation_year_end_date: pd.Timestamp
+) -> bool:
+    """Determine eligibility for a single agent."""
+    min_age = eligibility_config.get('min_age', 21)
+    min_service_months = eligibility_config.get('min_service_months', 12)
+    min_hours = eligibility_config.get('min_hours_worked', None)
+
+    # Age check
+    age = calculate_age(birth_date, simulation_year_end_date) if birth_date is not None and pd.notna(birth_date) else 0
+    meets_age = age >= min_age
+
+    # Service check
+    if hire_date is not None and pd.notna(hire_date):
+        service_met_date = hire_date + pd.DateOffset(months=min_service_months)
+        meets_service = service_met_date <= simulation_year_end_date
+    else:
+        meets_service = False
+
+    # Status check
+    meets_status = status in ACTIVE_STATUSES
+
+    # Hours check
+    if min_hours is not None:
+        meets_hours = hours_worked >= min_hours if hours_worked is not None else False
+    else:
+        meets_hours = True
+
+    return meets_age and meets_service and meets_status and meets_hours

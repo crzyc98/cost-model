@@ -4,6 +4,7 @@ from typing import Any, Callable, Optional
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from utils.rules.eligibility import agent_is_eligible
 
 logger = logging.getLogger(__name__)
 
@@ -66,40 +67,25 @@ class EligibilityMixin:
     def _update_eligibility(self) -> None:
         """Update eligibility based on plan rules or custom checker."""
         prior = getattr(self, 'is_eligible', False)
-        rules = self.plan_rules.get('eligibility', {})
-        min_age = rules.get('min_age', 0)
-        min_service = rules.get('min_service_months', 0)
-        custom_checker: Optional[
-            Callable[[Any, pd.Timestamp], bool]
-        ] = rules.get('custom_checker')
-        end_of_year = pd.Timestamp(
-            f"{self.model.year}-12-31"
-        )
-        if min_service:
-            meets_service = (
-                self._calculate_tenure_months(end_of_year)
-                >= min_service
-            )
-        else:
-            meets_service = True
-        meets_age = (
-            self._calculate_age(end_of_year)
-            >= min_age
-        )
+        rules = getattr(self.model, 'scenario_config', {}).get('plan_rules', {}).get('eligibility', {})
+        custom_checker = rules.get('custom_checker')
+        end_of_year = pd.Timestamp(f"{self.model.year}-12-31")
         if callable(custom_checker):
             new_status = custom_checker(self, end_of_year)
         else:
-            new_status = meets_age and meets_service
+            new_status = agent_is_eligible(
+                getattr(self, 'birth_date', None),
+                getattr(self, 'hire_date', None),
+                getattr(self, 'status', None),
+                getattr(self, 'hours_worked', None),
+                rules,
+                end_of_year,
+            )
         if new_status != prior:
             logger.debug(
-                "%r eligibility changed from %s to %s "
-                "(age>=%s:%s, tenure>=%s:%s)",
+                "%r eligibility changed from %s to %s",
                 self,
                 prior,
                 new_status,
-                min_age,
-                meets_age,
-                min_service,
-                meets_service,
             )
         self.is_eligible = new_status
