@@ -19,10 +19,10 @@ Returns:
 """
 
 import logging
+import math
 
 import pandas as pd
 import numpy as np
-import math
 from typing import Union, Optional, Mapping, Any, Dict
 
 from utils.date_utils import calculate_age, calculate_tenure
@@ -119,6 +119,7 @@ def apply_onboarding_bump(
     return df2
 
 
+# Phase I: HR-only projection (census-only snapshots)
 def project_hr(
     start_df: pd.DataFrame,
     scenario_config: Mapping[str, Any],
@@ -137,12 +138,28 @@ def project_hr(
     rng_nh = np.random.default_rng(ss_nh)
     rng_ml = np.random.default_rng(ss_ml)
 
-    # Prep
+    # Prep parameters
     projection_years = scenario_config['projection_years']
     start_year = scenario_config['start_year']
-    comp_increase_rate = scenario_config.get('comp_increase_rate', 0.0)
-    termination_rate = scenario_config.get('termination_rate', 0.0)
-    use_ml = scenario_config.get('use_ml_turnover', False)
+    # HR parameter fallbacks (top-level or under plan_rules)
+    pr_cfg = scenario_config.get('plan_rules', {})
+    comp_increase_rate = scenario_config.get('annual_compensation_increase_rate') or pr_cfg.get('annual_compensation_increase_rate', 0.0)
+    termination_rate = scenario_config.get('annual_termination_rate') or pr_cfg.get('annual_termination_rate', 0.0)
+    # headcount growth
+    growth_rate = scenario_config.get('annual_growth_rate') or pr_cfg.get('annual_growth_rate', 0.0)
+    maintain_hc = scenario_config.get('maintain_headcount', None)
+    maintain_headcount = maintain_hc if maintain_hc is not None else pr_cfg.get('maintain_headcount', True)
+    # new-hire termination rate
+    nh_term_rate = scenario_config.get('new_hire_termination_rate') or pr_cfg.get('new_hire_termination_rate', 0.0)
+    # ML model
+    model_path = scenario_config.get('ml_model_path', '')
+    features_path = scenario_config.get('model_features_path', '')
+    if model_path and features_path:
+        ml_pair = try_load_ml_model(model_path, features_path)
+        projection_model, feature_cols = (None, []) if ml_pair is None else ml_pair
+    else:
+        projection_model, feature_cols = None, []
+    use_ml = scenario_config.get('use_ml_turnover', False) and projection_model is not None
 
     # Salaries for new-hire sampling
     baseline_hire_salaries = start_df.loc[
@@ -182,18 +199,34 @@ def project_hr(
             (current_df['termination_date'] >= start_date)
         ].copy()
         # 4. New hires & comp sampling
-        # compute needed hires (reuse logic)
-        target_count = int(base_count)
-        needed = target_count - len(current_df)
+        # determine hires needed
+        survivors = len(current_df)
+        if maintain_headcount:
+            needed = max(0, base_count - survivors)
+        else:
+            target = int(base_count * (1 + growth_rate) ** year_num)
+            net_needed = max(0, target - survivors)
+            if nh_term_rate < 1:
+                needed = math.ceil(net_needed / (1 - nh_term_rate))
+            else:
+                needed = net_needed
         if needed > 0:
+            # derive new-hire age parameters: top-level, plan_rules, or generic age_mean
+            age_mean = scenario_config.get('new_hire_average_age') or pr_cfg.get('new_hire_average_age') or scenario_config.get('age_mean') or 30
+            # safe std dev fallback: new_hire_age_std_dev -> age_std_dev -> default 5.0
+            age_std = scenario_config.get('new_hire_age_std_dev') or scenario_config.get('age_std_dev') or pr_cfg.get('age_std_dev', 5.0) or 5.0
+            # working age bounds fall back to defaults
+            min_age = scenario_config.get('min_working_age', 18)
+            max_age = scenario_config.get('max_working_age', 65)
             nh_df = generate_new_hires(
-                num_hires=needed, hire_year=sim_year,
+                num_hires=needed,
+                hire_year=sim_year,
                 role_distribution=scenario_config.get('role_distribution'),
                 role_compensation_params=scenario_config.get('role_compensation_params'),
-                age_mean=scenario_config.get('age_mean'),
-                age_std_dev=scenario_config.get('age_std_dev'),
-                min_working_age=scenario_config.get('min_working_age'),
-                max_working_age=scenario_config.get('max_working_age'),
+                age_mean=age_mean,
+                age_std_dev=age_std,
+                min_working_age=min_age,
+                max_working_age=max_age,
                 scenario_config=scenario_config
             )
             nh_df = sample_new_hire_compensation(
@@ -206,9 +239,9 @@ def project_hr(
                 baseline_hire_salaries.values, rng_nh
             )
             current_df = pd.concat([current_df, nh_df], ignore_index=True)
-        # 5. ML-based turnover
+        # 5. ML-based or rule-based turnover
         if use_ml:
-            probs = predict_turnover(current_df, None, [], end_date, rng_ml)
+            probs = predict_turnover(current_df, projection_model, feature_cols, end_date, rng_ml)
         else:
             probs = termination_rate
         current_df = _apply_turnover(
@@ -216,11 +249,17 @@ def project_hr(
             start_date, end_date, rng_term,
             DefaultSalarySampler(), prev_term_salaries
         )
+        # update prev_term_salaries for sampled terminations
+        prev_term_salaries = current_df.loc[
+            current_df['termination_date'].between(start_date, end_date),
+            'gross_compensation'
+        ].dropna().values
         # Snapshot
         hr_snapshots[year_num] = current_df.copy()
     return hr_snapshots
 
 
+# Phase II: Apply plan rules (eligibility, auto_enroll, auto_increase, contributions)
 def apply_plan_rules(
     df: pd.DataFrame,
     scenario_config: Mapping[str, Any],
@@ -234,6 +273,13 @@ def apply_plan_rules(
     if 'deferral_rate' not in df and 'pre_tax_deferral_percentage' in df:
         df['deferral_rate'] = df['pre_tax_deferral_percentage']
 
+    # normalize participation and enrollment flags using pandas nullable BooleanDtype
+    for col in ['is_participating', 'ae_opted_out', 'ai_opted_out']:
+        # get existing col or create empty BooleanDtype Series
+        series = df[col] if col in df.columns else pd.Series(index=df.index, dtype="boolean")
+        # cast to BooleanDtype and fill missing as False
+        df[col] = series.astype("boolean").fillna(False)
+
     df = apply_eligibility(df, scenario_config['plan_rules'], end_date)
     ae_cfg = scenario_config['plan_rules'].get('auto_enrollment', {})
     if ae_cfg.get('enabled', False):
@@ -245,6 +291,7 @@ def apply_plan_rules(
     return df
 
 
+# Legacy: Full census projection (all steps in one pass, unchanged)
 def project_census(
     start_df: pd.DataFrame,
     scenario_config: Mapping[str, Any],
@@ -252,9 +299,16 @@ def project_census(
 ) -> Dict[int, pd.DataFrame]:
     projection_years     = scenario_config['projection_years']
     start_year           = scenario_config['start_year']
-    comp_increase_rate   = scenario_config.get('comp_increase_rate', 0.0)
-    hire_rate            = scenario_config.get('hire_rate', 0.0)
-    termination_rate     = scenario_config.get('termination_rate', 0.0)
+    # HR parameter fallbacks (top-level or under plan_rules)
+    pr_cfg = scenario_config.get('plan_rules', {})
+    comp_increase_rate = scenario_config.get('annual_compensation_increase_rate') or pr_cfg.get('annual_compensation_increase_rate', 0.0)
+    termination_rate = scenario_config.get('annual_termination_rate') or pr_cfg.get('annual_termination_rate', 0.0)
+    # headcount growth
+    growth_rate = scenario_config.get('annual_growth_rate') or pr_cfg.get('annual_growth_rate', 0.0)
+    maintain_hc = scenario_config.get('maintain_headcount', None)
+    maintain_headcount = maintain_hc if maintain_hc is not None else pr_cfg.get('maintain_headcount', True)
+    # new-hire termination rate
+    nh_term_rate = scenario_config.get('new_hire_termination_rate') or pr_cfg.get('new_hire_termination_rate', 0.0)
     # Initialize pluggable salary sampler
     sampler_cfg = scenario_config.get('salary_sampler', DefaultSalarySampler())
     if isinstance(sampler_cfg, type):
@@ -265,7 +319,7 @@ def project_census(
         sampler = DefaultSalarySampler()
 
     seed = random_seed if random_seed is not None else scenario_config.get('random_seed')
-    # 🔑 Master SeedSequence for dedicated streams
+    # Master SeedSequence for dedicated streams
     master_ss = np.random.SeedSequence(seed)
     bump_ss, term_ss, nh_ss, ml_ss, contrib_ss = master_ss.spawn(5)
     rng_bump = np.random.default_rng(bump_ss)
@@ -296,7 +350,7 @@ def project_census(
     current_df     = start_df.copy()
     prev_term_salaries = start_df['gross_compensation'].dropna()
     base_count = len(start_df)
-    growth_rate = hire_rate
+    growth_rate = growth_rate
 
     logger.info("Starting projection for '%s' from %s", scenario_config['scenario_name'], start_year)
     logger.info("Initial headcount: %d", len(current_df))
@@ -306,7 +360,7 @@ def project_census(
         start_date     = pd.Timestamp(f"{sim_year}-01-01")
         end_date       = pd.Timestamp(f"{sim_year}-12-31")
 
-        # 🔍 Year 1 Start: log before any changes
+        # Year 1 Start: log before any changes
         if year_num == 1:
             init_hc = len(current_df)
             init_comp = current_df['gross_compensation'].sum()
@@ -326,7 +380,7 @@ def project_census(
             sampler
         )
 
-        # 🔄 Yearly After Bump diagnostics
+        # Yearly After Bump diagnostics
         post_bump = current_df['gross_compensation'].sum()
         mask_second = current_df['tenure'] == 1
         mask_exp = current_df['tenure'] >= 2
@@ -363,10 +417,10 @@ def project_census(
             net_needed = max(0, base_count - survivors_count)
             needed = net_needed
         else:
-            net_needed = max(0, target_count - survivors_count)
-            term_rate_nh = scenario_config.get('new_hire_termination_rate', 0.0)
-            if term_rate_nh < 1:
-                needed = math.ceil(net_needed / (1 - term_rate_nh))
+            target = int(base_count * (1 + growth_rate) ** year_num)
+            net_needed = max(0, target - survivors_count)
+            if nh_term_rate < 1:
+                needed = math.ceil(net_needed / (1 - nh_term_rate))
             else:
                 needed = net_needed
         logger.debug(
@@ -375,16 +429,26 @@ def project_census(
         )
 
         if needed > 0:
-            # Spawn fresh RNG for this year's new hires
+            # derive new-hire age parameters with sensible default 30
+            age_mean = (
+                scenario_config.get('new_hire_average_age') or
+                pr_cfg.get('new_hire_average_age') or
+                scenario_config.get('age_mean') or
+                30
+            )
+            age_std = scenario_config.get('new_hire_age_std_dev') or scenario_config.get('age_std_dev') or pr_cfg.get('age_std_dev', 5.0) or 5.0
+            # working age bounds fall back to defaults
+            min_age = scenario_config.get('min_working_age', 18)
+            max_age = scenario_config.get('max_working_age', 65)
             nh_df = generate_new_hires(
                 num_hires=needed,
                 hire_year=sim_year,
                 role_distribution=scenario_config.get('role_distribution'),
                 role_compensation_params=scenario_config.get('role_compensation_params'),
-                age_mean=scenario_config.get('age_mean'),
-                age_std_dev=scenario_config.get('age_std_dev'),
-                min_working_age=scenario_config.get('min_working_age'),
-                max_working_age=scenario_config.get('max_working_age'),
+                age_mean=age_mean,
+                age_std_dev=age_std,
+                min_working_age=min_age,
+                max_working_age=max_age,
                 scenario_config=scenario_config
             )
             # 3. New-hire compensation sampling with dedicated RNG
@@ -394,7 +458,7 @@ def project_census(
                 baseline_hire_salaries.values,
                 rng=rng_nh
             )
-            # 🔍 Year 1 New-Hire Salary Distribution (unchanged)
+            # Year 1 New-Hire Salary Distribution (unchanged)
             if year_num == 1:
                 logger.debug(
                     f"[Year {year_num} New-hire Salaries] "
@@ -426,7 +490,7 @@ def project_census(
             logger.info("Generated %d new hires", needed)
             logger.debug("_step4 new-hire generation: added %d rows", len(nh_df))
 
-            # 🔍 Year 1 New Hires
+            # Year 1 New Hires
             if year_num == 1:
                 hires_comp = nh_df['gross_compensation'].sum()
                 logger.info(f"[Year 1 New Hires] count={len(nh_df)}, total_gross_comp={hires_comp:.2f}")
@@ -440,7 +504,7 @@ def project_census(
             sampler, prev_term_salaries
         )
 
-        # 🔍 Year 1 After Turnover
+        # Year 1 After Turnover
         if year_num == 1:
             final_hc = len(current_df)
             final_comp = current_df['gross_compensation'].sum()
