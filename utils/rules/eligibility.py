@@ -115,3 +115,25 @@ def agent_is_eligible(
         meets_hours = True
 
     return meets_age and meets_service and meets_status and meets_hours
+
+def is_eligible(
+    row,
+    eligibility_config,
+    simulation_year_end_date=None
+) -> bool:
+    """
+    Row-wise eligibility wrapper for backward compatibility.
+    """
+    if simulation_year_end_date is None:
+        simulation_year_end_date = pd.Timestamp.today()
+    # If no rules specified or placeholder, assume everyone eligible
+    if not eligibility_config or eligibility_config is Ellipsis:
+        return True
+    return agent_is_eligible(
+        row.get('birth_date', None),
+        row.get('hire_date', None),
+        row.get('status', None),
+        row.get('hours_worked', None),
+        eligibility_config,
+        simulation_year_end_date,
+    )

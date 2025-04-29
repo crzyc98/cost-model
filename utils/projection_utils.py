@@ -72,7 +72,8 @@ def _apply_comp_bump(
     if comp_col not in df2:
         logger.warning("Missing '%s' column, skipping comp bump", comp_col)
         return df2
-
+    # ensure compensation column is float to prevent dtype mismatch warnings
+    df2[comp_col] = df2[comp_col].astype(float)
     # define groups by tenure (new hires omitted)
     mask_second = df2['tenure'] == 1
     mask_exp = df2['tenure'] >= 2
@@ -110,7 +111,8 @@ def apply_onboarding_bump(
     if not ob_cfg.get('enabled', False):
         return df2
     method = ob_cfg.get('method', '')
-    rate = ob_cfg.get('rate', 0.0)
+    # support backward compatibility: 'flat_rate' key
+    rate = ob_cfg.get('rate', ob_cfg.get('flat_rate', 0.0))
     if method == 'flat_rate':
         df2[comp_col] = df2[comp_col] * (1 + rate)
     elif method == 'sample_plus_rate':
@@ -210,6 +212,10 @@ def project_hr(
                 needed = math.ceil(net_needed / (1 - nh_term_rate))
             else:
                 needed = net_needed
+        # If hire_rate is set and not maintaining headcount, generate hires by rate
+        hire_rate = scenario_config.get('hire_rate')
+        if hire_rate is not None and not scenario_config.get('maintain_headcount', True):
+            needed = int(base_count * hire_rate)
         if needed > 0:
             # derive new-hire age parameters: top-level, plan_rules, or generic age_mean
             age_mean = scenario_config.get('new_hire_average_age') or pr_cfg.get('new_hire_average_age') or scenario_config.get('age_mean') or 30
@@ -287,7 +293,9 @@ def apply_plan_rules(
     ai_cfg = scenario_config['plan_rules'].get('auto_increase', {})
     if ai_cfg.get('enabled', False):
         df = apply_auto_increase(df, scenario_config['plan_rules'], sim_year)
-    df = apply_contributions(df, scenario_config['plan_rules'], sim_year, start_date, end_date)
+    contrib_cfg = scenario_config['plan_rules'].get('contributions', {})
+    if contrib_cfg.get('enabled', False):
+        df = apply_contributions(df, scenario_config['plan_rules'], sim_year, start_date, end_date)
     return df
 
 
@@ -423,6 +431,10 @@ def project_census(
                 needed = math.ceil(net_needed / (1 - nh_term_rate))
             else:
                 needed = net_needed
+        # If hire_rate is set and not maintaining headcount, generate hires by rate
+        hire_rate = scenario_config.get('hire_rate')
+        if hire_rate is not None and not scenario_config.get('maintain_headcount', True):
+            needed = int(base_count * hire_rate)
         logger.debug(
             "Year %d: target=%d, survivors=%d, net_needed=%d, hires=%d",
             year_num, target_count, survivors_count, net_needed, needed
@@ -525,7 +537,9 @@ def project_census(
         if ai_cfg.get('enabled', False):
             current_df = apply_auto_increase(current_df, rules, sim_year)
         # Contributions
-        current_df = apply_contributions(current_df, rules, sim_year, start_date, end_date)
+        contrib_cfg = rules.get('contributions', {})
+        if contrib_cfg.get('enabled', False):
+            current_df = apply_contributions(current_df, rules, sim_year, start_date, end_date)
 
         # Snapshot
         projected_data[year_num] = current_df.copy()
