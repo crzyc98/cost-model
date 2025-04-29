@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import os
 from scipy.stats import truncnorm
 import warnings
+import shutil
 
 # Suppress specific Pandas warnings if needed (optional)
 warnings.filterwarnings('ignore', category=pd.errors.SettingWithCopyWarning)
@@ -538,3 +539,12 @@ if __name__ == "__main__":
     print("\nGenerated example files:")
     for f in generated_files_custom:
         print(f" - {f}")
+    # Also copy base year census to data/census_data.csv for preprocessing
+    base_year = locals().get('base_year', None) or 2024
+    output_dir = locals().get('output_dir', ".")
+    file_prefix = locals().get('file_prefix', "dummy_census_")
+    initial_file = os.path.join(output_dir, f"{file_prefix}{base_year}.csv")
+    target = os.path.join("data", "census_data.csv")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.copy(initial_file, target)
+    print(f"Copied initial census to {target}")

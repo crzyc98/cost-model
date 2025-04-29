@@ -146,30 +146,30 @@ def generate_new_hires(
 
     for i in range(num_hires):
         record = {}
-        record['ssn'] = new_ssns[i]
-        record['hire_date'] = year_start + pd.Timedelta(days=int(random_day_offsets[i]))
-        record['termination_date'] = pd.NaT
-        record['status'] = 'Active'
+        record['employee_ssn'] = new_ssns[i]
+        record['employee_hire_date'] = year_start + pd.Timedelta(days=int(random_day_offsets[i]))
+        record['employee_termination_date'] = pd.NaT
+        record['employment_status'] = 'Active'
 
         # Assign Role
         assigned_role = assigned_roles[i]
-        record['role'] = assigned_role
+        record['employee_role'] = assigned_role
 
         # Generate Age/Birth Date
         age = ages[i]
-        birth_year = record['hire_date'].year - age
+        birth_year = record['employee_hire_date'].year - age
         # Simple random birth month/day
         birth_month = np.random.randint(1, 13)
         birth_day = np.random.randint(1, 29) # Avoid Feb 29 issues simply
         try:
-            record['birth_date'] = pd.Timestamp(f"{birth_year}-{birth_month}-{birth_day}")
+            record['employee_birth_date'] = pd.Timestamp(f"{birth_year}-{birth_month}-{birth_day}")
         except ValueError:
-             record['birth_date'] = pd.Timestamp(f"{birth_year}-01-01") # Fallback
+            record['employee_birth_date'] = pd.Timestamp(f"{birth_year}-01-01") # Fallback
 
         # Calculate Compensation
         tenure_years = 0 # New hire
         age_experience_years = age - min_working_age
-        
+
         # Get role-specific comp params or use defaults
         role_params = {}
         if role_compensation_params and assigned_role in role_compensation_params:
@@ -189,26 +189,20 @@ def generate_new_hires(
                        (tenure_years * role_params['comp_increase_per_tenure_year']))
         log_mean = np.log(max(1000, target_comp * role_params['comp_log_mean_factor'])) # Avoid log(0)
         comp = np.random.lognormal(mean=log_mean, sigma=role_params['comp_spread_sigma'])
-        record['gross_compensation'] = round(max(role_params['comp_min_salary'], comp), 2)
-        
+        record['employee_gross_compensation'] = round(max(role_params['comp_min_salary'], comp), 2)
+
         # Initialize plan-related fields (will be updated by rule engine)
         record['is_eligible'] = False
         record['is_participating'] = False
-        record['pre_tax_deferral_percentage'] = 0.0 # Assume 0% initially
-        record['deferral_rate'] = record['pre_tax_deferral_percentage']  # Initialize deferral_rate for new hires
-        record['roth_deferral_percentage'] = 0.0 # Assume 0% initially
-        record['pre_tax_contributions'] = 0.0
-        record['roth_contributions'] = 0.0
+        record['employee_deferral_rate'] = 0.0 # Assume 0% initially
+        record['employee_pre_tax_contribution'] = 0.0
         record['employer_non_elective_contribution'] = 0.0
         record['employer_match_contribution'] = 0.0
-        record['ae_opted_out'] = False
-        record['ai_opted_out'] = False
-        record['plan_year_compensation'] = 0.0 # Will be calculated by plan engine
-        record['capped_compensation'] = 0.0 # Will be calculated by plan engine
+        record['eligibility_entry_date'] = pd.NaT
+        record['employee_plan_year_compensation'] = 0.0 # Will be calculated by plan engine
+        record['employee_capped_compensation'] = 0.0 # Will be calculated by plan engine
 
         # Add any other columns present in the main projection DF, initialized appropriately
-        # This needs alignment with the columns expected/used in projection.py
-        # Example (add others as needed):
         record['gender'] = np.random.choice(['Male', 'Female']) # Simple random assignment
         record['yos'] = 0 # Years of Service starts at 0
 

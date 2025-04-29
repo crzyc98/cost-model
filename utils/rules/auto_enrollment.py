@@ -27,7 +27,7 @@ def apply(
         return df
 
     # Check required columns
-    required = ['is_eligible', 'is_participating', 'deferral_rate', 'ae_opted_out', 'eligibility_entry_date']
+    required = ['is_eligible', 'is_participating', 'employee_deferral_rate', 'ae_opted_out', 'eligibility_entry_date']
     missing = [col for col in required if col not in df.columns]
     if missing:
         logger.warning(f"Required columns missing for Auto Enrollment: {missing}. Skipping.")
@@ -71,9 +71,9 @@ def apply(
         if distribution is not None:
             min_r, max_r = distribution
             rates = np.random.uniform(min_r, max_r, size=len(selected))
-            df.loc[selected, 'deferral_rate'] = rates
+            df.loc[selected, 'employee_deferral_rate'] = rates
         else:
-            df.loc[selected, 'deferral_rate'] = ae_default_rate
+            df.loc[selected, 'employee_deferral_rate'] = ae_default_rate
         df.loc[selected, 'is_participating'] = True
         df.loc[selected, 'proactive_enrolled'] = True
         df.loc[selected, 'enrollment_date'] = df.loc[selected, 'eligibility_entry_date']
@@ -89,11 +89,11 @@ def apply(
             (df['status'] == 'Active') &
             (df['is_eligible']) &
             (df['is_participating']) &
-            (df['deferral_rate'] > 0) &
-            (df['deferral_rate'] < ae_default_rate)
+            (df['employee_deferral_rate'] > 0) &
+            (df['employee_deferral_rate'] < ae_default_rate)
         )
         if mask.any():
-            df.loc[mask, 'deferral_rate'] = ae_default_rate
+            df.loc[mask, 'employee_deferral_rate'] = ae_default_rate
             df.loc[mask, 'is_participating'] = True
             df.loc[mask, 'enrollment_method'] = 'AE'
             df.loc[mask, 'auto_reenrolled'] = True
@@ -143,9 +143,9 @@ def apply(
             if distribution is not None:
                 min_r, max_r = distribution
                 rate = np.random.uniform(min_r, max_r)
-                df.loc[idx, 'deferral_rate'] = rate
+                df.loc[idx, 'employee_deferral_rate'] = rate
             else:
-                df.loc[idx, 'deferral_rate'] = ae_default_rate
+                df.loc[idx, 'employee_deferral_rate'] = ae_default_rate
             df.loc[idx, 'is_participating'] = True
             df.loc[idx, 'auto_enrolled'] = True
             df.loc[idx, 'enrollment_date'] = df.loc[idx, 'ae_window_end']

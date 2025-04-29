@@ -112,6 +112,9 @@ global_parameters:
       hazard_multiplier:   1.5
       productivity_curve: [0.80, 0.85, 0.90, 0.95, 1.00, 1.00]
 
+    contributions:
+      enabled: true
+
 # Scenario definitions with inheritance via YAML anchors
 scenarios:
 

@@ -28,7 +28,7 @@ def main():
     )
     parser.add_argument(
         "--census", "-d", required=True,
-        help="Path to census CSV (with hire_date, termination_date, birth_date)"
+        help="Path to census file (CSV or Parquet, with employee_hire_date, employee_termination_date, employee_birth_date)"
     )
     parser.add_argument(
         "--output", "-o", required=True,
@@ -55,11 +55,18 @@ def main():
         if k not in ("plan_rules", "scenario_name", "name"):
             hr_cfg[k] = v
 
-    # Load census data
-    start_df = pd.read_csv(
-        args.census,
-        parse_dates=["hire_date", "termination_date", "birth_date"]
-    )
+    # Load census data (supports CSV or Parquet)
+    if args.census.endswith('.parquet'):
+        start_df = pd.read_parquet(args.census)
+        # Ensure date columns are datetime (Parquet may load as object/string)
+        for col in ["employee_hire_date", "employee_termination_date", "employee_birth_date"]:
+            if col in start_df:
+                start_df[col] = pd.to_datetime(start_df[col], errors='coerce')
+    else:
+        start_df = pd.read_csv(
+            args.census,
+            parse_dates=["employee_hire_date", "employee_termination_date", "employee_birth_date"]
+        )
 
     # Run the HR projection once
     os.makedirs(args.output, exist_ok=True)
@@ -71,6 +78,17 @@ def main():
         out_path = os.path.join(args.output, f"base_run_year{year}.parquet")
         df.to_parquet(out_path)
         print(f"Wrote HR snapshot: {out_path}")
+
+    # Generate summary CSV for all years
+    metrics = []
+    for year, df in hr_snapshots.items():
+        headcount = len(df)
+        total_compensation = df['employee_gross_compensation'].sum()
+        metrics.append({'year': year, 'headcount': headcount, 'total_gross_compensation': total_compensation})
+    metrics_df = pd.DataFrame(metrics).sort_values('year')
+    summary_path = os.path.join(args.output, 'hr_summary.csv')
+    metrics_df.to_csv(summary_path, index=False)
+    print(f"Wrote HR summary: {summary_path}")
 
 if __name__ == "__main__":
     main()

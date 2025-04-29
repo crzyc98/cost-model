@@ -50,12 +50,12 @@ def _apply_turnover(
     prev_term_salaries: np.ndarray
 ) -> pd.DataFrame:
     df2 = sample_terminations(df, hire_col, probs_or_rate, end_date, rng)
-    term_here = df2['termination_date'].between(start_date, end_date)
+    term_here = df2['employee_termination_date'].between(start_date, end_date)
     n_term = term_here.sum()
     if n_term:
         draws = sampler.sample_terminations(prev_term_salaries, size=n_term, rng=rng)
         # assign sampled termination draws; draws may be numpy array or pandas Series
-        df2.loc[term_here, 'gross_compensation'] = draws
+        df2.loc[term_here, 'employee_gross_compensation'] = draws
         logger.debug("_apply_turnover: sampled %d terminations", n_term)
     return df2
 
@@ -165,14 +165,14 @@ def project_hr(
 
     # Salaries for new-hire sampling
     baseline_hire_salaries = start_df.loc[
-        start_df['hire_date'].dt.year == start_year - 1,
-        'gross_compensation'
+        start_df['employee_hire_date'].dt.year == start_year - 1,
+        'employee_gross_compensation'
     ].dropna()
     if baseline_hire_salaries.empty:
-        baseline_hire_salaries = start_df['gross_compensation'].dropna()
+        baseline_hire_salaries = start_df['employee_gross_compensation'].dropna()
 
     current_df = start_df.copy()
-    prev_term_salaries = start_df['gross_compensation'].dropna().values
+    prev_term_salaries = start_df['employee_gross_compensation'].dropna().values
     base_count = len(start_df)
     hr_snapshots: Dict[int, pd.DataFrame] = {}
 
@@ -182,23 +182,23 @@ def project_hr(
         end_date = pd.Timestamp(f"{sim_year}-12-31")
 
         # Recalculate tenure
-        current_df['tenure'] = calculate_tenure(current_df['hire_date'], start_date)
+        current_df['tenure'] = calculate_tenure(current_df['employee_hire_date'], start_date)
         # 1. Comp bump
         current_df = _apply_comp_bump(
-            current_df, 'gross_compensation',
+            current_df, 'employee_gross_compensation',
             scenario_config.get('second_year_compensation_dist', {}),
             comp_increase_rate, rng_bump, DefaultSalarySampler()
         )
         # 2. Early turnover
         current_df = _apply_turnover(
-            current_df, 'hire_date', termination_rate,
+            current_df, 'employee_hire_date', termination_rate,
             start_date, end_date, rng_term,
             DefaultSalarySampler(), prev_term_salaries
         )
         # 3. Drop pre-period terminations
         current_df = current_df[
-            current_df['termination_date'].isna() |
-            (current_df['termination_date'] >= start_date)
+            current_df['employee_termination_date'].isna() |
+            (current_df['employee_termination_date'] >= start_date)
         ].copy()
         # 4. New hires & comp sampling
         # determine hires needed
@@ -236,12 +236,12 @@ def project_hr(
                 scenario_config=scenario_config
             )
             nh_df = sample_new_hire_compensation(
-                nh_df, 'gross_compensation',
+                nh_df, 'employee_gross_compensation',
                 baseline_hire_salaries.values, rng_nh
             )
             ob_cfg = scenario_config.get('plan_rules', {}).get('onboarding_bump', {})
             nh_df = apply_onboarding_bump(
-                nh_df, 'gross_compensation', ob_cfg,
+                nh_df, 'employee_gross_compensation', ob_cfg,
                 baseline_hire_salaries.values, rng_nh
             )
             current_df = pd.concat([current_df, nh_df], ignore_index=True)
@@ -251,14 +251,14 @@ def project_hr(
         else:
             probs = termination_rate
         current_df = _apply_turnover(
-            current_df, 'hire_date', probs,
+            current_df, 'employee_hire_date', probs,
             start_date, end_date, rng_term,
             DefaultSalarySampler(), prev_term_salaries
         )
         # update prev_term_salaries for sampled terminations
         prev_term_salaries = current_df.loc[
-            current_df['termination_date'].between(start_date, end_date),
-            'gross_compensation'
+            current_df['employee_termination_date'].between(start_date, end_date),
+            'employee_gross_compensation'
         ].dropna().values
         # Snapshot
         hr_snapshots[year_num] = current_df.copy()
@@ -349,11 +349,11 @@ def project_census(
     projected_data = {}
     # Compute and freeze baseline hire salary distribution
     baseline_hire_salaries = start_df.loc[
-        start_df['hire_date'].dt.year == start_year - 1,
-        'gross_compensation'
+        start_df['employee_hire_date'].dt.year == start_year - 1,
+        'employee_gross_compensation'
     ].dropna()
     if baseline_hire_salaries.empty:
-        baseline_hire_salaries = start_df['gross_compensation'].dropna()
+        baseline_hire_salaries = start_df['employee_gross_compensation'].dropna()
 
     current_df     = start_df.copy()
     prev_term_salaries = start_df['gross_compensation'].dropna()
@@ -376,12 +376,12 @@ def project_census(
 
         logger.info("Year %d (%s) ▶ headcount %d", year_num, sim_year, len(current_df))
         # Recalculate tenure each year before compensation bump
-        current_df['tenure'] = calculate_tenure(current_df['hire_date'], start_date)
+        current_df['tenure'] = calculate_tenure(current_df['employee_hire_date'], start_date)
 
         # 1. Compensation bump with dedicated RNG
         current_df = _apply_comp_bump(
             current_df,
-            'gross_compensation',
+            'employee_gross_compensation',
             scenario_config.get('second_year_compensation_dist', {}),
             comp_increase_rate,
             rng_bump,
@@ -389,7 +389,7 @@ def project_census(
         )
 
         # Yearly After Bump diagnostics
-        post_bump = current_df['gross_compensation'].sum()
+        post_bump = current_df['employee_gross_compensation'].sum()
         mask_second = current_df['tenure'] == 1
         mask_exp = current_df['tenure'] >= 2
         logger.debug(
@@ -401,23 +401,23 @@ def project_census(
 
         # 2. Apply turnover with dedicated RNG
         current_df = _apply_turnover(
-            current_df, 'hire_date', termination_rate,
+            current_df, 'employee_hire_date', termination_rate,
             start_date, end_date, rng_term,
             sampler, prev_term_salaries
         )
 
         # 3. Drop those who terminated before this period
         current_df = current_df[
-            current_df['termination_date'].isna() |
-            (current_df['termination_date'] >= start_date)
+            current_df['employee_termination_date'].isna() |
+            (current_df['employee_termination_date'] >= start_date)
         ].copy()
 
         # 4. Generate new hires & sample their compensation
         # Compute year-end target headcount and survivors
         target_count = int(base_count * (1 + growth_rate) ** year_num)
         active_incumbents = current_df[
-            current_df['termination_date'].isna() |
-            (current_df['termination_date'] > end_date)
+            current_df['employee_termination_date'].isna() |
+            (current_df['employee_termination_date'] > end_date)
         ]
         survivors_count = len(active_incumbents)
         # Determine hires needed
@@ -466,7 +466,7 @@ def project_census(
             # 3. New-hire compensation sampling with dedicated RNG
             nh_df = sample_new_hire_compensation(
                 nh_df,
-                'gross_compensation',
+                'employee_gross_compensation',
                 baseline_hire_salaries.values,
                 rng=rng_nh
             )
@@ -475,21 +475,21 @@ def project_census(
                 logger.debug(
                     f"[Year {year_num} New-hire Salaries] "
                     f"count={len(nh_df)}, "
-                    f"total=${nh_df['gross_compensation'].sum():,.0f}, "
-                    f"mean=${nh_df['gross_compensation'].mean():,.0f}, "
-                    f"min=${nh_df['gross_compensation'].min():,.0f}, "
-                    f"max=${nh_df['gross_compensation'].max():,.0f}"
+                    f"total=${nh_df['employee_gross_compensation'].sum():,.0f}, "
+                    f"mean=${nh_df['employee_gross_compensation'].mean():,.0f}, "
+                    f"min=${nh_df['employee_gross_compensation'].min():,.0f}, "
+                    f"max=${nh_df['employee_gross_compensation'].max():,.0f}"
                 )
             # 4. Onboarding bump with dedicated RNG
             ob_cfg = scenario_config.get('plan_rules', {}).get('onboarding_bump', {})
             nh_df = apply_onboarding_bump(
                 nh_df,
-                'gross_compensation',
+                'employee_gross_compensation',
                 ob_cfg,
                 baseline_hire_salaries.values,
                 rng_nh
             )
-            after_onb = nh_df['gross_compensation'].sum()
+            after_onb = nh_df['employee_gross_compensation'].sum()
             logger.debug(
                 f"[Year {year_num} Onboarding] "
                 f"enabled={ob_cfg.get('enabled')}, "
@@ -498,20 +498,20 @@ def project_census(
             )
             # append all hires and recalc tenure
             current_df = pd.concat([current_df, nh_df], ignore_index=True)
-            current_df['tenure'] = calculate_tenure(current_df['hire_date'], start_date)
+            current_df['tenure'] = calculate_tenure(current_df['employee_hire_date'], start_date)
             logger.info("Generated %d new hires", needed)
             logger.debug("_step4 new-hire generation: added %d rows", len(nh_df))
 
             # Year 1 New Hires
             if year_num == 1:
-                hires_comp = nh_df['gross_compensation'].sum()
+                hires_comp = nh_df['employee_gross_compensation'].sum()
                 logger.info(f"[Year 1 New Hires] count={len(nh_df)}, total_gross_comp={hires_comp:.2f}")
 
         # 5. ML-based turnover with dedicated RNG
         probs = (predict_turnover(current_df, projection_model, feature_cols, end_date, rng_ml)
                  if scenario_config.get('use_ml_turnover', False) and projection_model is not None else 0.0)
         current_df = _apply_turnover(
-            current_df, 'hire_date', probs,
+            current_df, 'employee_hire_date', probs,
             start_date, end_date, rng_term,
             sampler, prev_term_salaries
         )
@@ -519,7 +519,7 @@ def project_census(
         # Year 1 After Turnover
         if year_num == 1:
             final_hc = len(current_df)
-            final_comp = current_df['gross_compensation'].sum()
+            final_comp = current_df['employee_gross_compensation'].sum()
             logger.info(f"[Year 1 After Turnover] headcount={final_hc}, total_gross_comp={final_comp:.2f}")
 
         # 6. Apply plan rules & calculate contributions
@@ -545,8 +545,8 @@ def project_census(
         projected_data[year_num] = current_df.copy()
         # Update prev_term_salaries for next iteration
         prev_term_salaries = projected_data[year_num].loc[
-            projected_data[year_num]['termination_date'].between(start_date, end_date),
-            'gross_compensation'
+            projected_data[year_num]['employee_termination_date'].between(start_date, end_date),
+            'employee_gross_compensation'
         ].dropna().values
 
     logger.info("Projection complete for '%s'", scenario_config['scenario_name'])

@@ -15,7 +15,9 @@ def sample_terminations(
     `termination_rate` can be a float (constant rate) or a Series of per-row probabilities.
     """
     df = df.copy()
-    days_until_end = (year_end - df[hire_col]).dt.days.clip(lower=0) + 1
+    # Compute days until year end; set to 0 where hire date is missing or invalid
+    days_until_end = (year_end - df[hire_col]).dt.days
+    days_until_end = days_until_end.clip(lower=0).fillna(0).astype(int) + 1
     # Use provided RNG for reproducible draws
     # Normalize termination_rate to per-row probabilities
     if isinstance(termination_rate, pd.Series):

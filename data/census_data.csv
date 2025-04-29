@@ -1,4 +1,4 @@
-ssn,role,birth_date,hire_date,termination_date,gross_compensation,plan_year_compensation,capped_compensation,pre_tax_deferral_percentage,pre_tax_contributions,employer_non_elective_contribution,employer_match_contribution
+employee_ssn,employee_role,employee_birth_date,employee_hire_date,employee_termination_date,employee_gross_compensation,employee_plan_year_compensation,employee_capped_compensation,employee_deferral_rate,employee_pre_tax_contribution,employer_non_elective_contribution,employer_match_contribution
 DUMMY_NH_167422_000000,Staff,1969-07-03,2024-04-05 00:00:00.000000,2024-06-13,48347.4,9246.77,9246.77,5,462.34,0.0,231.17
 DUMMY_NH_659816_000001,Staff,1974-02-07,2024-06-18 00:00:00.000000,,36826.75,19822.05,19822.05,1,198.22,0.0,99.11
 DUMMY_NH_460011_000002,Manager,1982-07-28,2024-11-16 00:00:00.000000,2024-11-21,118647.29,1945.04,1945.04,3,58.35,0.0,29.18

@@ -34,14 +34,14 @@ def apply(df, plan_rules, simulation_year):
     # 1) only bump new hires (hired this year)
     if ai_config.get('apply_to_new_hires_only', False):
         df.loc[
-            df['hire_date'].dt.year == simulation_year,
+            df['employee_hire_date'].dt.year == simulation_year,
             'ai_enrolled'
         ] = True
 
     # 2) re-enroll existing participants under the cap
     elif ai_config.get('re_enroll_existing_below_cap', False):
         df.loc[
-            df['is_participating'] & (df['deferral_rate'] < ai_max_deferral_rate),
+            df['is_participating'] & (df['employee_deferral_rate'] < ai_max_deferral_rate),
             'ai_enrolled'
         ] = True
 
@@ -55,16 +55,16 @@ def apply(df, plan_rules, simulation_year):
     mask = (
         df['ai_enrolled']
       & ~df['ai_opted_out']
-      & (df['deferral_rate'] < ai_max_deferral_rate)
+      & (df['employee_deferral_rate'] < ai_max_deferral_rate)
     )
     logger.debug("AI candidates: %d / %d", mask.sum(), len(df))
 
     if mask.any():
-        new_rates = np.minimum(
-            df.loc[mask, 'deferral_rate'] + ai_increase_rate,
-            ai_max_deferral_rate
-        )
-        df.loc[mask, 'deferral_rate'] = new_rates
+        df.loc[mask, 'employee_deferral_rate'] = (
+            df.loc[mask, 'employee_deferral_rate'] + ai_increase_rate
+        ).clip(upper=ai_max_deferral_rate)
+        # Ensure deferral rate is not negative
+        df.loc[mask, 'employee_deferral_rate'] = df.loc[mask, 'employee_deferral_rate'].clip(lower=0.0)
         # keep ai_enrolled True
         df.loc[mask, 'ai_enrolled'] = True
         logger.info(

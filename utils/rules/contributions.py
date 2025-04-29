@@ -156,8 +156,9 @@ def apply(df, plan_rules: dict, simulation_year, year_start_date, year_end_date)
                 f"max={df['proration_factor'].max():.4f}, "
                 f"mean={df['proration_factor'].mean():.4f}")
     
-    # Apply proration to compensation
-    df['plan_year_compensation'] = df['gross_compensation'] * df['proration_factor']
+    # Use the correct, up-to-date compensation column if present
+    comp_col = 'employee_gross_compensation' if 'employee_gross_compensation' in df.columns else 'gross_compensation'
+    df['plan_year_compensation'] = df[comp_col] * df['proration_factor']
     df['capped_compensation'] = np.minimum(
         df['plan_year_compensation'], 
         statutory_comp_limit * df['proration_factor']
