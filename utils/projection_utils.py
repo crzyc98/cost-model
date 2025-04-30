@@ -36,6 +36,8 @@ from utils.rules.auto_enrollment import apply as apply_auto_enrollment
 from utils.rules.auto_increase import apply as apply_auto_increase
 from utils.rules.contributions import apply as apply_contributions
 from utils.rules.validators import EligibilityRule, AutoEnrollmentRule, ContributionsRule, MatchRule, NonElectiveRule
+from utils.columns    import STATUS_COL, EMP_TERM_DATE
+from utils.constants  import ACTIVE_STATUS, INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +175,7 @@ def project_hr(
         baseline_hire_salaries = start_df['employee_gross_compensation'].dropna()
 
     current_df = start_df.copy()
-    prev_term_salaries = start_df['employee_gross_compensation'].dropna().values
+    prev_term_salaries = start_df['employee_gross_compensation'].dropna()
     base_count = len(start_df)
     hr_snapshots: Dict[int, pd.DataFrame] = {}
 
@@ -266,7 +268,7 @@ def project_hr(
         prev_term_salaries = current_df.loc[
             current_df['employee_termination_date'].between(start_date, end_date),
             'employee_gross_compensation'
-        ].dropna().values
+        ].dropna()
         # Snapshot
         hr_snapshots[year_num] = current_df.copy()
     return hr_snapshots
@@ -281,6 +283,13 @@ def apply_plan_rules(
     sim_year = scenario_config['start_year'] + year_num - 1
     start_date = pd.Timestamp(f"{sim_year}-01-01")
     end_date = pd.Timestamp(f"{sim_year}-12-31")
+
+    # Always reset status based on termination date (active if no termination)
+    df[STATUS_COL] = np.where(
+        df[EMP_TERM_DATE].isna(),
+        ACTIVE_STATUS,
+        INACTIVE_STATUS
+    )
 
     # ensure deferral_rate exists
     if 'deferral_rate' not in df and 'pre_tax_deferral_percentage' in df:

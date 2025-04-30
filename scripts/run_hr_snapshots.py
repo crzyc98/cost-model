@@ -4,21 +4,21 @@
 """
 Script to export a single, shared HR snapshot for each projection year.
 This is Phase I of the two‑phase split: headcount, turnover, comp bumps & new hires
-are all driven once (from the baseline scenario’s settings) and then reused
+are all driven once (from the baseline scenario's settings) and then reused
 by each plan‑rules scenario.
 """
 
-import os
-import sys
+# make sure our project root is on PYTHONPATH before any utils imports
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import argparse
 import pandas as pd
 import yaml
 import numpy as np
 from utils.rules.validators import PlanRules, ValidationError
-
-# ensure we can import project_hr
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.projection_utils import project_hr
+from utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP
 
 def main():
     parser = argparse.ArgumentParser(
@@ -66,16 +66,17 @@ def main():
             hr_cfg[k] = v
 
     # Load census data (supports CSV or Parquet)
+    date_cols = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE]
     if args.census.endswith('.parquet'):
         start_df = pd.read_parquet(args.census)
         # Ensure date columns are datetime (Parquet may load as object/string)
-        for col in ["employee_hire_date", "employee_termination_date", "employee_birth_date"]:
+        for col in date_cols:
             if col in start_df:
                 start_df[col] = pd.to_datetime(start_df[col], errors='coerce')
     else:
         start_df = pd.read_csv(
             args.census,
-            parse_dates=["employee_hire_date", "employee_termination_date", "employee_birth_date"]
+            parse_dates=[c for c in date_cols if c in pd.read_csv(args.census, nrows=0).columns]
         )
 
     # Seed the global numpy RNG once for reproducibility
@@ -97,7 +98,7 @@ def main():
     metrics = []
     for year, df in hr_snapshots.items():
         headcount = len(df)
-        total_compensation = df['employee_gross_compensation'].sum()
+        total_compensation = df[EMP_GROSS_COMP].sum()
         metrics.append({'year': year, 'headcount': headcount, 'total_gross_compensation': total_compensation})
     metrics_df = pd.DataFrame(metrics).sort_values('year')
     summary_path = os.path.join(args.output, 'hr_summary.csv')

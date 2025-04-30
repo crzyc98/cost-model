@@ -1,10 +1,7 @@
 """Auto Enrollment rule: window setup, proactive enroll, re-enroll, and outcome application."""
 import logging
-from datetime import timedelta
-from typing import Dict, Any
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from utils.columns import (
     EMP_DEFERRAL_RATE,
@@ -65,7 +62,7 @@ def apply(
     # Setup AE window (default zero days if not configured)
     window_days = ae_rules.window_days or 0
     df[AE_WINDOW_START] = df[ELIGIBILITY_ENTRY_DATE]
-    df[AE_WINDOW_END] = df[ELIGIBILITY_ENTRY_DATE] + timedelta(days=window_days)
+    df[AE_WINDOW_END] = df[ELIGIBILITY_ENTRY_DATE] + pd.Timedelta(days=window_days)
 
     # Initialize flags
     df[PROACTIVE_ENROLLED] = False
@@ -81,7 +78,7 @@ def apply(
         (df[ELIGIBILITY_ENTRY_DATE] <= simulation_year_end_date)
     )
     logger.debug(f"[Proactive AE] newly eligible count={newly_eligible.sum()}")
-    active = df[STATUS_COL] == ACTIVE_STATUSES[0]
+    active = df[STATUS_COL].isin(ACTIVE_STATUSES)
     not_part = ~df[IS_PARTICIPATING]
     not_opted = ~df[AE_OPTED_OUT]
     candidates = newly_eligible & active & not_part & not_opted
@@ -109,7 +106,7 @@ def apply(
         if AUTO_REENROLLED not in df.columns:
             df[AUTO_REENROLLED] = False
         mask = (
-            (df[STATUS_COL] == ACTIVE_STATUSES[0]) &
+            (df[STATUS_COL].isin(ACTIVE_STATUSES)) &
             (df[IS_ELIGIBLE]) &
             (df[IS_PARTICIPATING]) &
             (df[EMP_DEFERRAL_RATE] > 0) &
@@ -142,62 +139,74 @@ def apply(
         return df
     logger.info(f"Targeting {num_targeted} employees for AE.")
 
+    # Inject AE rule rates into DataFrame
+    df = df.copy()
+    df['rate_for_max_match'] = ae_rules.increase_to_match_rate
+    df['opt_down_rate'] = ae_rules.opt_down_target_rate
+    df['increase_high_rate'] = ae_rules.increase_high_rate
+
     # Outcome distribution: ae_rules.outcome_distribution
-    outcomes = []
-    probs = []
-    for key, prob in ae_outcome_dist.items():
-        if not key.startswith('prob_'):
-            continue
-        outcome = key[len('prob_'):]
-        outcomes.append(outcome)
-        probs.append(prob)
-    total_p = sum(probs)
-    # Normalize probabilities if not 1.0
-    if total_p > 0 and not np.isclose(total_p, 1.0):
-        logger.warning(f"AE outcome probabilities sum to {total_p:.2%}; normalizing.")
-        probs = [p / total_p for p in probs]
-    # Default to stay_default if no valid probs
-    if not outcomes:
-        outcomes = ['stay_default']
-        probs = [1.0]
+    od = ae_rules.outcome_distribution
+    
+    # Cumulative thresholds
+    thresholds = np.cumsum([
+        od.prob_opt_out,
+        od.prob_stay_default,
+        od.prob_opt_down,
+        od.prob_increase_to_match,
+        od.prob_increase_high
+    ])
+
+    # Random draws
+    draws = np.random.rand(num_targeted)
+
+    # Apply outcomes
+    counts = {'opt_out':0, 'stay_default':0, 'opt_down':0, 'to_match':0, 'increase_high':0}
+
     target_indices = df.index[ae_target]
-    assigned = np.random.choice(outcomes, size=num_targeted, p=probs)
-    for idx, outcome in zip(target_indices, assigned):
-        if outcome == 'stay_default':
-            # assign default rate or random within proactive range
-            dist = ae_rules.proactive_rate_range
-            if dist:
-                min_r, max_r = dist
-                df.loc[idx, EMP_DEFERRAL_RATE] = np.random.uniform(min_r, max_r)
-            else:
-                df.loc[idx, EMP_DEFERRAL_RATE] = ae_default_rate
-            df.loc[idx, IS_PARTICIPATING] = True
-            df.loc[idx, AUTO_ENROLLED] = True
-            df.loc[idx, ENROLLMENT_DATE] = df.loc[idx, AE_WINDOW_END]
-            df.loc[idx, FIRST_CONTRIBUTION_DATE] = df.loc[idx, AE_WINDOW_END]
-        elif outcome == 'opt_out':
-            # opted out
-            df.loc[idx, AE_OPTED_OUT] = True
-            df.loc[idx, AE_OPT_OUT_DATE] = df.loc[idx, AE_WINDOW_END]
-            df.loc[idx, IS_PARTICIPATING] = False
-        elif outcome == 'opt_down':
-            # TODO: implement decrease in deferral rate
-            logger.warning('AE outcome opt_down not implemented; defaulting to stay_default behavior')
-            df.loc[idx, EMP_DEFERRAL_RATE] = ae_default_rate
-        elif outcome == 'increase_to_match':
-            # TODO: implement increase to match employer
-            logger.warning('AE outcome increase_to_match not implemented; using default_rate')
-            df.loc[idx, EMP_DEFERRAL_RATE] = ae_default_rate
-        elif outcome == 'increase_high':
-            # TODO: implement high deferral increase
-            logger.warning('AE outcome increase_high not implemented; using default_rate')
-            df.loc[idx, EMP_DEFERRAL_RATE] = ae_default_rate
+    for i, draw in zip(target_indices, draws):
+        if draw < thresholds[0]:
+            # opt-out
+            df.at[i, AE_OPTED_OUT] = True
+            counts['opt_out'] += 1
+        elif draw < thresholds[1]:
+            # stay at default
+            df.at[i, EMP_DEFERRAL_RATE] = ae_rules.default_rate
+            df.at[i, IS_PARTICIPATING] = True
+            df.at[i, ENROLLMENT_METHOD] = 'AE'
+            counts['stay_default'] += 1
+        elif draw < thresholds[2]:
+            # opt-down
+            df.at[i, EMP_DEFERRAL_RATE] = df.at[i, 'opt_down_rate']
+            df.at[i, IS_PARTICIPATING] = True
+            df.at[i, ENROLLMENT_METHOD] = 'AE'
+            counts['opt_down'] += 1
+        elif draw < thresholds[3]:
+            # increase to match
+            df.at[i, EMP_DEFERRAL_RATE] = df.at[i, 'rate_for_max_match']
+            df.at[i, IS_PARTICIPATING] = True
+            df.at[i, ENROLLMENT_METHOD] = 'AE'
+            counts['to_match'] += 1
+        elif draw < thresholds[4]:
+            # increase to high target
+            df.at[i, EMP_DEFERRAL_RATE] = df.at[i, 'increase_high_rate']
+            df.at[i, IS_PARTICIPATING] = True
+            df.at[i, ENROLLMENT_METHOD] = 'AE'
+            counts['increase_high'] += 1
         else:
-            logger.warning(f'Unknown AE outcome: {outcome}')
-            df.loc[idx, EMP_DEFERRAL_RATE] = ae_default_rate
-            df.loc[idx, IS_PARTICIPATING] = True
-    # Log summary
-    enrolled_count = df.loc[target_indices, IS_PARTICIPATING].sum()
-    opted_out_count = df.loc[target_indices, AE_OPTED_OUT].sum()
-    logger.info(f"AE Applied: {enrolled_count} enrolled, {opted_out_count - enrolled_count} opted out.")
+            # fallback to default
+            df.at[i, EMP_DEFERRAL_RATE] = ae_rules.default_rate
+            df.at[i, IS_PARTICIPATING] = True
+            df.at[i, ENROLLMENT_METHOD] = 'AE'
+            counts['stay_default'] += 1
+
+    logger.info(
+        "AE Applied: %d default, %d opt-down, %d to-match, %d high, %d opt-out",
+        counts['stay_default'],
+        counts['opt_down'],
+        counts['to_match'],
+        counts['increase_high'],
+        counts['opt_out']
+    )
+
     return df

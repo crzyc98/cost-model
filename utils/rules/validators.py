@@ -33,14 +33,31 @@ class EligibilityRule(BaseModel):
     min_service_months: conint(ge=0) = 0
     min_hours_worked: Optional[conint(ge=0)] = None
 
+class OutcomeDistribution(BaseModel):
+    prob_opt_out: confloat(ge=0, le=1)
+    prob_stay_default: confloat(ge=0, le=1)
+    prob_opt_down: confloat(ge=0, le=1)
+    prob_increase_to_match: confloat(ge=0, le=1)
+    prob_increase_high: confloat(ge=0, le=1)
+    
+    @root_validator
+    def check_probabilities_sum_to_one(cls, values):
+        total = sum(v for k,v in values.items() if k.startswith('prob_'))
+        if not abs(total - 1.0) < 0.0001:
+            raise ValueError(f"Outcome probabilities must sum to 1 (got {total})")
+        return values
+
 class AutoEnrollmentRule(BaseModel):
     enabled: bool
     default_rate: confloat(ge=0, le=1)
     proactive_enrollment_probability: confloat(ge=0, le=1)
-    re_enroll_existing: Optional[bool] = False
-    outcome_distribution: Optional[Dict[str, float]] = None
+    opt_down_target_rate: confloat(ge=0, le=1)
+    increase_to_match_rate: confloat(ge=0, le=1)
+    increase_high_rate: confloat(ge=0, le=1)
+    outcome_distribution: OutcomeDistribution
     window_days: Optional[int] = None
     proactive_rate_range: Optional[tuple] = None
+    re_enroll_existing: Optional[bool] = False
 
 class AutoIncreaseRule(BaseModel):
     enabled: bool

@@ -3,7 +3,7 @@ rules/eligibility.py - Eligibility rule: age/service/hours + entry-date calc
 """
 import pandas as pd
 import numpy as np
-from typing import Optional
+from typing import Optional, Any, Dict
 import logging
 from utils.date_utils import calculate_age, calculate_tenure
 from utils.constants import ACTIVE_STATUSES
@@ -59,9 +59,25 @@ def apply(df: pd.DataFrame, eligibility_cfg: EligibilityRule, simulation_year_en
     date_age = df[EMP_BIRTH_DATE] + pd.DateOffset(years=min_age)
     df[ELIGIBILITY_ENTRY_DATE] = date_service.combine(date_age, max)
 
+    # Normalize status for a case-insensitive match (and replace en-dashes)
+    df_status = df[STATUS_COL].astype(str)
+    logger.debug("STATUS unique (raw): %r", df_status.unique())
+
+    df_status = (
+        df_status
+        .str.replace("–", "-", regex=False)
+        .str.strip()
+        .str.casefold()
+    )
+    allowed = { s.replace("–","-").casefold() for s in ACTIVE_STATUSES }
+    logger.debug("Allowed statuses (case-folded): %r", allowed)
+
+    active_mask = df_status.isin(allowed)
+    logger.debug("active_mask.sum() = %d / %d", int(active_mask.sum()), len(active_mask))
+
     # Determine base eligibility (age/service/status)
     eligible_by_date = (df[ELIGIBILITY_ENTRY_DATE] <= simulation_year_end_date) & df[ELIGIBILITY_ENTRY_DATE].notna()
-    active_mask = df[STATUS_COL] == ACTIVE_STATUSES[0]
+    logger.debug("eligible_by_date.sum() = %d / %d", int(eligible_by_date.sum()), len(eligible_by_date))
 
     # Hours requirement (optional)
     min_hours = eligibility_cfg.min_hours_worked

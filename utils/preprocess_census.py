@@ -13,12 +13,13 @@ import pandas as pd
 import argparse
 from utils.data_processing import assign_employment_status
 from utils.rules.eligibility import apply as apply_eligibility
-from utils.constants import ACTIVE_STATUS, UNKNOWN_STATUS as INACTIVE_STATUS
+from utils.rules.validators import PlanRules
+from utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
 from utils.columns import (
     EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
     EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
-    EMP_DEFERRAL_RATE, EMP_PRE_TAX_CONTR,
-    EMPLOYER_NEC, EMPLOYER_MATCH,
+    EMP_DEFERRAL_RATE, EMP_CONTR,
+    EMPLOYER_CORE, EMPLOYER_MATCH,
     ELIGIBILITY_ENTRY_DATE, IS_PARTICIPATING, IS_ELIGIBLE,
     RAW_TO_STD_COLS, to_nullable_bool,
     DATE_COLS
@@ -73,14 +74,32 @@ def preprocess_census(
         import yaml
         with open(config_path) as f:
             config = yaml.safe_load(f)
-        plan_rules = _get_plan_rules(config)
+        plan_rules_dict = _get_plan_rules(config)
+        plan_rules = PlanRules(**plan_rules_dict)
         sim_year_end = pd.Timestamp(f"{year}-12-31")
-        df = apply_eligibility(df, plan_rules, sim_year_end)
+        df = apply_eligibility(df, plan_rules.eligibility, sim_year_end)
+        # Calculate contributions to retain contribution columns before pruning
+        from utils.rules.contributions import apply as apply_contributions
+        # Apply contributions if enabled in plan rules
+        if plan_rules.contributions.enabled:
+            year_start = pd.Timestamp(f"{year}-01-01")
+            df = apply_contributions(
+                df,
+                plan_rules.contributions,
+                plan_rules.employer_match,
+                plan_rules.employer_nec,
+                plan_rules.irs_limits,
+                year,
+                year_start,
+                sim_year_end
+            )
     # Rename columns using centralized mapping
     df.rename(columns=RAW_TO_STD_COLS, inplace=True, errors='ignore')
     # Keep only standardized columns and essential fields
+    # Include contribution and rate columns
     keep = set(RAW_TO_STD_COLS.values()) | {
-        EMP_SSN, EMP_ROLE, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP, EMP_GROSS_COMP
+        EMP_SSN, EMP_ROLE, EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP, EMP_DEFERRAL_RATE, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH, 
+        IS_ELIGIBLE, IS_PARTICIPATING, ELIGIBILITY_ENTRY_DATE
     }
     dropped = set(df.columns) - keep
     if dropped:
@@ -95,9 +114,11 @@ def preprocess_census(
     if missing:
         raise RuntimeError(f"Missing required columns after rename: {missing}")
     # Set is_participating and is_eligible flags
-    # Boolean flags for participation and eligibility
-    df[IS_PARTICIPATING] = to_nullable_bool(df.get(EMP_PRE_TAX_CONTR, 0) > 0)
-    df[IS_ELIGIBLE]      = to_nullable_bool(df.get(IS_ELIGIBLE, False))
+    # Boolean flags for participation
+    df[IS_PARTICIPATING] = to_nullable_bool(df.get(EMP_CONTR, 0) > 0)
+    # Boolean flag for eligibility ensure series input
+    eligible_series = df[IS_ELIGIBLE] if IS_ELIGIBLE in df else pd.Series(False, index=df.index)
+    df[IS_ELIGIBLE] = to_nullable_bool(eligible_series)
     # Final date formatting
     for col in [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, ELIGIBILITY_ENTRY_DATE]:
         if col in df:

@@ -6,22 +6,13 @@ EMP_ROLE = "employee_role"
 EMP_BIRTH_DATE = "employee_birth_date"
 EMP_HIRE_DATE = "employee_hire_date"
 EMP_TERM_DATE = "employee_termination_date"
-
 EMP_GROSS_COMP = "employee_gross_compensation"
 EMP_PLAN_YEAR_COMP = "employee_plan_year_compensation"
 EMP_CAPPED_COMP = "employee_capped_compensation"
 EMP_DEFERRAL_RATE = "employee_deferral_rate"
-EMP_PRE_TAX_CONTR = "employee_pre_tax_contribution"
-
+EMP_CONTR = "employee_contribution"
+EMPLOYER_CORE = "employer_core_contribution"
 EMPLOYER_MATCH = "employer_match_contribution"
-EMPLOYER_NEC = "employer_non_elective_contribution"
-
-# Standardized (post-rename) columns for downstream logic
-GROSS_COMP = "gross_compensation"
-PLAN_YEAR_COMP = "plan_year_compensation"
-CAPPED_COMP = "capped_compensation"
-DEFERRAL_RATE = "deferral_rate"
-PRE_TAX_CONTR = "pre_tax_contributions"
 
 # Flags
 IS_ELIGIBLE = "is_eligible"
@@ -34,6 +25,11 @@ HOURS_WORKED = "hours_worked"
 AE_OPTED_OUT = "ae_opted_out"
 PROACTIVE_ENROLLED = "proactive_enrolled"
 AUTO_ENROLLED = "auto_enrolled"
+
+# Auto Increase (AI) columns
+AI_OPTED_OUT = "ai_opted_out"
+AI_ENROLLED = "ai_enrolled"
+
 ENROLLMENT_DATE = "enrollment_date"
 AE_WINDOW_START = "ae_window_start"
 AE_WINDOW_END = "ae_window_end"
@@ -58,10 +54,10 @@ RAW_TO_STD_COLS = {
     'capped_compensation': EMP_CAPPED_COMP,
     'employee_deferral_pct': EMP_DEFERRAL_RATE,
     'pre_tax_deferral_percentage': EMP_DEFERRAL_RATE,
-    'employee_contribution_amt': EMP_PRE_TAX_CONTR,
-    'pre_tax_contributions': EMP_PRE_TAX_CONTR,
-    'employer_core_contribution_amt': EMPLOYER_NEC,
-    'employer_non_elective_contribution': EMPLOYER_NEC,
+    'employee_contribution_amt': EMP_CONTR,
+    'pre_tax_contributions': EMP_CONTR,
+    'employer_core_contribution_amt': EMPLOYER_CORE,
+    'employer_core_contribution': EMPLOYER_CORE,
     'employer_match_contribution_amt': EMPLOYER_MATCH,
     'employer_match_contribution': EMPLOYER_MATCH,
     'eligibility_entry_date': ELIGIBILITY_ENTRY_DATE,

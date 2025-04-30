@@ -6,6 +6,25 @@ global_parameters:
   projection_years: 5
   random_seed: 12345
 
+  annual_compensation_increase_rate: 0.03
+  annual_termination_rate:           0.13
+  new_hire_termination_rate:         0.20
+  use_expected_attrition:            false
+  new_hire_start_salary:             55000
+  new_hire_average_age:              30
+  annual_growth_rate:                0.02
+  monthly_transition:                false
+  maintain_headcount:                false
+
+  hazard_model_params:
+    file: data/hazard_model_params.yaml
+
+  onboarding:
+    enabled: true
+    early_tenure_months: 6
+    hazard_multiplier:   1.5
+    productivity_curve: [0.80, 0.85, 0.90, 0.95, 1.00, 1.00]
+
   # All of your plan rules now live under plan_rules:
   plan_rules:
     eligibility:
@@ -20,18 +39,16 @@ global_parameters:
     auto_enrollment:
       enabled: true
       proactive_enrollment_probability: 0.05
-      proactive_rate_range: [0.01, 0.05]
       default_rate: 0.02
-      re_enroll_existing: true
+      opt_down_target_rate: 0.01
+      increase_to_match_rate: 0.05
+      increase_high_rate: 0.08
       outcome_distribution:
-        prob_opt_out: 0.10
-        prob_stay_default: 0.60
-        prob_opt_down: 0.05
-        prob_increase_to_match: 0.10
-        prob_increase_high: 0.15
-      opt_down_target_rate: 0.03
-      increase_high_target_rate: 0.10
-      window_days: 30
+        prob_opt_out: 0.1
+        prob_stay_default: 0.6
+        prob_opt_down: 0.1
+        prob_increase_to_match: 0.1
+        prob_increase_high: 0.1
 
     auto_increase:
       enabled: false
@@ -93,25 +110,6 @@ global_parameters:
       voluntary_increase_amount:        0.01
       voluntary_decrease_amount:        0.01
 
-    annual_compensation_increase_rate: 0.03
-    annual_termination_rate:           0.13
-    new_hire_termination_rate:         0.20
-    use_expected_attrition:            false
-    new_hire_start_salary:             55000
-    new_hire_average_age:              30
-    annual_growth_rate:                0.02
-    monthly_transition:                false
-    maintain_headcount:                false
-
-    hazard_model_params:
-      file: data/hazard_model_params.yaml
-
-    onboarding:
-      enabled: true
-      early_tenure_months: 6
-      hazard_multiplier:   1.5
-      productivity_curve: [0.80, 0.85, 0.90, 0.95, 1.00, 1.00]
-
     contributions:
       enabled: true
 
@@ -130,6 +128,8 @@ scenarios:
       auto_increase:
         enabled: true
         apply_to_new_hires_only: true
+        increase_rate: 0.01
+        cap_rate: 0.10
 
   # 2) Re-enroll all existing participants deferring below the cap
   re_enroll_below_cap:
@@ -139,3 +139,5 @@ scenarios:
       auto_increase:
         enabled: true
         re_enroll_existing_below_cap: true
+        increase_rate: 0.01
+        cap_rate: 0.10

@@ -20,7 +20,7 @@ from utils.columns import (
 # Avoid enum name collision: alias status_enums EmploymentStatus
 from utils.status_enums import EmploymentStatus as PhaseStatus
 # Use explicit constants for active vs inactive states
-from utils.constants import ACTIVE_STATUS, UNKNOWN_STATUS as INACTIVE_STATUS
+from utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +98,9 @@ def assign_employment_status(df, start_year):
     """Assign employment_status and status columns using PhaseStatus enum."""
     df_copy = df.copy()
 
-    # Initialize all as UNKNOWN phase
+    # Initialize all as INACTIVE phase
     status = pd.Series(
-        np.full(len(df_copy), PhaseStatus.UNKNOWN.value, dtype=object),
+        np.full(len(df_copy), PhaseStatus.INACTIVE.value, dtype=object),
         index=df_copy.index
     )
 

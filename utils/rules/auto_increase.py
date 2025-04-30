@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def apply(
     df: pd.DataFrame,
-    ai_rules: AutoIncreaseRule,
+    ai_rules: Dict[str, Any],
     simulation_year: int
 ) -> pd.DataFrame:
     """
@@ -31,12 +31,23 @@ def apply(
 
     Parameters:
       - df: employee-level snapshot for the year
-      - ai_rules: AutoIncreaseRule instance
+      - ai_rules: AutoIncreaseRule instance or dict
       - simulation_year: calendar year (int) of this snapshot
 
     Returns:
       - df with AI flags and bumped EMP_DEFERRAL_RATE
     """
+    # coerce plain dicts into the validator object
+    if isinstance(ai_rules, dict):
+        # Fill in defaults if keys are missing
+        ai = {
+            'enabled': False,
+            'increase_rate': 0.0,
+            'cap_rate': 0.0,
+            **ai_rules
+        }
+        ai_rules = AutoIncreaseRule(**ai)
+
     if not ai_rules.enabled:
         logger.info("Auto Increase disabled. Skipping.")
         return df

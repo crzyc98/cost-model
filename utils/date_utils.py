@@ -4,12 +4,13 @@
 
 import pandas as pd  # type: ignore[import-untyped]
 from dateutil.relativedelta import relativedelta
+from typing import Union
 
 
 def calculate_age(
-    birth_date: pd.Series | pd.Timestamp | None,
+    birth_date: Union[pd.Series, pd.Timestamp, None],
     current_date: pd.Timestamp
-) -> pd.Series | int:
+) -> Union[pd.Series, int]:
     """
     Calculate age in years based on birth_date and current_date.
     - If birth_date is a Series, returns a Series of ints.
@@ -26,9 +27,9 @@ def calculate_age(
 
 
 def calculate_tenure(
-    hire_date: pd.Series | pd.Timestamp | None,
+    hire_date: Union[pd.Series, pd.Timestamp, None],
     current_date: pd.Timestamp
-) -> pd.Series | float:
+) -> Union[pd.Series, float]:
     """
     Calculate tenure in fractional years based on hire_date and current_date.
     - If hire_date is a Series, returns a Series of floats.
