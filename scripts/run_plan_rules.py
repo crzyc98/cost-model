@@ -7,18 +7,31 @@ Script to apply plan rules for each scenario and year.
 #!/usr/bin/env python3
 import os
 import sys
+import logging
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import argparse
 import pandas as pd
 import yaml
 from utils.projection_utils import apply_plan_rules
+from utils.rules.validators import PlanRules, ValidationError
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+def load_and_validate_plan_rules(raw: dict) -> dict:
+    try:
+        return PlanRules(**raw).dict()
+    except ValidationError as e:
+        logger.error("Invalid plan_rules configuration", exc_info=e)
+        sys.exit(1)
 
 def main(config_path: str, snapshots_dir: str, output_dir: str):
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     # extract global parameters and plan_rules
     global_params = cfg.get("global_parameters", {})
-    global_pr = global_params.get("plan_rules", {})
+    # validate global plan_rules
+    global_pr = load_and_validate_plan_rules(global_params.get('plan_rules', {}))
     # ensure output dir
     os.makedirs(output_dir, exist_ok=True)
     for key, sc in cfg.get('scenarios', {}).items():
@@ -31,11 +44,11 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
                 scen_cfg[k] = v
 
         # 3) Merge scenario plan_rules atop global ones
-        merged_pr = dict(global_pr)
-        merged_pr.update(sc.get('plan_rules', {}))
-        scen_cfg['plan_rules'] = merged_pr
+        merged = dict(global_pr)
+        merged.update(sc.get('plan_rules', {}))
+        scen_cfg['plan_rules'] = load_and_validate_plan_rules(merged)
         name = sc.get('scenario_name') or sc.get('name') or key
-        print(f"Applying plan rules for scenario: {name}")
+        logger.info("Applying plan rules for scenario: %s", name)
         metrics = []
         
         # --- Participation persistence logic ---
@@ -43,8 +56,15 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
         prev_eligibility = None    # dict: employee_ssn -> is_eligible
         prev_ids = set()
         
-        # read every base_run_year*.parquet from the flat snapshots_dir
-        for fname in sorted(os.listdir(snapshots_dir)):
+        # validate snapshots directory
+        if not os.path.isdir(snapshots_dir):
+            logger.error("Snapshots dir not found: %s", snapshots_dir)
+            sys.exit(1)
+        files = [f for f in os.listdir(snapshots_dir) if f.startswith('base_run_year') and f.endswith('.parquet')]
+        if not files:
+            logger.error("No snapshot files in %s", snapshots_dir)
+            sys.exit(1)
+        for fname in sorted(files):
             if not fname.startswith("base_run_year") or not fname.endswith(".parquet"):
                 continue
             year_num = int(fname[len("base_run_year"): -len(".parquet")])
@@ -82,7 +102,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
             # save detailed output per year
             out_path = os.path.join(output_dir, f"{name}_year{year_num}.parquet")
             out_df.to_parquet(out_path)
-            print(f"Wrote {out_path}")
+            logger.info("Wrote %s", out_path)
             # compute summary metrics
             # use original snapshot metrics to avoid FP drift
             # Use out_df (after plan rules) for metrics, matching run_monte_carlo.py
@@ -129,12 +149,12 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
         metrics_df = pd.DataFrame(metrics)
         metrics_path = os.path.join(output_dir, f"{name}_metrics.csv")
         metrics_df.to_csv(metrics_path, index=False)
-        print(f"Wrote metrics {metrics_path}")
+        logger.info("Wrote metrics %s", metrics_path)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Phase II: apply plan rules')
-    parser.add_argument('--config', required=True, help='YAML config file path')
-    parser.add_argument('--snapshots', required=True, help='Directory of HR snapshots')
-    parser.add_argument('--outdir', required=True, help='Output directory for plan outputs')
+    parser.add_argument('--config', required=True, dest='config_path', help='YAML config file path')
+    parser.add_argument('--snapshots-dir', '--snapshots', required=True, dest='snapshots_dir', help='Directory of HR snapshots')
+    parser.add_argument('--output-dir', '--outdir', required=True, dest='output_dir', help='Output directory for plan outputs')
     args = parser.parse_args()
-    main(args.config, args.snapshots, args.outdir)
+    main(args.config_path, args.snapshots_dir, args.output_dir)

@@ -7,8 +7,20 @@ import os
 import logging
 import numpy as np
 from datetime import datetime
-from utils.columns import RAW_TO_STD_COLS, DATE_COLS, EMP_SSN, EMP_GROSS_COMP, STATUS_COL, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE
-from utils.constants import ACTIVE_STATUSES, unknown_STATUS
+from utils.columns import (
+    RAW_TO_STD_COLS,
+    DATE_COLS,
+    EMP_SSN,
+    EMP_GROSS_COMP,
+    STATUS_COL,
+    EMP_HIRE_DATE,
+    EMP_TERM_DATE,
+    EMP_BIRTH_DATE,
+)
+# Avoid enum name collision: alias status_enums EmploymentStatus
+from utils.status_enums import EmploymentStatus as PhaseStatus
+# Use explicit constants for active vs inactive states
+from utils.constants import ACTIVE_STATUS, UNKNOWN_STATUS as INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +35,7 @@ def _infer_plan_year_end(filepath: str) -> pd.Timestamp:
     except ValueError:
         pass
     return pd.Timestamp(f"{now-1}-12-31")
+
 
 def load_and_clean_census(filepath, expected_cols):
     """Loads a census file and performs basic cleaning."""
@@ -72,7 +85,7 @@ def load_and_clean_census(filepath, expected_cols):
     if EMP_SSN in df.columns:
         df[EMP_SSN] = df[EMP_SSN].astype(str)
 
-    # Plan year end date
+    # Plan year end date inference
     df['plan_year_end_date'] = _infer_plan_year_end(filepath)
 
     # Drop any unmapped raw columns
@@ -80,37 +93,38 @@ def load_and_clean_census(filepath, expected_cols):
     df = df.loc[:, df.columns.intersection(keep)]
     return df
 
+
 def assign_employment_status(df, start_year):
-    """Assign employment_status and status columns using ABM logic and EmploymentStatus enum."""
-    from utils.status_enums import EmploymentStatus
+    """Assign employment_status and status columns using PhaseStatus enum."""
     df_copy = df.copy()
-    # dates parsed already
 
-    status = pd.Series(np.full(len(df_copy), EmploymentStatus.UNKNOWN.value, dtype=object), index=df_copy.index)
+    # Initialize all as UNKNOWN phase
+    status = pd.Series(
+        np.full(len(df_copy), PhaseStatus.UNKNOWN.value, dtype=object),
+        index=df_copy.index
+    )
 
-    # Not hired yet
-    status[df_copy[EMP_HIRE_DATE].dt.year > start_year] = EmploymentStatus.NOT_HIRED.value
+    # Determine phases
+    hyear = df_copy[EMP_HIRE_DATE].dt.year
+    tdate = df_copy[EMP_TERM_DATE]
+    mask_not_hired = hyear > start_year
+    mask_new_hire = hyear == start_year
+    mask_pre_term = (tdate.notna()) & (tdate.dt.year < start_year)
+    mask_active_cont = (hyear < start_year) & (tdate.isna())
+    mask_active_init = (hyear == start_year) & (tdate.isna())
 
-    # New hire this year
-    status[df_copy[EMP_HIRE_DATE].dt.year == start_year] = EmploymentStatus.NEW_HIRE.value
-
-    # Previously terminated
-    status[(df_copy[EMP_TERM_DATE].notna()) & (df_copy[EMP_TERM_DATE].dt.year < start_year)] = EmploymentStatus.PREV_TERMINATED.value
-
-    # Active continuous: hired before start year, no termination
-    status[(df_copy[EMP_HIRE_DATE].dt.year < start_year) & (df_copy[EMP_TERM_DATE].isna())] = EmploymentStatus.ACTIVE_CONTINUOUS.value
-
-    # Active initial: hired in start year, no termination
-    status[(df_copy[EMP_HIRE_DATE].dt.year == start_year) & (df_copy[EMP_TERM_DATE].isna())] = EmploymentStatus.ACTIVE_INITIAL.value
+    status[mask_not_hired]     = PhaseStatus.NOT_HIRED.value
+    status[mask_new_hire]      = PhaseStatus.NEW_HIRE.value
+    status[mask_pre_term]      = PhaseStatus.PREV_TERMINATED.value
+    status[mask_active_cont]   = PhaseStatus.ACTIVE_CONTINUOUS.value
+    status[mask_active_init]   = PhaseStatus.ACTIVE_INITIAL.value
 
     df_copy['employment_status'] = status
+
+    # Map to active vs inactive categories
     df_copy[STATUS_COL] = np.where(
-        df_copy['employment_status'].isin([
-            EmploymentStatus.ACTIVE_INITIAL.value,
-            EmploymentStatus.ACTIVE_CONTINUOUS.value,
-            EmploymentStatus.NEW_HIRE.value
-        ]),
-        ACTIVE_STATUSES[0],
-        unknown_STATUS
+        status.isin({PhaseStatus.ACTIVE_INITIAL.value, PhaseStatus.ACTIVE_CONTINUOUS.value, PhaseStatus.NEW_HIRE.value}),
+        ACTIVE_STATUS,
+        INACTIVE_STATUS
     )
     return df_copy

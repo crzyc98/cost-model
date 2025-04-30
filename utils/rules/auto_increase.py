@@ -1,77 +1,94 @@
+# utils/rules/auto_increase.py
 """
 Auto Increase rule: apply deferral rate increases according to plan rules.
 """
+import logging
+from typing import Dict, Any
+
 import pandas as pd
 import numpy as np
-import logging
+
+from utils.columns import (
+    EMP_DEFERRAL_RATE,
+    EMP_HIRE_DATE,
+    IS_PARTICIPATING,
+    AI_OPTED_OUT,
+    AI_ENROLLED,
+    to_nullable_bool,
+)
+from utils.constants import ACTIVE_STATUSES
+from utils.rules.validators import AutoIncreaseRule
 
 logger = logging.getLogger(__name__)
 
-def apply(df, plan_rules, simulation_year):
-    """Apply auto-increase rules to the DataFrame."""
-    ai_config = plan_rules.get('auto_increase', {})
-    if not ai_config.get('enabled', False):
+def apply(
+    df: pd.DataFrame,
+    ai_rules: AutoIncreaseRule,
+    simulation_year: int
+) -> pd.DataFrame:
+    """
+    Apply auto-increase rules to the DataFrame.
+
+    Parameters:
+      - df: employee-level snapshot for the year
+      - ai_rules: AutoIncreaseRule instance
+      - simulation_year: calendar year (int) of this snapshot
+
+    Returns:
+      - df with AI flags and bumped EMP_DEFERRAL_RATE
+    """
+    if not ai_rules.enabled:
         logger.info("Auto Increase disabled. Skipping.")
         return df
 
-    ai_increase_rate     = ai_config.get('increase_rate', 0.01)
-    ai_max_deferral_rate = ai_config.get('cap_rate', ai_config.get('max_deferral_rate', 0.10))
+    increase_rate = ai_rules.increase_rate
+    cap_rate      = ai_rules.cap_rate
 
-    # --- Initialize flags ---
-    if 'ai_opted_out' not in df.columns:
-        df['ai_opted_out'] = False
+    # --- Initialize flags as nullable booleans ---
+    df[AI_OPTED_OUT] = to_nullable_bool(df.get(AI_OPTED_OUT, False))
+    df[AI_ENROLLED]  = to_nullable_bool(df.get(AI_ENROLLED, False))
 
-    if 'ai_enrolled' not in df.columns:
-        df['ai_enrolled'] = pd.Series(False, index=df.index, dtype='boolean')
+    # Ensure participation column exists
+    df[IS_PARTICIPATING] = to_nullable_bool(df.get(IS_PARTICIPATING, False))
+
+    # --- Seed AI_ENROLLED per policy ---
+    if ai_rules.apply_to_new_hires_only:
+        # only those hired in the simulation_year
+        new_hires = df[EMP_HIRE_DATE].dt.year.eq(simulation_year)
+        df.loc[new_hires, AI_ENROLLED] = True
+
+    elif ai_rules.re_enroll_existing_below_cap:
+        # re-enroll existing participants whose rate is below cap
+        mask = df[IS_PARTICIPATING] & df[EMP_DEFERRAL_RATE].lt(cap_rate)
+        df.loc[mask, AI_ENROLLED] = True
+
     else:
-        df['ai_enrolled'] = df['ai_enrolled'].astype('boolean').fillna(False)
+        # default: everyone currently participating
+        df.loc[df[IS_PARTICIPATING], AI_ENROLLED] = True
 
-    # ensure participating flag exists for seeding logic
-    if 'is_participating' not in df.columns:
-        df['is_participating'] = False
+    logger.debug("AI seeding: %d enrolled/%d total", df[AI_ENROLLED].sum(), len(df))
 
-    # --- Seed ai_enrolled per scenario flags ---
-    # 1) only bump new hires (hired this year)
-    if ai_config.get('apply_to_new_hires_only', False):
-        df.loc[
-            df['employee_hire_date'].dt.year == simulation_year,
-            'ai_enrolled'
-        ] = True
-
-    # 2) re-enroll existing participants under the cap
-    elif ai_config.get('re_enroll_existing_below_cap', False):
-        df.loc[
-            df['is_participating'] & (df['employee_deferral_rate'] < ai_max_deferral_rate),
-            'ai_enrolled'
-        ] = True
-
-    # 3) default: everyone participating
-    else:
-        df.loc[df['is_participating'], 'ai_enrolled'] = True
-
-    logger.debug("AI-enrolled after seeding: %d/%d", df['ai_enrolled'].sum(), len(df))
-
-    # --- Build bump mask and apply increase ---
-    mask = (
-        df['ai_enrolled']
-      & ~df['ai_opted_out']
-      & (df['employee_deferral_rate'] < ai_max_deferral_rate)
+    # --- Build bump mask ---
+    bump_mask = (
+        df[AI_ENROLLED]
+        & ~df[AI_OPTED_OUT]
+        & df[EMP_DEFERRAL_RATE].lt(cap_rate)
     )
-    logger.debug("AI candidates: %d / %d", mask.sum(), len(df))
+    logger.debug("AI candidates: %d / %d", bump_mask.sum(), len(df))
 
-    if mask.any():
-        df.loc[mask, 'employee_deferral_rate'] = (
-            df.loc[mask, 'employee_deferral_rate'] + ai_increase_rate
-        ).clip(upper=ai_max_deferral_rate)
-        # Ensure deferral rate is not negative
-        df.loc[mask, 'employee_deferral_rate'] = df.loc[mask, 'employee_deferral_rate'].clip(lower=0.0)
-        # keep ai_enrolled True
-        df.loc[mask, 'ai_enrolled'] = True
+    if bump_mask.any():
+        before = df.loc[bump_mask, EMP_DEFERRAL_RATE]
+        bumped = (before + increase_rate).clip(lower=0.0, upper=cap_rate)
+        df.loc[bump_mask, EMP_DEFERRAL_RATE] = bumped
+
+        # keep AI_ENROLLED = True for bumped
+        df.loc[bump_mask, AI_ENROLLED] = True
+
         logger.info(
-            "Auto Increase applied to %d employees: +%.1f%% (cap %.1f%%)",
-            mask.sum(),
-            ai_increase_rate * 100,
-            ai_max_deferral_rate * 100
+            "Auto Increase applied to %d employees: +%.2f%% up to cap %.2f%%",
+            bump_mask.sum(),
+            increase_rate * 100,
+            cap_rate * 100
         )
     else:
         logger.info("No eligible participants for Auto Increase.")

@@ -13,6 +13,8 @@ import sys
 import argparse
 import pandas as pd
 import yaml
+import numpy as np
+from utils.rules.validators import PlanRules, ValidationError
 
 # ensure we can import project_hr
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -45,6 +47,14 @@ def main():
         cfg = yaml.safe_load(f)
 
     global_params = cfg.get("global_parameters", {})
+    # validate global plan_rules schema for HR snapshots
+    gp_pr = global_params.get('plan_rules', {})
+    try:
+        validated_pr = PlanRules(**gp_pr)
+    except ValidationError as e:
+        print("Invalid global plan_rules configuration (hr_snapshots):\n", e)
+        sys.exit(1)
+    global_params['plan_rules'] = validated_pr.dict()
     baseline = cfg.get("scenarios", {}).get("baseline")
     if baseline is None:
         sys.exit("ERROR: 'baseline' scenario not found in config.")
@@ -68,10 +78,14 @@ def main():
             parse_dates=["employee_hire_date", "employee_termination_date", "employee_birth_date"]
         )
 
-    # Run the HR projection once
+    # Seed the global numpy RNG once for reproducibility
+    if args.seed is not None:
+        np.random.seed(args.seed)
+
+    # Run the HR projection once (no further reseeding inside)
     os.makedirs(args.output, exist_ok=True)
     print("Running HR dynamics _once_ (baseline settings)…")
-    hr_snapshots = project_hr(start_df, hr_cfg, random_seed=args.seed)
+    hr_snapshots = project_hr(start_df, hr_cfg)
 
     # Write out one parquet per year
     for year, df in hr_snapshots.items():

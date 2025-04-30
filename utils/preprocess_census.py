@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-preprocess_census.py - Preprocess utility for census data: adds derived fields (bools, status, eligibility, etc.) for use in simulation output and downstream analysis.
+utils/preprocess_census.py - Preprocess utility for census data: adds derived fields (bools, status, eligibility, etc.) for use in simulation output and downstream analysis.
 """
 import os
 import sys
@@ -13,7 +13,7 @@ import pandas as pd
 import argparse
 from utils.data_processing import assign_employment_status
 from utils.rules.eligibility import apply as apply_eligibility
-from utils.constants import ACTIVE_STATUSES
+from utils.constants import ACTIVE_STATUS, UNKNOWN_STATUS as INACTIVE_STATUS
 from utils.columns import (
     EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
     EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
@@ -23,6 +23,12 @@ from utils.columns import (
     RAW_TO_STD_COLS, to_nullable_bool,
     DATE_COLS
 )
+
+def _get_plan_rules(cfg: dict) -> dict:
+    """Extract plan_rules from either global_parameters or scenario_config."""
+    if 'global_parameters' in cfg:
+        return cfg['global_parameters'].get('plan_rules', {})
+    return cfg.get('plan_rules', {})
 
 def preprocess_census(
     input_path: Union[str, Path],
@@ -62,50 +68,38 @@ def preprocess_census(
     df = assign_employment_status(df, year)
     # Add eligibility columns if config provided
     if config_path:
-        # Fail fast if config file is missing
         if not Path(config_path).exists():
-            logger.error(f"Config not found: {config_path}")
-            sys.exit(1)
+            raise RuntimeError(f"Config not found: {config_path}")
         import yaml
         with open(config_path) as f:
             config = yaml.safe_load(f)
-        plan_rules = config.get('global_parameters', {}).get('plan_rules', {})
+        plan_rules = _get_plan_rules(config)
         sim_year_end = pd.Timestamp(f"{year}-12-31")
         df = apply_eligibility(df, plan_rules, sim_year_end)
     # Rename columns using centralized mapping
     df.rename(columns=RAW_TO_STD_COLS, inplace=True, errors='ignore')
     # Keep only standardized columns and essential fields
-    keep = set(RAW_TO_STD_COLS.values()) | {EMP_SSN, EMP_GROSS_COMP}
-    df = df.loc[:, [c for c in df.columns if c in keep]]
+    keep = set(RAW_TO_STD_COLS.values()) | {
+        EMP_SSN, EMP_ROLE, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP, EMP_GROSS_COMP
+    }
+    dropped = set(df.columns) - keep
+    if dropped:
+        logger.debug("Dropping columns: %s", dropped)
+    df = df.loc[:, df.columns.intersection(keep)]
     # Validate presence of eligibility entry date if eligibility logic was applied
     if config_path and ELIGIBILITY_ENTRY_DATE not in df.columns:
-        logger.error(f"Missing eligibility column after rename: {ELIGIBILITY_ENTRY_DATE}")
-        sys.exit(1)
+        raise RuntimeError(f"Missing eligibility column after rename: {ELIGIBILITY_ENTRY_DATE}")
     # Validate presence of required columns
     required = {EMP_SSN, EMP_GROSS_COMP}
     missing = required - set(df.columns)
     if missing:
-        logger.error(f"Missing required columns after rename: {missing}")
-        sys.exit(1)
+        raise RuntimeError(f"Missing required columns after rename: {missing}")
     # Set is_participating and is_eligible flags
     # Boolean flags for participation and eligibility
-    df[IS_PARTICIPATING] = to_nullable_bool(
-        df[EMP_PRE_TAX_CONTR].fillna(0).gt(0)
-    ) if EMP_PRE_TAX_CONTR in df else to_nullable_bool(
-        pd.Series(False, index=df.index)
-    )
-    df[IS_ELIGIBLE] = to_nullable_bool(
-        df[IS_ELIGIBLE]
-    ) if IS_ELIGIBLE in df else to_nullable_bool(
-        pd.Series(False, index=df.index)
-    )
-    # Parse any ISO-string date columns into datetime
-    for col in DATE_COLS:
-        if col in df.columns and df[col].dtype == object:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
-    # Format date columns as YYYY-MM-DD strings for output
-    date_cols = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, ELIGIBILITY_ENTRY_DATE]
-    for col in date_cols:
+    df[IS_PARTICIPATING] = to_nullable_bool(df.get(EMP_PRE_TAX_CONTR, 0) > 0)
+    df[IS_ELIGIBLE]      = to_nullable_bool(df.get(IS_ELIGIBLE, False))
+    # Final date formatting
+    for col in [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, ELIGIBILITY_ENTRY_DATE]:
         if col in df:
             df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime('%Y-%m-%d')
 

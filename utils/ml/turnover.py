@@ -1,43 +1,54 @@
+# utils/ml/turnover.py
+
 import pandas as pd
 import numpy as np
+from sklearn.utils import check_random_state
+from utils.ml.ml_utils import predict_turnover
 
 def apply_ml_turnover(
     df: pd.DataFrame,
     model,
-    feature_cols: list,
+    feature_cols: list[str],
+    year_start: pd.Timestamp,
     year_end: pd.Timestamp,
-    seed: int = None
+    random_state: int | np.random.RandomState | None = None
 ) -> pd.DataFrame:
     """
-    Encapsulate ML turnover prediction, imputation fallback, and stochastic termination.
-
-    Args:
-        df: DataFrame with features and 'hire_date'.
-        model: Trained ML model with predict_proba and classes_.
-        feature_cols: List of column names for prediction.
-        year_end: Timestamp marking end of period.
-        seed: Optional random seed.
-
-    Returns:
-        DataFrame copy with updated 'termination_date' and 'status' for ML-driven terminations.
+    1) Predict P(terminate) with the ML model.
+    2) Make a stochastic decision for each row.
+    3) Assign a uniform termination_date between hire_date and year_end.
     """
     df = df.copy()
-    X = df[feature_cols].copy()
-    # Simple median imputation
-    if X.isnull().any().any():
-        X = X.fillna(X.median())
-    # Predict probabilities
-    probs = model.predict_proba(X)
-    class_idx = np.where(model.classes_ == 1)[0][0]
-    term_probs = probs[:, class_idx]
-    # Stochastic decisions
-    if seed is not None:
-        np.random.seed(seed)
-    decisions = np.random.rand(len(df)) < term_probs
-    # Assign termination dates uniformly
-    days_until_end = (year_end - df['hire_date']).dt.days.clip(lower=0) + 1
-    rand_off = np.floor(np.random.rand(len(df)) * days_until_end.values).astype(int)
-    rand_td = pd.to_timedelta(rand_off, unit='D')
-    df.loc[decisions, 'termination_date'] = df.loc[decisions, 'hire_date'] + rand_td[decisions]
-    df.loc[decisions, 'status'] = 'Terminated'
+    rng = check_random_state(random_state)
+
+    # 1) get termination probabilities
+    term_probs = predict_turnover(df, model, feature_cols, random_state=rng)
+
+    # 2) make a Bernoulli draw for each employee
+    to_terminate = rng.rand(len(df)) < term_probs.values
+
+    if not to_terminate.any():
+        return df
+
+    # 3) uniformly choose a day between hire_date and year_end (inclusive)
+    #    clip negative intervals to zero
+    #    days_workable[i] = number of possible days (>= 1)
+    days_workable = (
+        (year_end - df["hire_date"])
+        .dt.days
+        .clip(lower=0)
+        .add(1)
+        .to_numpy()
+    )
+
+    # rand_offsets[i] in [0, days_workable[i])
+    rand_offsets = (rng.rand(len(df)) * days_workable).astype(int)
+
+    # compute full termination_date vector
+    termination_dates = df["hire_date"] + pd.to_timedelta(rand_offsets, unit="D")
+
+    # 4) assign back only for those stochastically terminated
+    df.loc[to_terminate, "termination_date"] = termination_dates[to_terminate]
+    df.loc[to_terminate, "status"] = "Terminated"
+
     return df

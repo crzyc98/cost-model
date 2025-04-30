@@ -1,166 +1,128 @@
-# run_abm_simulation.py
+#!/usr/bin/env python3
+"""
+scripts/run_retirement_plan_abm.py
 
-import pandas as pd
-import yaml
+Load scenario config, ingest census via a common loader, run the ABM, and save outputs.
+"""
+import sys
 import argparse
 import logging
-import os
-import sys  # ensure parent project root is on path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from pathlib import Path
+
+import pandas as pd
 from decimal import Decimal
+
+# reuse our centralized loader
+from data_processing import load_and_clean_census  
 from model.retirement_model import RetirementPlanModel
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s:%(message)s')
 
-def run_simulation(config_path, census_path, output_prefix):
-    """Loads config and data, runs the simulation, and saves results."""
+def str_to_decimal_col(df: pd.DataFrame, col: str) -> pd.DataFrame:
+    """Convert a numeric column to Decimal safely."""
+    if col in df:
+        df[col] = df[col].apply(lambda x: Decimal(str(x)) if pd.notna(x) else Decimal('0.00'))
+    return df
 
-    print("--- Loading Configuration ---")
+
+def adjust_year(df: pd.DataFrame, step_col: str, start_year: int) -> pd.DataFrame:
+    """Rename `step_col` → Year = step + start_year - 1, drop `step_col`."""
+    df = df.reset_index() if step_col not in df.columns else df.copy()
+    if step_col in df:
+        df['Year'] = df[step_col] + start_year - 1
+        df = df.drop(columns=[step_col])
+    return df
+
+
+def run_simulation(config_path: Path, census_path: Path, output_prefix: Path, until_year: int = None):
+    logger.info("Loading configuration from %s", config_path)
+    if not config_path.exists():
+        logger.error("Config file not found at %s", config_path)
+        sys.exit(1)
     try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        print(f"Loaded configuration from: {config_path}")
-    except FileNotFoundError:
-        print(f"Error: Configuration file not found at {config_path}")
-        return
-    except yaml.YAMLError as e:
-        print(f"Error parsing configuration file {config_path}: {e}")
-        return
-
-    print("\n--- Loading Census Data ---")
-    try:
-        # Specify date columns and how to handle potential errors
-        date_cols = ['birth_date', 'hire_date', 'termination_date']
-        census_df = pd.read_csv(
-            census_path,
-            parse_dates=date_cols,
-            date_parser=lambda x: pd.to_datetime(x, errors='coerce') # Coerce invalid dates to NaT
-        )
-        # Convert monetary values and rates to Decimal for consistency
-        # Ensure the columns exist before trying to convert
-        if 'gross_compensation' in census_df.columns:
-             census_df['gross_compensation'] = census_df['gross_compensation'].apply(lambda x: Decimal(str(x)) if pd.notna(x) else Decimal('0.00'))
-        if 'deferral_rate' in census_df.columns:
-            census_df['deferral_rate'] = census_df['deferral_rate'].apply(lambda x: Decimal(str(x)) if pd.notna(x) else Decimal('0.00'))
-            
-        # Make sure the ID column is treated as string initially if it might have non-numeric values
-        if 'ssn' in census_df.columns:
-             census_df['ssn'] = census_df['ssn'].astype(str)
-
-        print(f"Loaded census data from: {census_path}")
-        print(f"Initial census size: {len(census_df)} records")
-        # print("Census data sample:\n", census_df.head()) # Optional: print head
-        # print("Data types:\n", census_df.dtypes) # Optional: check types
-
-    except FileNotFoundError:
-        print(f"Error: Census data file not found at {census_path}")
-        return
+        config = pd.read_yaml(config_path)
     except Exception as e:
-        print(f"Error reading or processing census data file {census_path}: {e}")
-        return
+        logger.error("Failed to parse config: %s", e)
+        sys.exit(1)
 
+    logger.info("Loading census data via common loader")
+    census_df = load_and_clean_census(str(census_path), {'required': ['ssn','birth_date','hire_date','gross_compensation']})
+    if census_df is None:
+        logger.error("Census loader failed for %s", census_path)
+        sys.exit(1)
 
-    print("\n--- Initializing Model ---")
+    # Convert key numeric columns to Decimal
+    for col in ['gross_compensation', 'deferral_rate']:
+        census_df = str_to_decimal_col(census_df, col)
+
+    # Initialize model
+    logger.info("Initializing RetirementPlanModel")
     try:
         model = RetirementPlanModel(initial_census_df=census_df, scenario_config=config)
     except Exception as e:
-        print(f"Error initializing RetirementPlanModel: {e}")
-        # Potentially print more details or traceback here
-        return
+        logger.error("Error initializing model: %s", e, exc_info=True)
+        sys.exit(1)
 
-    print("\n--- Running Simulation ---")
     projection_years = config.get('projection_years', 5)
     start_year = config.get('start_year', pd.Timestamp.now().year)
-    print(f"Running simulation from {start_year} for {projection_years} years...")
-    
+    logger.info("Running simulation from %d for %d years", start_year, projection_years)
+
     for i in range(projection_years):
+        if until_year and (start_year + i) > until_year:
+            logger.info("Stopping early at year %d per --until-year flag", until_year)
+            break
         try:
             model.step()
         except Exception as e:
-            print(f"Error during model step for year {model.current_year}: {e}")
-            # Decide whether to stop or continue simulation
-            break 
+            logger.error("Error at simulation step %d: %s", i+1, e, exc_info=True)
+            sys.exit(1)
 
-    print("\n--- Simulation Complete ---")
+    # Collect outputs
+    model_df = adjust_year(model.datacollector.get_model_vars_dataframe(), 'YearStep', start_year)
+    agent_df = adjust_year(model.datacollector.get_agent_vars_dataframe(), 'Step', start_year)
 
-    print("\n--- Collecting and Saving Results ---")
-    try:
-        # Get data from the collector
-        model_data = model.datacollector.get_model_vars_dataframe()
-        agent_data = model.datacollector.get_agent_vars_dataframe()
+    # Prepare output directory
+    out_dir = output_prefix.parent or Path('.')
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Process agent data (multi-index: Step, AgentID)
-        agent_data.reset_index(inplace=True)
-        # Index is now columns named 'Step' and 'AgentID' (or original level names)
-        # Rename 'Step' column if necessary (Mesa usually names it 'Step')
-        if 'Step' in agent_data.columns:
-            # Adjust Year to match simulation years (Year = Step + Start Year - 1)
-            agent_data['Year'] = agent_data['Step'] + start_year - 1
-            agent_data.drop(columns=['Step'], inplace=True) # Remove original step column
-        else:
-            print("Warning: 'Step' column not found after resetting index in agent data.")
-            
-        # Process model data (index: Step)
-        model_data.index.names = ['YearStep'] # Use YearStep temporarily
-        model_data.reset_index(inplace=True)
-        # Adjust Year to match simulation years (Year = Step + Start Year - 1)
-        model_data['Year'] = model_data['YearStep'] + start_year - 1
-        model_data.drop(columns=['YearStep'], inplace=True) # Remove temporary step column
-        
-        # Ensure output directory exists
-        output_dir = "output"
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Use only the basename of the prefix to avoid nested dirs
-        base_prefix = os.path.basename(output_prefix)
-        model_output_path = os.path.join(output_dir, f"{base_prefix}_model_results.csv")
-        agent_output_path = os.path.join(output_dir, f"{base_prefix}_agent_results.csv")
+    # Write CSVs
+    model_path = out_dir / f"{output_prefix.name}_model_results.csv"
+    agent_path = out_dir / f"{output_prefix.name}_agent_results.csv"
+    model_df.to_csv(model_path, index=False)
+    agent_df.to_csv(agent_path, index=False)
+    logger.info("Saved model results to %s", model_path)
+    logger.info("Saved agent results to %s", agent_path)
 
-        model_data.to_csv(model_output_path, index=False)
-        agent_data.to_csv(agent_output_path, index=False)
+    # Print small summary and growth metrics via logging
+    table = model_df.set_index('Year')[[
+        'Continuous Active', 'New Hire Active', 'Experienced Terminated', 'New Hire Terminated'
+    ]]
+    growth = table.assign(Total=lambda df: df[['Continuous Active','New Hire Active']].sum(axis=1))
+    growth['Growth'] = growth['Total'].diff().fillna(0).astype(int)
+    growth['PctGrowth'] = growth['Growth'] / growth['Total'].shift()
+    logger.info("Yearly growth metrics:\n%s", growth.to_string())
 
-        print(f"Model-level results saved to: {model_output_path}")
-        print(f"Agent-level results saved to: {agent_output_path}")
+    logger.info("Simulation complete.")
 
-        # Build classification summary table
-        summary_cols = ['Continuous Active', 'New Hire Active', 'Experienced Terminated', 'New Hire Terminated', 'Previously Terminated']
-        table = model_data[['Year'] + summary_cols].set_index('Year')
-        print("\n--- Employment Status by Year ---")
-        print(table)
-
-        # --- Compute and Log Growth Metrics ---
-        growth_df = table[['Continuous Active', 'New Hire Active']].copy()
-        growth_df['Total'] = growth_df.sum(axis=1)
-        growth_df['Growth'] = growth_df['Total'].diff().fillna(0).astype(int)
-        growth_df['% Growth'] = (growth_df['Growth'] / growth_df['Total'].shift()).fillna(0)
-        logging.info("\n--- Yearly Growth Metrics ---\n%s", growth_df.to_string())
-
-    except Exception as e:
-        print(f"Error collecting or saving results: {e}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Agent-Based Retirement Plan Simulation")
-    parser.add_argument(
-        "--config", 
-        type=str, 
-        default="data/config.yaml", 
-        help="Path to the scenario configuration YAML file."
-    )
-    parser.add_argument(
-        "--census", 
-        type=str, 
-        default="data/census_data.csv", 
-        help="Path to the initial census data CSV file."
-    )
-    parser.add_argument(
-        "--output", 
-        type=str, 
-        default="abm_simulation", 
-        help="Prefix for the output result files (e.g., 'results/scenario_A')."
-    )
-    
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Run ABM retirement plan simulation.")
+    parser.add_argument('--config',    type=Path, default=Path('data/config.yaml'),
+                        help="Path to scenario YAML config")
+    parser.add_argument('--census',    type=Path, default=Path('data/census_data.csv'),
+                        help="Path to initial census CSV")
+    parser.add_argument('--output',    type=Path, default=Path('output/abm_simulation'),
+                        help="Prefix (directory + basename) for output files")
+    parser.add_argument('--until-year',type=int,
+                        help="Optional: stop simulation after this calendar year")
+    parser.add_argument('--debug',     action='store_true',
+                        help="Enable debug-level logging")
 
-    run_simulation(args.config, args.census, args.output)
-    print("\n--- Script Finished ---")
+    args = parser.parse_args()
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s:%(name)s: %(message)s"
+    )
+    logger = logging.getLogger(__name__)
+
+    run_simulation(args.config, args.census, args.output, until_year=args.until_year)
+    sys.exit(0)

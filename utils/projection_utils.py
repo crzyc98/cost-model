@@ -35,6 +35,7 @@ from utils.rules.eligibility import apply as apply_eligibility
 from utils.rules.auto_enrollment import apply as apply_auto_enrollment
 from utils.rules.auto_increase import apply as apply_auto_increase
 from utils.rules.contributions import apply as apply_contributions
+from utils.rules.validators import EligibilityRule, AutoEnrollmentRule, ContributionsRule, MatchRule, NonElectiveRule
 
 logger = logging.getLogger(__name__)
 
@@ -247,7 +248,13 @@ def project_hr(
             current_df = pd.concat([current_df, nh_df], ignore_index=True)
         # 5. ML-based or rule-based turnover
         if use_ml:
-            probs = predict_turnover(current_df, projection_model, feature_cols, end_date, rng_ml)
+            # ML-based turnover: get probabilities with reproducible random_state
+            probs = predict_turnover(
+                current_df,
+                projection_model,
+                feature_cols,
+                random_state=rng_ml
+            )
         else:
             probs = termination_rate
         current_df = _apply_turnover(
@@ -286,16 +293,27 @@ def apply_plan_rules(
         # cast to BooleanDtype and fill missing as False
         df[col] = series.astype("boolean").fillna(False)
 
-    df = apply_eligibility(df, scenario_config['plan_rules'], end_date)
-    ae_cfg = scenario_config['plan_rules'].get('auto_enrollment', {})
-    if ae_cfg.get('enabled', False):
-        df = apply_auto_enrollment(df, scenario_config['plan_rules'], start_date, end_date)
+    # Eligibility
+    elig_rules = EligibilityRule(**scenario_config['plan_rules']['eligibility'])
+    df = apply_eligibility(df, elig_rules, end_date)
+    # Auto-enrollment
+    ae_rules = AutoEnrollmentRule(**scenario_config['plan_rules']['auto_enrollment'])
+    if ae_rules.enabled:
+        df = apply_auto_enrollment(df, ae_rules, start_date, end_date)
+    # Auto-increase
     ai_cfg = scenario_config['plan_rules'].get('auto_increase', {})
     if ai_cfg.get('enabled', False):
         df = apply_auto_increase(df, scenario_config['plan_rules'], sim_year)
-    contrib_cfg = scenario_config['plan_rules'].get('contributions', {})
-    if contrib_cfg.get('enabled', False):
-        df = apply_contributions(df, scenario_config['plan_rules'], sim_year, start_date, end_date)
+    # Contributions
+    contrib_rules = ContributionsRule(**scenario_config['plan_rules']['contributions'])
+    if contrib_rules.enabled:
+        match_rules = MatchRule(**scenario_config['plan_rules']['employer_match'])
+        nec_rules = NonElectiveRule(**scenario_config['plan_rules']['employer_nec'])
+        irs_limits = scenario_config['plan_rules']['irs_limits']
+        df = apply_contributions(
+            df, contrib_rules, match_rules, nec_rules,
+            irs_limits, sim_year, start_date, end_date
+        )
     return df
 
 
@@ -508,8 +526,16 @@ def project_census(
                 logger.info(f"[Year 1 New Hires] count={len(nh_df)}, total_gross_comp={hires_comp:.2f}")
 
         # 5. ML-based turnover with dedicated RNG
-        probs = (predict_turnover(current_df, projection_model, feature_cols, end_date, rng_ml)
-                 if scenario_config.get('use_ml_turnover', False) and projection_model is not None else 0.0)
+        if scenario_config.get('use_ml_turnover', False) and projection_model is not None:
+            # ML-based turnover: get probabilities with reproducible random_state
+            probs = predict_turnover(
+                current_df,
+                projection_model,
+                feature_cols,
+                random_state=rng_ml
+            )
+        else:
+            probs = termination_rate
         current_df = _apply_turnover(
             current_df, 'employee_hire_date', probs,
             start_date, end_date, rng_term,
@@ -528,18 +554,25 @@ def project_census(
         if 'deferral_rate' not in current_df.columns and 'pre_tax_deferral_percentage' in current_df.columns:
             current_df['deferral_rate'] = current_df['pre_tax_deferral_percentage']
         # Eligibility
-        current_df = apply_eligibility(current_df, rules, end_date)
+        elig_rules = EligibilityRule(**rules.get('eligibility', {}))
+        current_df = apply_eligibility(current_df, elig_rules, end_date)
         # Auto-enrollment & increase
-        ae_cfg = rules.get('auto_enrollment', {})
-        if ae_cfg.get('enabled', False):
-            current_df = apply_auto_enrollment(current_df, rules, start_date, end_date)
+        ae_rules = AutoEnrollmentRule(**rules.get('auto_enrollment', {}))
+        if ae_rules.enabled:
+            current_df = apply_auto_enrollment(current_df, ae_rules, start_date, end_date)
         ai_cfg = rules.get('auto_increase', {})
         if ai_cfg.get('enabled', False):
             current_df = apply_auto_increase(current_df, rules, sim_year)
         # Contributions
-        contrib_cfg = rules.get('contributions', {})
-        if contrib_cfg.get('enabled', False):
-            current_df = apply_contributions(current_df, rules, sim_year, start_date, end_date)
+        contrib_rules = ContributionsRule(**rules.get('contributions', {}))
+        if contrib_rules.enabled:
+            match_rules = MatchRule(**rules.get('employer_match', {}))
+            nec_rules = NonElectiveRule(**rules.get('employer_nec', {}))
+            irs_limits = rules.get('irs_limits', {})
+            current_df = apply_contributions(
+                current_df, contrib_rules, match_rules, nec_rules,
+                irs_limits, sim_year, start_date, end_date
+            )
 
         # Snapshot
         projected_data[year_num] = current_df.copy()

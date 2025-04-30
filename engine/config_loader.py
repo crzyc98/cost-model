@@ -11,14 +11,18 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_config(conf: Dict[str, Any]) -> Dict[str, Any]:
-    """Map legacy top‐level keys into the engine’s unified config schema."""
-    # Legacy renames for top-level growth/termination keys
-    if 'annual_compensation_increase_rate' in conf:
-        conf['comp_increase_rate'] = conf.pop('annual_compensation_increase_rate')
-    if 'annual_termination_rate' in conf:
-        conf['termination_rate'] = conf.pop('annual_termination_rate')
-    if 'annual_growth_rate' in conf:
-        conf['hire_rate'] = conf.pop('annual_growth_rate')
+    """Purely normalize config: rename legacy keys, extract plan_rules, and return new dict."""
+    # work on a copy to avoid mutating input
+    new_conf = conf.copy()
+    # Legacy top-level key renames
+    for old, new in [
+        ('annual_compensation_increase_rate','comp_increase_rate'),
+        ('annual_termination_rate','termination_rate'),
+        ('annual_growth_rate','hire_rate'),
+    ]:
+        if old in new_conf:
+            new_conf[new] = new_conf.pop(old)
+            logger.debug("Renamed config key %s -> %s", old, new)
 
     # Pull structured plan rule blocks into a nested dict
     plan_keys = [
@@ -36,25 +40,31 @@ def _normalize_config(conf: Dict[str, Any]) -> Dict[str, Any]:
     ]
     plan_rules: Dict[str, Any] = {}
     for key in plan_keys:
-        if key in conf:
-            plan_rules[key] = conf.pop(key)
-    if plan_rules:
-        conf['plan_rules'] = plan_rules
+        if key in new_conf:
+            plan_rules[key] = new_conf.pop(key)
+    # always include plan_rules key
+    new_conf['plan_rules'] = plan_rules
+    logger.debug("Extracted plan_rules keys: %s", list(plan_rules.keys()))
 
     # support additional plan_rules transformations under plan_rules
-    pr_cfg = conf.get('plan_rules', {})
-    # extract annual rates from plan_rules into top-level keys
-    if 'annual_compensation_increase_rate' in pr_cfg:
-        conf['comp_increase_rate'] = pr_cfg.pop('annual_compensation_increase_rate')
-    if 'annual_termination_rate' in pr_cfg:
-        conf['termination_rate'] = pr_cfg.pop('annual_termination_rate')
-    if 'annual_growth_rate' in pr_cfg:
-        conf['hire_rate'] = pr_cfg.pop('annual_growth_rate')
-    # moved comp_increase_rate and hire_rate already handled above
+    pr_cfg = new_conf.get('plan_rules', {})
+    # Extract nested rate keys from plan_rules
+    for old, new in [
+        ('annual_compensation_increase_rate','comp_increase_rate'),
+        ('annual_termination_rate','termination_rate'),
+        ('annual_growth_rate','hire_rate'),
+    ]:
+        if old in pr_cfg:
+            new_conf[new] = pr_cfg.pop(old)
+            logger.debug("Renamed plan_rules key %s -> %s", old, new)
     if 'maintain_headcount' in pr_cfg:
-        conf['maintain_headcount'] = pr_cfg.pop('maintain_headcount')
+        new_conf['maintain_headcount'] = pr_cfg.pop('maintain_headcount')
+        logger.debug("Extracted maintain_headcount: %s", new_conf['maintain_headcount'])
 
-    return conf
+    # Ensure plan_rules always present
+    if 'plan_rules' not in new_conf:
+        new_conf['plan_rules'] = {}
+    return new_conf
 
 
 def load_scenarios(config_path: str) -> List[Dict[str, Any]]:
@@ -100,7 +110,7 @@ def load_scenarios(config_path: str) -> List[Dict[str, Any]]:
             if scenario_pr is not None:
                 default_pr.update(scenario_pr or {})
             merged['plan_rules'] = default_pr
-            _normalize_config(merged)
+            merged = _normalize_config(merged)
             merged['scenario_name'] = name
             scenarios.append(merged)
     else:
@@ -113,7 +123,7 @@ def load_scenarios(config_path: str) -> List[Dict[str, Any]]:
                or sc.pop('name', None) \
                or Path(config_path).stem
 
-        _normalize_config(sc)
+        sc = _normalize_config(sc)
         sc['scenario_name'] = name
         scenarios.append(sc)
 

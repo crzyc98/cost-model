@@ -1,27 +1,50 @@
+# utils/sampling/new_hires.py
+
 import pandas as pd
-from numpy.random import Generator
 import numpy as np
-from typing import Optional
+from numpy.random import Generator, default_rng
+from typing import Optional, Sequence, Union
+
 
 def sample_new_hire_compensation(
     df: pd.DataFrame,
     comp_col: str,
-    prev_salaries: np.ndarray,
-    rng: Generator
+    prev_salaries: Sequence[float],
+    rng: Optional[Generator] = None,
+    *,
+    replace: bool = True
 ) -> pd.DataFrame:
     """
     Sample starting compensation for new hires by drawing from historical salaries.
 
     Args:
-        df: DataFrame with new hire records.
-        comp_col: Name of the compensation column to assign.
-        prev_salaries: Array-like of past salaries to sample from.
-        rng: Random number generator for reproducibility.
+        df:             DataFrame with new-hire rows (can be empty).
+        comp_col:       Name of the column to set (will be created or overwritten).
+        prev_salaries:  1D sequence (list/array/Series) of historical salaries.
+        rng:            Optional numpy Generator for reproducibility. If None, a new Generator is seeded randomly.
+        replace:        Whether to sample with replacement (default True).
 
     Returns:
-        DataFrame with updated compensation in `comp_col`.
+        A copy of `df` with `comp_col` filled from `prev_salaries`.
     """
     df = df.copy()
-    # draw new hire compensation from historical distribution
-    df[comp_col] = rng.choice(prev_salaries, size=len(df), replace=True)
+
+    # ensure we have a Generator
+    if rng is None:
+        rng = default_rng()
+
+    prev_salaries_arr = np.asarray(prev_salaries, dtype=float)
+    if prev_salaries_arr.size == 0:
+        raise ValueError("prev_salaries must contain at least one historical salary")
+
+    # draw samples
+    sampled = rng.choice(
+        prev_salaries_arr,
+        size=len(df),
+        replace=replace
+    )
+
+    # assign back as a new column
+    df[comp_col] = pd.Series(sampled, index=df.index)
+
     return df

@@ -3,29 +3,25 @@ rules/eligibility.py - Eligibility rule: age/service/hours + entry-date calc
 """
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Optional
 import logging
 from utils.date_utils import calculate_age, calculate_tenure
 from utils.constants import ACTIVE_STATUSES
 from utils.columns import EMP_BIRTH_DATE, EMP_HIRE_DATE, ELIGIBILITY_ENTRY_DATE, IS_ELIGIBLE, STATUS_COL, HOURS_WORKED
 from utils.data_processing import assign_employment_status  # unused: respect upstream STATUS_COL
-
-# Module-level defaults
-DEFAULT_MIN_AGE = 21
-DEFAULT_SERVICE_MONTHS = 0
+from utils.rules.validators import EligibilityRule
 
 logger = logging.getLogger(__name__)
 
-def apply(df: pd.DataFrame, plan_rules: Dict[str, Any], simulation_year_end_date: pd.Timestamp) -> pd.DataFrame:
+def apply(df: pd.DataFrame, eligibility_cfg: EligibilityRule, simulation_year_end_date: pd.Timestamp) -> pd.DataFrame:
     """Eligibility rule: age/service/hours + entry-date calc"""
     # Assume STATUS_COL is provided upstream
     # start_year = simulation_year_end_date.year
     # df = assign_employment_status(df, start_year)
 
     logger.info(f"Determining eligibility for {simulation_year_end_date.year}")
-    eligibility_config = plan_rules.get('eligibility', {})
-    min_age = eligibility_config.get('min_age', DEFAULT_MIN_AGE)
-    min_service_months = eligibility_config.get('min_service_months', DEFAULT_SERVICE_MONTHS)
+    min_age = eligibility_cfg.min_age
+    min_service_months = eligibility_cfg.min_service_months
 
     # Early exit if required columns missing
     if EMP_BIRTH_DATE not in df.columns or EMP_HIRE_DATE not in df.columns:
@@ -68,7 +64,7 @@ def apply(df: pd.DataFrame, plan_rules: Dict[str, Any], simulation_year_end_date
     active_mask = df[STATUS_COL] == ACTIVE_STATUSES[0]
 
     # Hours requirement (optional)
-    min_hours = eligibility_config.get('min_hours_worked', None)
+    min_hours = eligibility_cfg.min_hours_worked
     if min_hours is not None:
         meets_hours = df[HOURS_WORKED].ge(min_hours) if HOURS_WORKED in df.columns else pd.Series(False, index=df.index)
     else:
@@ -76,7 +72,7 @@ def apply(df: pd.DataFrame, plan_rules: Dict[str, Any], simulation_year_end_date
 
     # Combine all requirements and ensure pure Python bools
     mask = eligible_by_date & active_mask & meets_hours
-    # Store pure Python bools in an object-dtype Series for identity checks
+    # Create object-dtype Series of Python bools for identity-safe comparisons
     df[IS_ELIGIBLE] = pd.Series([bool(v) for v in mask], index=df.index, dtype=object)
 
     # Drop intermediate columns
@@ -89,8 +85,8 @@ def apply(df: pd.DataFrame, plan_rules: Dict[str, Any], simulation_year_end_date
 
 def agent_is_eligible(birth_date: pd.Timestamp, hire_date: pd.Timestamp, status: Any, hours_worked: Optional[float], eligibility_config: Dict[str, Any], simulation_year_end_date: pd.Timestamp) -> bool:
     """Single-agent eligibility wrapper."""
-    min_age = eligibility_config.get('min_age', DEFAULT_MIN_AGE)
-    min_service_months = eligibility_config.get('min_service_months', DEFAULT_SERVICE_MONTHS)
+    min_age = eligibility_config.get('min_age', 21)
+    min_service_months = eligibility_config.get('min_service_months', 0)
     min_hours = eligibility_config.get('min_hours_worked', None)
 
     # Age check

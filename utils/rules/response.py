@@ -1,3 +1,8 @@
+"""
+rules/response.py
+Models existing participants' potential deferral rate increase in response to 
+a more generous match formula compared to a baseline scenario.
+"""
 import numpy as np
 import logging
 from utils.rules.formula_parsers import parse_match_formula

@@ -30,6 +30,20 @@ ELIGIBILITY_ENTRY_DATE = "eligibility_entry_date"
 STATUS_COL = "status"
 HOURS_WORKED = "hours_worked"
 
+# Auto Enrollment (AE) columns
+AE_OPTED_OUT = "ae_opted_out"
+PROACTIVE_ENROLLED = "proactive_enrolled"
+AUTO_ENROLLED = "auto_enrolled"
+ENROLLMENT_DATE = "enrollment_date"
+AE_WINDOW_START = "ae_window_start"
+AE_WINDOW_END = "ae_window_end"
+FIRST_CONTRIBUTION_DATE = "first_contribution_date"
+AE_OPT_OUT_DATE = "ae_opt_out_date"
+AUTO_REENROLLED = "auto_reenrolled"
+ENROLLMENT_METHOD = "enrollment_method"
+BECAME_ELIGIBLE_DURING_YEAR = "became_eligible_during_year"
+WINDOW_CLOSED_DURING_YEAR = "window_closed_during_year"
+
 DATE_COLS = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE]
 
 # Central raw→standard mapping

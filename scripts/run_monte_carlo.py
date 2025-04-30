@@ -7,9 +7,10 @@ Produces:
 """
 import argparse, os, sys, yaml
 import pandas as pd
+from utils.projection_utils import project_hr, apply_plan_rules
+from utils.rules.validators import PlanRules, ValidationError
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.projection_utils import project_hr, apply_plan_rules
 
 def run_single(config, census_df, seed):
     hr = project_hr(census_df, config['baseline_cfg'], random_seed=seed)
@@ -96,6 +97,14 @@ def main():
     census_df = pd.read_csv(args.census, 
                             parse_dates=['hire_date','termination_date','birth_date'])
     global_params = cfg_full['global_parameters']
+    # validate global plan_rules schema
+    gp_pr = global_params.get('plan_rules', {})
+    try:
+        valid_pr = PlanRules(**gp_pr)
+    except ValidationError as e:
+        print("Invalid global plan_rules configuration (monte_carlo):\n", e)
+        sys.exit(1)
+    global_params['plan_rules'] = valid_pr.dict()
     scenarios     = cfg_full['scenarios'].copy()
 
     # build baseline_cfg
