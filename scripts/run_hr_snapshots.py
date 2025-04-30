@@ -67,16 +67,17 @@ def main():
 
     # Load census data (supports CSV or Parquet)
     date_cols = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE]
-    if args.census.endswith('.parquet'):
-        start_df = pd.read_parquet(args.census)
+    path = args.census
+    if path.lower().endswith('.parquet'):
+        start_df = pd.read_parquet(path)
         # Ensure date columns are datetime (Parquet may load as object/string)
         for col in date_cols:
             if col in start_df:
                 start_df[col] = pd.to_datetime(start_df[col], errors='coerce')
     else:
         start_df = pd.read_csv(
-            args.census,
-            parse_dates=[c for c in date_cols if c in pd.read_csv(args.census, nrows=0).columns]
+            path,
+            parse_dates=[c for c in date_cols if c in pd.read_csv(path, nrows=0).columns]
         )
 
     # Seed the global numpy RNG once for reproducibility

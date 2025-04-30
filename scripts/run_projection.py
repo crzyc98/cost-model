@@ -26,7 +26,7 @@ def aggregate_scenario_results(yearly_data: dict, scenario_config: dict) -> pd.D
         headcount = len(active)
         pre = active.get('pre_tax_contributions', pd.Series(0))
         match = active.get('employer_match_contribution', pd.Series(0))
-        nec = active.get('employer_non_elective_contribution', pd.Series(0))
+        nec = active.get('employer_core_contribution', pd.Series(0))
         total_contrib = (pre + match + nec).sum()
         total_comp = active.get('plan_year_compensation', pd.Series(0)).sum()
         records.append({

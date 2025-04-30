@@ -13,7 +13,13 @@ import yaml
 from utils.columns import (
     EMP_SSN, IS_PARTICIPATING, IS_ELIGIBLE, EMP_CONTR,
     RAW_TO_STD_COLS, EMP_DEFERRAL_RATE, EMPLOYER_MATCH,
-    EMPLOYER_CORE, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP
+    EMPLOYER_CORE, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
+    SUM_HEADCOUNT, SUM_ELIGIBLE, SUM_PARTICIPATING,
+    RATE_PARTICIP_ELIG, RATE_PARTICIP_TOTAL,
+    AVG_DEFERRAL_PART, AVG_DEFERRAL_TOTAL,
+    SUM_EMP_CONTR, SUM_EMP_MATCH, SUM_EMP_CORE, SUM_EMP_COST, SUM_CONTRIB,
+    SUM_PLAN_COMP, SUM_CAP_COMP,
+    PCT_EMP_COST_PLAN, PCT_EMP_COST_CAP
 )
 from utils.projection_utils import apply_plan_rules
 from utils.rules.validators import PlanRules, ValidationError
@@ -126,34 +132,34 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
             avg_def_part = out_df.loc[out_df[IS_PARTICIPATING], EMP_DEFERRAL_RATE].mean() if IS_PARTICIPATING in out_df and EMP_DEFERRAL_RATE in out_df else 0.0
             avg_def_tot = out_df[EMP_DEFERRAL_RATE].mean() if EMP_DEFERRAL_RATE in out_df else 0.0
 
-            emp_pre_tax = out_df[EMP_CONTR].sum() if EMP_CONTR in out_df else 0.0
-            emp_match = out_df[EMPLOYER_MATCH].sum() if EMPLOYER_MATCH in out_df else 0.0
-            emp_nec = out_df[EMPLOYER_CORE].sum() if EMPLOYER_CORE in out_df else 0.0
-            emp_cost = emp_match + emp_nec
+            sum_employee_contrib = out_df[EMP_CONTR].sum() if EMP_CONTR in out_df else 0.0
+            sum_employer_match = out_df[EMPLOYER_MATCH].sum() if EMPLOYER_MATCH in out_df else 0.0
+            sum_employer_core = out_df[EMPLOYER_CORE].sum() if EMPLOYER_CORE in out_df else 0.0
+            sum_employer_cost = sum_employer_match + sum_employer_core
 
-            total_contrib = emp_pre_tax + emp_match + emp_nec
-            plan_comp = out_df[EMP_PLAN_YEAR_COMP].sum() if EMP_PLAN_YEAR_COMP in out_df else 0.0
-            cap_comp = out_df[EMP_CAPPED_COMP].sum() if EMP_CAPPED_COMP in out_df else 0.0
+            sum_contributions = sum_employee_contrib + sum_employer_match + sum_employer_core
+            sum_plan_comp = out_df[EMP_PLAN_YEAR_COMP].sum() if EMP_PLAN_YEAR_COMP in out_df else 0.0
+            sum_cap_comp = out_df[EMP_CAPPED_COMP].sum() if EMP_CAPPED_COMP in out_df else 0.0
 
             summary = {
                 'scenario': name,
                 'year': year_num,
-                'headcount': hc,
-                'eligible': elig,
-                'participating': part,
-                'participation_rate_eligible': p_rate_elig,
-                'participation_rate_total': p_rate_tot,
-                'avg_deferral_rate_participants': avg_def_part,
-                'avg_deferral_rate_total': avg_def_tot,
-                'total_employee_pre_tax': emp_pre_tax,
-                'total_employer_match': emp_match,
-                'total_employer_nec': emp_nec,
-                'total_employer_cost': emp_cost,
-                'total_contributions': total_contrib,
-                'total_plan_year_compensation': plan_comp,
-                'total_capped_compensation': cap_comp,
-                'employer_cost_pct_plan_comp': emp_cost / plan_comp if plan_comp > 0 else 0.0,
-                'employer_cost_pct_capped_comp': emp_cost / cap_comp if cap_comp > 0 else 0.0,
+                SUM_HEADCOUNT:        hc,
+                SUM_ELIGIBLE:         elig,
+                SUM_PARTICIPATING:    part,
+                RATE_PARTICIP_ELIG:   p_rate_elig,
+                RATE_PARTICIP_TOTAL:  p_rate_tot,
+                AVG_DEFERRAL_PART:    avg_def_part,
+                AVG_DEFERRAL_TOTAL:   avg_def_tot,
+                SUM_EMP_CONTR:        sum_employee_contrib,
+                SUM_EMP_MATCH:        sum_employer_match,
+                SUM_EMP_CORE:         sum_employer_core,
+                SUM_EMP_COST:         sum_employer_cost,
+                SUM_CONTRIB:          sum_contributions,
+                SUM_PLAN_COMP:        sum_plan_comp,
+                SUM_CAP_COMP:         sum_cap_comp,
+                PCT_EMP_COST_PLAN:    sum_employer_cost / sum_plan_comp if sum_plan_comp > 0 else 0.0,
+                PCT_EMP_COST_CAP:     sum_employer_cost / sum_cap_comp if sum_cap_comp > 0 else 0.0,
             }
             metrics.append(summary)
         # write metrics table

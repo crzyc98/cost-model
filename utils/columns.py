@@ -40,6 +40,27 @@ ENROLLMENT_METHOD = "enrollment_method"
 BECAME_ELIGIBLE_DURING_YEAR = "became_eligible_during_year"
 WINDOW_CLOSED_DURING_YEAR = "window_closed_during_year"
 
+# — new summary‐CSV column names —
+SUM_EMP_CONTR = 'total_employee_contributions'
+SUM_EMP_MATCH = 'total_employer_match'
+SUM_EMP_CORE  = 'total_employer_core'
+SUM_EMP_COST  = 'total_employer_cost'
+SUM_CONTRIB   = 'total_contributions'
+SUM_PLAN_COMP = 'total_plan_year_compensation'
+SUM_CAP_COMP  = 'total_capped_compensation'
+
+AVG_DEFERRAL_PART    = 'avg_deferral_rate_participants'
+AVG_DEFERRAL_TOTAL   = 'avg_deferral_rate_total'
+
+# and so on for headcount, participation rates, plan_comp, cap_comp, pct columns…
+SUM_HEADCOUNT        = 'headcount'
+SUM_ELIGIBLE         = 'eligible'
+SUM_PARTICIPATING    = 'participating'
+RATE_PARTICIP_ELIG   = 'participation_rate_eligible'
+RATE_PARTICIP_TOTAL  = 'participation_rate_total'
+PCT_EMP_COST_PLAN    = 'employer_cost_pct_plan_comp'
+PCT_EMP_COST_CAP     = 'employer_cost_pct_capped_comp'
+
 DATE_COLS = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE]
 
 # Central raw→standard mapping
@@ -47,8 +68,11 @@ RAW_TO_STD_COLS = {
     'ssn': EMP_SSN,
     'role': EMP_ROLE,
     'birth_date': EMP_BIRTH_DATE,
+    'employee_birth_date': EMP_BIRTH_DATE,
     'hire_date': EMP_HIRE_DATE,
+    'employee_hire_date': EMP_HIRE_DATE,
     'termination_date': EMP_TERM_DATE,
+    'employee_termination_date': EMP_TERM_DATE,
     'gross_compensation': EMP_GROSS_COMP,
     'plan_year_compensation': EMP_PLAN_YEAR_COMP,
     'capped_compensation': EMP_CAPPED_COMP,

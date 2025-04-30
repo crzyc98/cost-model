@@ -60,7 +60,7 @@ def generate_new_hires(
         'employment_status','employee_role','employee_birth_date',
         'employee_gross_compensation','is_eligible','is_participating',
         'employee_deferral_rate','employee_pre_tax_contribution',
-        'employer_non_elective_contribution','employer_match_contribution',
+        'employer_core_contribution','employer_match_contribution',
         'eligibility_entry_date'
     ]
     if num_hires <= 0:
@@ -157,7 +157,7 @@ def generate_new_hires(
         record['is_participating'] = False
         record['employee_deferral_rate'] = 0.0 # Assume 0% initially
         record['employee_pre_tax_contribution'] = 0.0
-        record['employer_non_elective_contribution'] = 0.0
+        record['employer_core_contribution'] = 0.0
         record['employer_match_contribution'] = 0.0
         record['eligibility_entry_date'] = pd.NaT
         record['employee_plan_year_compensation'] = 0.0 # Will be calculated by plan engine

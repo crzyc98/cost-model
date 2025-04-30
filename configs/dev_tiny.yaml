@@ -1,0 +1,57 @@
+global_parameters:
+  start_year: 2025
+  projection_years: 2
+  random_seed: 42
+  annual_compensation_increase_rate: 0.00
+  annual_termination_rate:           0.50
+  new_hire_termination_rate:         1.00
+  maintain_headcount:                true
+  role_distribution:
+    Staff: 1.0
+
+  plan_rules:
+    eligibility:
+      min_age: 18
+      min_service_months: 0
+
+    auto_enrollment:
+      enabled: false
+      proactive_enrollment_probability: 0.0
+      default_rate: 0.0
+      opt_down_target_rate: 0.0
+      increase_to_match_rate: 0.0
+      increase_high_rate: 0.0
+      outcome_distribution:
+        prob_opt_out: 0.0
+        prob_stay_default: 1.0
+        prob_opt_down: 0.0
+        prob_increase_to_match: 0.0
+        prob_increase_high: 0.0
+
+    auto_increase:
+      enabled: false
+      increase_rate: 0.0
+      cap_rate: 0.0
+
+    employer_match:
+      tiers:
+        - match_rate: 0.0
+          cap_deferral_pct: 0.0
+      dollar_cap: 0.0
+
+    employer_nec:
+      rate: 0.01
+
+    contributions:
+      enabled: true
+
+    irs_limits:
+      2024:
+        compensation_limit: 345000
+        deferral_limit: 23000
+        catchup_limit: 7500
+        catchup_eligibility_age: 50
+
+scenarios:
+  baseline:
+    name: TinyDev

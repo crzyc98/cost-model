@@ -77,21 +77,6 @@ python3 scripts/run_projection.py <input_census.csv> --config configs/config.yam
 
 ---
 
-## utils/preprocess_census.py
-Preprocess utility for census data: adds derived fields (status, eligibility, dates) for simulation.
-
-Usage:
-```
-python3 utils/preprocess_census.py \
-  --input data/census_data.csv \
-  --output data/census_preprocessed.csv \
-  --config configs/config.yaml \
-  --year 2025 \
-  [--parquet]
-```
-
----
-
 ## scripts/plot_survival.py
 Plots Kaplan–Meier survival curves by tenure cohort from historical turnover data.
 
@@ -155,6 +140,21 @@ python3 scripts/sanity_check.py \
 
 ---
 
+## utils/preprocess_census.py
+Preprocess utility for census data: adds derived fields (status, eligibility, dates) for simulation.
+
+Usage:
+```
+python3 utils/preprocess_census.py \
+  --input data/census_data.csv \
+  --output data/census_preprocessed.parquet \
+  --config configs/config.yaml \
+  --year 2025 \
+  --parquet
+```
+
+---
+
 ## scripts/run_hr_snapshots.py
 Script to export one shared HR snapshot per projection year (Phase I).
 
@@ -162,11 +162,10 @@ Usage:
 ```
 python3 scripts/run_hr_snapshots.py \
   --config configs/config.yaml \
-  --census data/census_data.csv \
+  --census data/census_preprocessed.parquet \
   --output output/hr_snapshots \
   --seed 42
 ```
-
 ---
 
 ## scripts/run_plan_rules.py
@@ -174,8 +173,8 @@ Script to apply plan rules for each scenario & year (Phase II).
 
 Usage:
 ```
-python3 scripts/run_plan_rules.py \
+python3 -m scripts.run_plan_rules \
   --config configs/config.yaml \
   --snapshots-dir output/hr_snapshots \
-  --output-dir output/plan_outputs
+  --output-dir output/plan_outputs \
 ```
