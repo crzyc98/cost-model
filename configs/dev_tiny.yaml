@@ -1,8 +1,8 @@
 global_parameters:
   start_year: 2025
-  projection_years: 2
+  projection_years: 5
   random_seed: 42
-  annual_compensation_increase_rate: 0.00
+  annual_compensation_increase_rate: 0.05
   annual_termination_rate:           0.50
   new_hire_termination_rate:         1.00
   maintain_headcount:                true
@@ -11,7 +11,7 @@ global_parameters:
 
   plan_rules:
     eligibility:
-      min_age: 18
+      min_age: 21
       min_service_months: 0
 
     auto_enrollment:

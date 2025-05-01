@@ -21,7 +21,7 @@ from utils.columns import (
     SUM_PLAN_COMP, SUM_CAP_COMP,
     PCT_EMP_COST_PLAN, PCT_EMP_COST_CAP
 )
-from utils.projection_utils import apply_plan_rules
+from utils.plan_rules_engine import apply_plan_rules
 from utils.rules.validators import PlanRules, ValidationError
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")

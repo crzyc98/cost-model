@@ -1,287 +1,174 @@
 #!/usr/bin/env python3
 """
-Generate a census of employees for a given plan year.
-Usage:
-    generate_census.py --year YEAR --output PATH [options]
+Generate historical dummy census files for retirement plan modeling.
+
+This script orchestrates the generation process year by year, calling helper
+functions from utils.census_generation_helpers to handle the details of
+employee record creation, termination selection, and derived field calculation.
 """
+import sys
+from pathlib import Path
+import os
+
+# --- Add project root to Python path FIRST ---
+# This ensures utils can be found
+try:
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
+    # Optional: print(f"DEBUG: Added project root to sys.path: {project_root}")
+except Exception as e:
+    print(f"Error determining project root or modifying sys.path: {e}")
+    sys.exit(1) # Exit if we can't setup the path
+
+# --- Now perform imports ---
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-import os
-from scipy.stats import truncnorm
 import warnings
-import shutil
 import logging
 import argparse
-from pathlib import Path
 from numpy.random import default_rng, Generator
-import sys
+from typing import Dict, List, Optional, Set
 
-# Add project root to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# --- Import from utils AFTER path modification ---
+try:
+    # Import the refactored helper functions
+    from utils.census_generation_helpers import (
+        generate_employee_record,
+        calculate_derived_fields,
+        select_weighted_terminations
+    )
+    # Import column constants
+    from utils.columns import (
+        EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
+        EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
+        EMP_DEFERRAL_RATE, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH
+    )
+except ImportError as e:
+    print(f"Error importing from utils: {e}. Make sure utils directory exists and contains census_generation_helpers.py and columns.py relative to {project_root}.")
+    # Define fallbacks if running standalone or utils is missing
+    print("Warning: Using fallback column names and potentially missing helper functions.")
+    EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE = 'employee_ssn', 'employee_role', 'employee_birth_date', 'employee_hire_date', 'employee_termination_date'
+    EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP = 'employee_gross_compensation', 'employee_plan_year_compensation', 'employee_capped_compensation'
+    EMP_DEFERRAL_RATE, EMP_CONTR = 'employee_deferral_rate', 'employee_contribution'
+    EMPLOYER_CORE, EMPLOYER_MATCH = 'employer_core_contribution', 'employer_match_contribution'
+    # Define dummy functions if helpers are missing to avoid NameError later
+    def generate_employee_record(*args, **kwargs): raise NotImplementedError("generate_employee_record missing")
+    def calculate_derived_fields(*args, **kwargs): raise NotImplementedError("calculate_derived_fields missing")
+    def select_weighted_terminations(*args, **kwargs): raise NotImplementedError("select_weighted_terminations missing")
 
-# --- Column Names ---
-from utils.columns import (
-    EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
-    EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
-    EMP_DEFERRAL_RATE, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH
-)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)-8s] [%(name)s] %(message)s")
+logger = logging.getLogger(Path(__file__).stem) # Use script name for logger
 
 # Suppress specific Pandas warnings if needed (optional)
 warnings.filterwarnings('ignore', category=pd.errors.SettingWithCopyWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
 
-# --- Helper: Generate single employee record ---
-def _generate_employee(year, plan_end_date, is_new_hire, existing_ssns,
-                      min_working_age, max_working_age, age_mean, age_std_dev,
-                      tenure_mean_years, tenure_std_dev_years, max_tenure_years,
-                      role_distribution, role_compensation_params,
-                      deferral_distribution, unique_id, rng: Generator):
-    """Generates a dictionary representing a single employee."""
-    record = {}
-    roles = list(role_distribution.keys())
-    role_probs = list(role_distribution.values())
-    deferral_rates = list(deferral_distribution.keys())
-    deferral_probs = list(deferral_distribution.values())
 
-    # Assign Role
-    assigned_role = rng.choice(roles, p=role_probs)
-    record[EMP_ROLE] = assigned_role
-    role_params = role_compensation_params[assigned_role]
-
-    # Generate SSN (ensure uniqueness)
-    prefix = "NH" if is_new_hire else "EX" # EX for initial population
-    ssn = f"DUMMY_{prefix}_{rng.integers(100000, 999999)}_{unique_id:06d}"
-    retry_count = 0
-    while ssn in existing_ssns and retry_count < 100:
-        ssn = f"DUMMY_{prefix}_{rng.integers(100000, 999999)}_{unique_id:06d}_{rng.integers(100)}"
-        retry_count += 1
-    if ssn in existing_ssns: # Extremely unlikely after retries
-        raise ValueError(f"Could not generate unique SSN after {retry_count} retries.")
-    existing_ssns.add(ssn)
-    record[EMP_SSN] = ssn
-
-    # Generate Age/Birth Date
-    safe_age_std_dev = max(age_std_dev, 1e-6)
-    age_a, age_b = (min_working_age - age_mean) / safe_age_std_dev, (max_working_age - age_mean) / safe_age_std_dev
-    age = truncnorm.rvs(age_a, age_b, loc=age_mean, scale=safe_age_std_dev, random_state=rng) if age_std_dev > 0 else age_mean
-    age = np.clip(int(round(age)), min_working_age, max_working_age)
-    record['age'] = age # Store age calculated as of plan_end_date
-
-    birth_year = plan_end_date.year - age
-    birth_month = rng.integers(1, 13)
-    birth_day = rng.integers(1, 29) # Avoid issues with Feb 30/31 etc.
-    record[EMP_BIRTH_DATE] = datetime(birth_year, birth_month, birth_day)
-
-    # Generate Hire Date and Tenure
-    if is_new_hire:
-        # Hire date within the current year
-        plan_start_date = datetime(year, 1, 1)
-        min_possible_hire_date = record[EMP_BIRTH_DATE] + timedelta(days=365.25 * min_working_age)
-        hire_start_bound = max(plan_start_date, min_possible_hire_date)
-        if hire_start_bound > plan_end_date: hire_date = plan_end_date # Hired on last day if bounds cross
-        else:
-            days_in_hire_period = max(0, (plan_end_date - hire_start_bound).days) + 1
-            hire_offset = rng.integers(0, days_in_hire_period)
-            hire_date = hire_start_bound + timedelta(days=hire_offset)
-        record[EMP_HIRE_DATE] = hire_date
-        tenure_years = (plan_end_date - hire_date).days / 365.25
-    else: # Existing employee (from initial generation or previous year)
-        # Generate tenure first, then calculate hire date
-        safe_tenure_std_dev = max(tenure_std_dev_years, 1e-6)
-        # Ensure tenure doesn't imply hiring before min working age
-        max_possible_tenure = age - min_working_age
-        effective_max_tenure = min(max_tenure_years, max_possible_tenure)
-        if effective_max_tenure <= 0:
-            tenure_years = 0
-        else:
-            tenure_a, tenure_b = (0 - tenure_mean_years) / safe_tenure_std_dev, (effective_max_tenure - tenure_mean_years) / safe_tenure_std_dev
-            tenure_years = truncnorm.rvs(tenure_a, tenure_b, loc=tenure_mean_years, scale=safe_tenure_std_dev, random_state=rng) if tenure_std_dev_years > 0 else tenure_mean_years
-            tenure_years = np.clip(tenure_years, 0, effective_max_tenure)
-
-        # Calculate hire date based on tenure relative to plan_end_date
-        hire_date = plan_end_date - timedelta(days=tenure_years * 365.25)
-        record[EMP_HIRE_DATE] = hire_date
-
-    record['tenure'] = tenure_years # Store tenure calculated as of plan_end_date
-
-    # Calculate Compensation (consistent logic for new/existing based on current age/tenure)
-    age_experience_years = record['age'] - min_working_age
-    target_comp = (role_params['comp_base_salary'] +
-                   (age_experience_years * role_params['comp_increase_per_age_year']) +
-                   (record['tenure'] * role_params['comp_increase_per_tenure_year']))
-
-    log_mean = np.log(max(1000, target_comp * role_params['comp_log_mean_factor']))
-    comp = rng.lognormal(mean=log_mean, sigma=role_params['comp_spread_sigma'])
-    record[EMP_GROSS_COMP] = round(max(role_params['comp_min_salary'], comp), 2)
-
-    # Assign deferral rate
-    record[EMP_DEFERRAL_RATE] = rng.choice(deferral_rates, p=deferral_probs)
-    # Termination date is handled in the main loop
-    record[EMP_TERM_DATE] = pd.NaT
-
-    return record
-
-# --- Helper: Calculate derived fields ---
-def _calculate_derived_fields(df, year, limits, nec_rate, match_rate, match_cap):
-    """Calculates plan year comp, capped comp, and contributions."""
-    plan_end_date = datetime(year, 12, 31)
-    plan_start_date = datetime(year, 1, 1)
-    limits_for_year = limits.get(year, limits.get(max(limits.keys()))) # Use latest if year missing
-
-    comp_limit = limits_for_year['comp_limit']
-    deferral_limit = limits_for_year['deferral_limit']
-    catch_up_limit = limits_for_year['catch_up']
-
-    df_calc = df.copy()
-
-    # Calculate Plan Year Compensation (Prorated for hire/term date)
-    df_calc['plan_start_date'] = plan_start_date
-    df_calc['plan_end_date'] = plan_end_date
-    df_calc[EMP_HIRE_DATE] = pd.to_datetime(df_calc[EMP_HIRE_DATE])
-    # Use actual termination date if present, otherwise use plan end date
-    df_calc['effective_term_date'] = pd.to_datetime(df_calc[EMP_TERM_DATE]).fillna(plan_end_date)
-
-    df_calc['service_start'] = df_calc[[EMP_HIRE_DATE, 'plan_start_date']].max(axis=1)
-    df_calc['service_end'] = df_calc[['effective_term_date', 'plan_end_date']].min(axis=1)
-
-    # Calculate days worked in the plan year, handle edge cases
-    df_calc['days_in_plan_year'] = (df_calc['service_end'] - df_calc['service_start']).dt.days + 1
-    df_calc['days_in_plan_year'] = df_calc['days_in_plan_year'].clip(lower=0) # Ensure non-negative
-
-    total_days_in_year = (plan_end_date - plan_start_date).days + 1
-    df_calc['proration_factor'] = df_calc['days_in_plan_year'] / total_days_in_year
-
-    df_calc[EMP_PLAN_YEAR_COMP] = (df_calc[EMP_GROSS_COMP] * df_calc['proration_factor']).round(2)
-
-    # Apply Compensation Limit
-    df_calc[EMP_CAPPED_COMP] = df_calc[EMP_PLAN_YEAR_COMP].clip(upper=comp_limit)
-
-    # Calculate Contributions
-    # Deferrals
-    # Ensure 'birth_date' is datetime before calculating age
-    df_calc[EMP_BIRTH_DATE] = pd.to_datetime(df_calc[EMP_BIRTH_DATE])
-    df_calc['age'] = df_calc.apply(lambda row: (plan_end_date.year - row[EMP_BIRTH_DATE].year -
-                                     ((plan_end_date.month, plan_end_date.day) <
-                                      (row[EMP_BIRTH_DATE].month, row[EMP_BIRTH_DATE].day))), axis=1)
-
-    eligible_for_catch_up = df_calc['age'] >= 50
-    max_deferral = np.where(eligible_for_catch_up, deferral_limit + catch_up_limit, deferral_limit)
-
-    df_calc['calculated_deferral'] = (df_calc[EMP_PLAN_YEAR_COMP] * (df_calc[EMP_DEFERRAL_RATE] / 100.0)).round(2)
-    df_calc[EMP_CONTR] = df_calc['calculated_deferral'].clip(upper=max_deferral)
-
-    # NEC
-    df_calc[EMPLOYER_CORE] = (df_calc[EMP_PLAN_YEAR_COMP] * nec_rate).round(2)
-
-    # Match
-    deferral_eligible_for_match = (df_calc[EMP_PLAN_YEAR_COMP] * match_cap).round(2)
-    actual_deferral_for_match = df_calc[EMP_CONTR].clip(upper=deferral_eligible_for_match)
-    df_calc[EMPLOYER_MATCH] = (actual_deferral_for_match * match_rate).round(2)
-
-    # Select and order final columns
-    final_cols = [EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
-                  EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
-                  EMP_DEFERRAL_RATE, EMP_CONTR,
-                  EMPLOYER_CORE, EMPLOYER_MATCH]
-    # Ensure all columns exist before returning
-    return df_calc[[col for col in final_cols if col in df_calc.columns]]
-
-# --- Main Census Generation Function (Refactored) ---
+# --- Main Census Generation Function ---
 def create_dummy_census_files(
     # --- File & Population Settings ---
-    num_years=5, # Increased default to match previous runs
-    base_year=2024,
-    total_population=10000, # Increased default
-    termination_rate=0.10, # Annual term rate applied to previous year's pop
+    num_years: int = 5,
+    base_year: int = 2024,
+    total_population: int = 1000, # Default population size
+    termination_rate: float = 0.10,
     # --- Age Distribution ---
-    age_mean=42,
-    age_std_dev=12,
-    min_working_age=18,
-    max_working_age=70,
-    # --- Tenure Distribution (For Initial Population & Updates) ---
-    tenure_mean_years=7,
-    tenure_std_dev_years=5,
-    #min_tenure_years=0, # Implicitly handled
-    max_tenure_years=40,
+    age_mean: float = 42,
+    age_std_dev: float = 12,
+    min_working_age: int = 18,
+    max_working_age: int = 70,
+    # --- Tenure Distribution (For Initial Population) ---
+    tenure_mean_years: float = 7,
+    tenure_std_dev_years: float = 5,
+    max_tenure_years: float = 40,
     # --- Role Configuration ---
-    role_distribution={
+    role_distribution: Dict[str, float] = {
         'Staff': 0.75, 'Manager': 0.20, 'Executive': 0.05
     },
-    role_compensation_params={
+    role_compensation_params: Dict[str, Dict] = {
         'Staff': {'comp_base_salary': 50000, 'comp_increase_per_age_year': 300, 'comp_increase_per_tenure_year': 500, 'comp_log_mean_factor': 1.0, 'comp_spread_sigma': 0.20, 'comp_min_salary': 28000},
         'Manager': {'comp_base_salary': 150000, 'comp_increase_per_age_year': 600, 'comp_increase_per_tenure_year': 1000, 'comp_log_mean_factor': 1.0, 'comp_spread_sigma': 0.25, 'comp_min_salary': 60000},
         'Executive': {'comp_base_salary': 250000, 'comp_increase_per_age_year': 1500, 'comp_increase_per_tenure_year': 3000, 'comp_log_mean_factor': 1.1, 'comp_spread_sigma': 0.35, 'comp_min_salary': 120000}
     },
     # --- Deferral Distribution ---
-    deferral_distribution={
+    deferral_distribution: Dict[float, float] = {
         0: 0.10, 1: 0.05, 2: 0.04, 3: 0.40, 4: 0.10,
         5: 0.10, 6: 0.06, 7: 0.03, 8: 0.01, 9: 0.01, 10: 0.10
     },
-    # --- Compensation Increase for Survivors (Optional) ---
-    annual_comp_increase_mean=0.03, # Mean % increase
-    annual_comp_increase_std=0.015, # Std dev of % increase
+    # --- Compensation Increase for Survivors ---
+    annual_comp_increase_mean: float = 0.03,
+    annual_comp_increase_std: float = 0.015,
     # --- Employer Contributions ---
-    employer_nec_rate=0.02,
-    employer_match_rate=1.00,
-    employer_match_cap_deferral_perc=0.03,
+    employer_nec_rate: float = 0.02,
+    employer_match_rate: float = 1.00,
+    employer_match_cap_deferral_perc: float = 0.03,
     # --- Output Options ---
-    output_dir=".", # Directory to save files
-    file_prefix="dummy_census_",
-    seed: int = None,
-) -> list[str]:
+    output_dir: str = ".",
+    file_prefix: str = "dummy_census_",
+    seed: Optional[int] = None,
+) -> List[str]:
     """
-    Creates configurable dummy historical census CSV files with realistic population flow.
-    - Generates initial population for the first year.
-    - For subsequent years, simulates terminations, updates survivors, adds new hires.
-    - Ensures SSN persistence for non-terminated employees.
-    - Calculates derived fields based on IRS limits and plan rules.
+    Creates configurable dummy historical census CSV files.
+
+    Orchestrates the year-by-year generation process, calling helper functions
+    for detailed logic. Each file (census_YYYY.csv) contains records relevant
+    for plan contributions in year YYYY (actives + those terminated in YYYY).
     """
     logger.info("Creating %d dummy census files from %d to %d", num_years, base_year - num_years + 1, base_year)
     rng = default_rng(seed)
-    os.makedirs(output_dir, exist_ok=True) # Ensure output directory exists
-    all_ssns = set()
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True) # Ensure output directory exists
+    all_ssns = set() # Keep track of all generated SSNs for uniqueness
     generated_files = []
-    current_population_df = None
-    employee_counter = 0 # For unique IDs in _generate_employee
+    # Initialize active population DF for the loop
+    current_active_population_df = pd.DataFrame()
+    employee_counter = 0 # For unique IDs in generate_employee_record
 
-    # --- IRS Limits (Ensure coverage for simulation range) ---
+    # --- IRS Limits ---
+    # Define limits within the function or load from external source
     IRS_LIMITS = {
         2020: {'comp_limit': 285000, 'deferral_limit': 19500, 'catch_up': 6500},
         2021: {'comp_limit': 290000, 'deferral_limit': 19500, 'catch_up': 6500},
         2022: {'comp_limit': 305000, 'deferral_limit': 20500, 'catch_up': 6500},
         2023: {'comp_limit': 330000, 'deferral_limit': 22500, 'catch_up': 7500},
-        2024: {'comp_limit': 345000, 'deferral_limit': 23000, 'catch_up': 7500}
-        # Add future/past years manually if needed beyond this range
+        2024: {'comp_limit': 345000, 'deferral_limit': 23000, 'catch_up': 7500},
+        2025: {'comp_limit': 355000, 'deferral_limit': 23500, 'catch_up': 7500}, # Example projection
     }
-    # Add a fallback for future years if needed (using latest known)
     latest_known_year = max(IRS_LIMITS.keys())
-    for y in range(base_year + 1, base_year + 5): # Add a few future years fallback
+    for y in range(latest_known_year + 1, base_year + 2): # Ensure coverage for base_year
          if y not in IRS_LIMITS:
              IRS_LIMITS[y] = IRS_LIMITS[latest_known_year]
 
     # --- Normalize Distributions ---
-    # Role
-    total_role_prob = sum(role_distribution.values())
-    if not np.isclose(total_role_prob, 1.0):
-        logger.warning("Role distribution probabilities sum to %.4f. Normalizing.", total_role_prob)
-        factor = 1.0 / total_role_prob
-        role_distribution = {k: v * factor for k, v in role_distribution.items()}
-    # Deferral
-    total_deferral_prob = sum(deferral_distribution.values())
-    if not np.isclose(total_deferral_prob, 1.0):
-        logger.warning("Deferral distribution probabilities sum to %.4f. Normalizing.", total_deferral_prob)
-        factor = 1.0 / total_deferral_prob
-        deferral_distribution = {k: v * factor for k, v in deferral_distribution.items()}
+    def _normalize_dist(dist: dict, name: str) -> dict:
+        """Normalizes probability distribution if it doesn't sum to 1."""
+        if not dist: return {}
+        total_prob = sum(dist.values())
+        if total_prob <= 0:
+            logger.error(f"{name} distribution probabilities sum to zero or less. Check config.")
+            return {k: 1.0/len(dist) for k in dist} # Fallback to uniform
+        if not np.isclose(total_prob, 1.0):
+            logger.warning(f"{name} distribution probabilities sum to {total_prob:.4f}. Normalizing.")
+            factor = 1.0 / total_prob
+            return {k: v * factor for k, v in dist.items()}
+        return dist
+
+    role_distribution = _normalize_dist(role_distribution, "Role")
+    # Ensure keys are floats for deferral rates before normalizing
+    deferral_distribution_float_keys = {float(k): v for k, v in deferral_distribution.items()}
+    deferral_distribution = _normalize_dist(deferral_distribution_float_keys, "Deferral")
+
 
     start_year = base_year - num_years + 1
 
     # --- Generate Population Year by Year ---
     for year in range(start_year, base_year + 1):
         plan_end_date = datetime(year, 12, 31)
-        logger.debug("Year %d — plan end %s", year, plan_end_date.date())
+        logger.info("--- Processing Year %d ---", year)
+
+        # Define current_census_population_df at the start of the loop scope
+        current_census_population_df = pd.DataFrame()
 
         if year == start_year:
             # --- Generate Initial Population ---
@@ -289,251 +176,192 @@ def create_dummy_census_files(
             employee_records = []
             for i in range(total_population):
                 employee_counter += 1
-                # Generate initial employee - is_new_hire=False means tenure is generated
-                record = _generate_employee(
-                    year, plan_end_date, is_new_hire=False, existing_ssns=all_ssns,
+                # Use the imported helper function
+                record = generate_employee_record(
+                    year=year, plan_end_date=plan_end_date, is_new_hire=False, existing_ssns=all_ssns,
                     min_working_age=min_working_age, max_working_age=max_working_age,
                     age_mean=age_mean, age_std_dev=age_std_dev,
                     tenure_mean_years=tenure_mean_years, tenure_std_dev_years=tenure_std_dev_years,
                     max_tenure_years=max_tenure_years,
                     role_distribution=role_distribution, role_compensation_params=role_compensation_params,
-                    deferral_distribution=deferral_distribution, unique_id=employee_counter,
-                    rng=rng
+                    deferral_distribution=deferral_distribution, unique_id=employee_counter, rng=rng
                 )
                 employee_records.append(record)
-            current_population_df = pd.DataFrame(employee_records)
-            # Initial population has no termination date set yet
-            current_population_df[EMP_TERM_DATE] = pd.NaT
-            logger.info("Initial population generated (%d rows).", len(current_population_df))
+            current_active_population_df = pd.DataFrame(employee_records)
+            current_active_population_df[EMP_TERM_DATE] = pd.NaT # No terms yet
+            logger.info("Initial population generated (%d rows).", len(current_active_population_df))
+            # For the first year, the census population is just the active population
+            current_census_population_df = current_active_population_df.copy()
 
         else: # Subsequent years: Simulate flow from previous year
-            previous_population_df = current_population_df.copy()
+            # previous_population_df now holds ONLY the active from end of last year
+            previous_population_df = current_active_population_df.copy()
             num_previous = len(previous_population_df)
-            logger.info("Starting with %d employees from %d.", num_previous, year-1)
+            logger.info("Starting year %d with %d active employees from %d.", year, num_previous, year-1)
 
-            # --- Simulate Terminations ---
+            # --- Simulate Terminations from Previous Year's Active Pop ---
             num_to_terminate = int(round(num_previous * termination_rate))
-            terminated_records = pd.DataFrame() # Keep terminated records to add back with term date
+            terminated_records_this_year = pd.DataFrame() # Reset for this iteration
             survivor_df = previous_population_df.copy()
 
             if num_to_terminate > 0 and num_previous > 0:
                 if num_to_terminate >= num_previous:
-                    logger.warning("Termination rate (%.2f%%) results in terminating all %d employees. Proceeding.", termination_rate*100, num_previous)
+                    logger.warning(f"Termination rate ({termination_rate:.1%}) results in terminating all {num_previous} employees.")
                     indices_to_terminate = previous_population_df.index
                 else:
-                    logger.info("Simulating %d terminations (weighted by low tenure/comp)...", num_to_terminate)
-                    # --- Refined Weighted Termination Logic ---
-                    eligible_df = previous_population_df.copy()
-                    epsilon = 1e-6
+                    logger.info("Simulating %d terminations from prior year pop (weighted by low tenure/comp)...", num_to_terminate)
+                    # Use the imported helper function
+                    indices_to_terminate = select_weighted_terminations(previous_population_df, num_to_terminate, rng)
 
-                    # Define risk factors
-                    LOW_TENURE_THRESHOLD = 2.0
-                    LOW_COMP_PERCENTILE = 0.25
-                    HIGH_RISK_WEIGHT = 10.0
-                    LOW_RISK_WEIGHT = 1.0
+                # Assign termination date *within the current year* (YYYY)
+                terminated_records_this_year = previous_population_df.loc[indices_to_terminate].copy()
+                year_start_dt = datetime(year, 1, 1)
+                days_range = (plan_end_date - year_start_dt).days + 1
+                term_offsets = rng.integers(0, days_range, size=len(terminated_records_this_year))
+                terminated_records_this_year[EMP_TERM_DATE] = year_start_dt + pd.to_timedelta(term_offsets, unit='D')
 
-                    # Calculate risk indicators
-                    # Tenure Risk
-                    if 'tenure' in eligible_df.columns and pd.api.types.is_numeric_dtype(eligible_df['tenure']):
-                        eligible_df['low_tenure'] = eligible_df['tenure'].fillna(0) < LOW_TENURE_THRESHOLD
-                    else:
-                        logger.warning("'tenure' column not suitable for risk calc. Assuming not low tenure.")
-                        eligible_df['low_tenure'] = False
-
-                    # Compensation Risk (within Role if possible)
-                    eligible_df['low_comp'] = False # Default
-                    comp_col = EMP_GROSS_COMP
-                    role_col = EMP_ROLE # Assuming 'role' column exists
-
-                    if comp_col in eligible_df.columns and pd.api.types.is_numeric_dtype(eligible_df[comp_col]):
-                        if role_col in eligible_df.columns and eligible_df[role_col].nunique() > 1:
-                            try:
-                                # Calculate percentile within each role
-                                eligible_df['comp_percentile_rank'] = eligible_df.groupby(role_col)[comp_col].rank(pct=True, method='average')
-                                eligible_df['low_comp'] = eligible_df['comp_percentile_rank'] < LOW_COMP_PERCENTILE
-                                logger.info("Calculated compensation risk based on %.0f%% percentile within roles.", LOW_COMP_PERCENTILE*100)
-                            except Exception as e:
-                                logger.warning("Error calculating comp percentile by role: %s. Falling back to global percentile.", e)
-                                eligible_df['comp_percentile_rank'] = eligible_df[comp_col].rank(pct=True, method='average')
-                                eligible_df['low_comp'] = eligible_df['comp_percentile_rank'] < LOW_COMP_PERCENTILE
-                        else:
-                            logger.info("Calculating compensation risk based on global percentile (role column missing or uniform).")
-                            eligible_df['comp_percentile_rank'] = eligible_df[comp_col].rank(pct=True, method='average')
-                            eligible_df['low_comp'] = eligible_df['comp_percentile_rank'] < LOW_COMP_PERCENTILE
-                    else:
-                        logger.warning("'gross_compensation' column not suitable for risk calc. Assuming not low comp.")
-                        # low_comp remains False
-
-                    # Assign Weights based on combined risk
-                    eligible_df['is_at_risk'] = eligible_df['low_tenure'] & eligible_df['low_comp']
-                    eligible_df['term_weight'] = np.where(eligible_df['is_at_risk'], HIGH_RISK_WEIGHT, LOW_RISK_WEIGHT)
-
-                    at_risk_count = eligible_df['is_at_risk'].sum()
-                    logger.info("Identified %d employees as 'at-risk' (low tenure & low comp).", at_risk_count)
-
-                    # Calculate Probabilities
-                    total_weight = eligible_df['term_weight'].sum()
-                    if total_weight <= 0 or not np.isfinite(total_weight):
-                        logger.warning("Total termination weight invalid. Falling back to uniform probability.")
-                        probabilities = None
-                    else:
-                        probabilities = eligible_df['term_weight'] / total_weight
-                        if np.any(~np.isfinite(probabilities)) or np.isclose(probabilities.sum(), 0):
-                             logger.warning("Invalid probabilities calculated (NaN/inf/zero sum). Falling back to uniform probability.")
-                             probabilities = None
-                        elif not np.isclose(probabilities.sum(), 1.0):
-                            logger.warning("Probabilities sum to %.4f. Renormalizing.", probabilities.sum())
-                            probabilities = probabilities / probabilities.sum()
-
-                    # Perform Weighted Choice
-                    try:
-                        if num_to_terminate > len(eligible_df):
-                            logger.warning("Trying to terminate %d but only %d eligible. Terminating all.", num_to_terminate, len(eligible_df))
-                            indices_to_terminate = eligible_df.index
-                        else:
-                            indices_to_terminate = rng.choice(
-                                eligible_df.index,
-                                size=num_to_terminate,
-                                replace=False,
-                                p=probabilities # Use calculated probabilities or None for uniform
-                            )
-                    except Exception as e: # Broader exception catch for choice issues
-                        logger.warning("Error during weighted choice: %s. Falling back to uniform selection.", e)
-                        indices_to_terminate = rng.choice(
-                            previous_population_df.index, size=min(num_to_terminate, num_previous), replace=False
-                        )
-                    # --- End Refined Weighted Termination Logic ---
-
-                # Assign random termination date within the *previous* year
-                term_year = year - 1
-                terminated_records = previous_population_df.loc[indices_to_terminate].copy()
-                terminated_records[EMP_TERM_DATE] = [datetime(term_year, rng.integers(1, 13), rng.integers(1, 29)) for _ in range(len(terminated_records))] # Simplified date generation
-
-                # Survivors are those not terminated
                 survivor_df = previous_population_df.drop(indices_to_terminate)
                 logger.info("%d survivors remaining.", len(survivor_df))
             else:
-                logger.info("No terminations simulated (rate=0 or zero population).")
+                logger.info("No terminations simulated this cycle.")
 
 
-            # --- Update Survivors for the New Year ---
-            logger.info("Updating %d survivors for %d...", len(survivor_df), year)
+            # --- Update Survivors for the Current Year End ---
+            logger.info("Updating %d survivors for end of %d...", len(survivor_df), year)
             if not survivor_df.empty:
-                # Increment age (implicitly handled by recalculating)
-                # Increment tenure
-                survivor_df['tenure'] = survivor_df['tenure'] + 1
+                # Increment tenure approx 1 year
+                # Ensure 'tenure' column exists and is numeric before incrementing
+                if 'tenure' not in survivor_df.columns: survivor_df['tenure'] = 0.0 # Initialize if missing
+                survivor_df['tenure'] = pd.to_numeric(survivor_df['tenure'], errors='coerce').fillna(0.0) + 1
+
                 # Apply random compensation increase
-                increase_factor = rng.normal(loc=1 + annual_comp_increase_mean, scale=annual_comp_increase_std, size=len(survivor_df))
+                increase_factor = rng.normal(loc=1 + annual_comp_increase_mean, scale=annual_comp_increase_std, size=len(survivor_df)).clip(min=0.5)
                 survivor_df[EMP_GROSS_COMP] = (survivor_df[EMP_GROSS_COMP] * increase_factor).round(2)
-                # Update age based on current plan end date
-                survivor_df[EMP_BIRTH_DATE] = pd.to_datetime(survivor_df[EMP_BIRTH_DATE])
-                survivor_df['age'] = survivor_df.apply(lambda row: (plan_end_date.year - row[EMP_BIRTH_DATE].year -
-                                     ((plan_end_date.month, plan_end_date.day) <
-                                      (row[EMP_BIRTH_DATE].month, row[EMP_BIRTH_DATE].day))), axis=1)
 
-                # Optionally, re-randomize deferral rates for survivors? (Keep simple for now)
-                # survivor_df[EMP_DEFERRAL_RATE] = rng.choice(list(deferral_distribution.keys()), size=len(survivor_df), p=list(deferral_distribution.values()))
 
-            # --- Add New Hires ---
+            # --- Add New Hires for the Current Year ---
             num_survivors = len(survivor_df)
             num_new_hires_needed = max(0, total_population - num_survivors)
-            logger.info("Adding %d new hires...", num_new_hires_needed)
+            logger.info("Adding %d new hires for %d...", num_new_hires_needed, year)
             new_hire_records = []
             if num_new_hires_needed > 0:
                 for i in range(num_new_hires_needed):
                     employee_counter += 1
-                    record = _generate_employee(
-                        year, plan_end_date, is_new_hire=True, existing_ssns=all_ssns, # is_new_hire = True
+                    # Use the imported helper function
+                    record = generate_employee_record(
+                        year=year, plan_end_date=plan_end_date, is_new_hire=True, existing_ssns=all_ssns,
                         min_working_age=min_working_age, max_working_age=max_working_age,
-                        age_mean=age_mean, age_std_dev=age_std_dev, # Use general age profile
-                        # Tenure params not used directly for new hires (hire date set in current year)
+                        age_mean=age_mean, age_std_dev=age_std_dev,
                         tenure_mean_years=tenure_mean_years, tenure_std_dev_years=tenure_std_dev_years,
                         max_tenure_years=max_tenure_years,
                         role_distribution=role_distribution, role_compensation_params=role_compensation_params,
-                        deferral_distribution=deferral_distribution, unique_id=employee_counter,
-                        rng=rng
+                        deferral_distribution=deferral_distribution, unique_id=employee_counter, rng=rng
                     )
                     new_hire_records.append(record)
-
             new_hires_df = pd.DataFrame(new_hire_records)
 
-            # --- Combine Survivors and New Hires for the current year ---
-            current_population_list = []
-            if not survivor_df.empty:
-                 # Drop the calculated 'age' column before concatenating if it exists
-                 if 'age' in survivor_df.columns:
-                     current_population_list.append(survivor_df.drop(columns=['age']))
-                 else:
-                     current_population_list.append(survivor_df)
 
-            if not new_hires_df.empty:
-                 # Drop the calculated 'age' and 'tenure' columns used internally by _generate_employee
-                 cols_to_drop = [col for col in ['age', 'tenure'] if col in new_hires_df.columns]
-                 if cols_to_drop:
-                     current_population_list.append(new_hires_df.drop(columns=cols_to_drop))
-                 else:
-                      current_population_list.append(new_hires_df)
+            # --- Define the population relevant for THIS year's census ---
+            # Combine survivors and new hires (active at year end)
+            current_active_end_of_year_df = pd.concat([survivor_df, new_hires_df], ignore_index=True)
 
+            # Add back those terminated *during this year*
+            if not terminated_records_this_year.empty:
+                 logger.info("Including %d terminated records in census for %d", len(terminated_records_this_year), year)
+                 # Ensure columns align before concat
+                 cols_active = set(current_active_end_of_year_df.columns)
+                 cols_term = set(terminated_records_this_year.columns)
+                 # Add missing columns to term records with default nulls if needed
+                 for col in cols_active:
+                     if col not in terminated_records_this_year.columns:
+                         dtype = current_active_end_of_year_df[col].dtype
+                         na_val = pd.NA
+                         if pd.api.types.is_datetime64_any_dtype(dtype): na_val = pd.NaT
+                         elif pd.api.types.is_numeric_dtype(dtype): na_val = np.nan
+                         terminated_records_this_year[col] = na_val
 
-            if current_population_list:
-                 current_population_df = pd.concat(current_population_list, ignore_index=True)
-                 logger.info("Combined population for %d: %d employees.", year, len(current_population_df))
+                 # Ensure term records have same columns as active before concat
+                 # Use list comprehension to handle potential missing columns gracefully
+                 cols_to_align = [col for col in current_active_end_of_year_df.columns if col in terminated_records_this_year.columns]
+                 terminated_records_aligned = terminated_records_this_year[cols_to_align]
+
+                 current_census_population_df = pd.concat(
+                     [current_active_end_of_year_df, terminated_records_aligned],
+                     ignore_index=True, sort=False
+                 )
             else:
-                 current_population_df = pd.DataFrame() # Handle case of zero population
-                 logger.info("Warning: Combined population for %d is empty.", year)
+                 # If no terminations, the census pop is just the active pop
+                 current_census_population_df = current_active_end_of_year_df.copy()
 
+            logger.info("Total relevant population for %d census: %d employees.", year, len(current_census_population_df))
 
-            # --- Add back terminated employees from previous year with their term date ---
-            # These employees *contributed* in the previous year but are not active in the current census
-            # For termination modeling, we usually need the census *before* termination.
-            # However, if the goal is just to have historical files, we might include them.
-            # Let's keep the current_population_df as ONLY the active employees at year-end.
-            # The termination model script will compare year N and N+1 to find who is missing.
 
         # --- Calculate Derived Fields & Save ---
-        if not current_population_df.empty:
+        # This check now correctly uses the variable assigned in both branches
+        if not current_census_population_df.empty:
              # Ensure required date columns are datetime objects before calculation
-             current_population_df[EMP_BIRTH_DATE] = pd.to_datetime(current_population_df[EMP_BIRTH_DATE])
-             current_population_df[EMP_HIRE_DATE] = pd.to_datetime(current_population_df[EMP_HIRE_DATE])
-             current_population_df[EMP_TERM_DATE] = pd.to_datetime(current_population_df[EMP_TERM_DATE], errors='coerce')
+             for col in [EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE]:
+                 if col in current_census_population_df.columns:
+                    current_census_population_df[col] = pd.to_datetime(current_census_population_df[col], errors='coerce')
 
-             # Recalculate age/tenure precisely based on plan_end_date for final output (if needed)
-             # Or rely on the stored values from _generate_employee / survivor update step
-             # Let's recalculate derived fields which depend on year-end status
-
-             df_final_year = _calculate_derived_fields(
-                 current_population_df, year, IRS_LIMITS,
+             # Calculate derived fields on the COMBINED population using imported helper
+             df_final_year = calculate_derived_fields(
+                 current_census_population_df, year, IRS_LIMITS,
                  employer_nec_rate, employer_match_rate, employer_match_cap_deferral_perc
              )
 
              # Format dates for CSV output
-             df_final_year[EMP_BIRTH_DATE] = df_final_year[EMP_BIRTH_DATE].dt.strftime('%Y-%m-%d')
-             df_final_year[EMP_HIRE_DATE] = df_final_year[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
-             # Convert NaT to empty string for termination date
-             df_final_year[EMP_TERM_DATE] = df_final_year[EMP_TERM_DATE].dt.strftime('%Y-%m-%d').fillna('')
+             for col in [EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE]:
+                 if col in df_final_year.columns:
+                     if pd.api.types.is_datetime64_any_dtype(df_final_year[col]):
+                         # Format valid dates, leave NaT as empty string
+                         df_final_year[col] = df_final_year[col].dt.strftime('%Y-%m-%d').fillna('')
+                     else: # Handle cases where coercion might have failed
+                         df_final_year[col] = ''
 
 
              # Save to CSV
-             output_filename = os.path.join(output_dir, f"{file_prefix}{year}.csv")
-             df_final_year.to_csv(output_filename, index=False, date_format='%Y-%m-%d')
-             generated_files.append(output_filename)
-             logger.info("Saved: %s (%d rows)", output_filename, len(df_final_year))
-        else:
+             output_filename = output_path / f"{file_prefix}{year}.csv"
+             df_final_year.to_csv(output_filename, index=False, date_format='%Y-%m-%d') # date_format might be redundant now
+             generated_files.append(str(output_filename))
+             logger.info("Saved Combined Census: %s (%d rows)", output_filename, len(df_final_year))
+
+             # Prepare for NEXT year: only carry forward the ACTIVE population
+             # Active are those in the final DF with no term date OR term date after current year end
+             # Use the original datetime column for comparison, not the formatted string
+             active_mask = current_census_population_df[EMP_TERM_DATE].isna() | \
+                           (current_census_population_df[EMP_TERM_DATE] > plan_end_date)
+
+             # Select active rows using the boolean mask from the *original* combined DF
+             current_active_population_df = current_census_population_df[active_mask].copy()
+             logger.debug("Carrying forward %d active employees to year %d", len(current_active_population_df), year + 1)
+
+
+        else: # Handle case where combined pop is empty
             logger.info("Skipping save for %d due to empty population.", year)
+            current_active_population_df = pd.DataFrame() # Reset for next year
 
 
-    logger.info("Dummy file creation complete")
+    logger.info("Dummy file creation complete.")
     return generated_files
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description="Generate dummy census files.")
-    p.add_argument('--years', type=int, default=5)
-    p.add_argument('--base-year', type=int, default=2024)
-    p.add_argument('--pop', type=int, default=10000)
-    p.add_argument('--term-rate', type=float, default=0.10)
-    p.add_argument('--seed', type=int, default=None)
-    p.add_argument('--outdir', type=Path, default=Path('.'))
+    # Add arguments with defaults from the function signature
+    p.add_argument('--years', type=int, default=5, help="Number of years ending at base-year")
+    p.add_argument('--base-year', type=int, default=2024, help="Final year of census data to generate")
+    p.add_argument('--pop', type=int, default=1000, help="Target total population size for each year")
+    p.add_argument('--term-rate', type=float, default=0.10, help="Approx annual termination rate")
+    p.add_argument('--seed', type=int, default=None, help="Random seed for reproducibility")
+    p.add_argument('--outdir', type=Path, default=Path('./data/generated_census'), help="Output directory")
+    p.add_argument('--prefix', type=str, default="census_", help="Prefix for output filenames")
+    # Could add arguments for other parameters like age/tenure means, etc. if desired
+
     args = p.parse_args()
+
+    # Create the output directory if it doesn't exist
+    args.outdir.mkdir(parents=True, exist_ok=True)
+
     files = create_dummy_census_files(
         num_years=args.years,
         base_year=args.base_year,
@@ -541,6 +369,7 @@ if __name__ == '__main__':
         termination_rate=args.term_rate,
         seed=args.seed,
         output_dir=str(args.outdir),
-        file_prefix="census_"
+        file_prefix=args.prefix
+        # Pass other defaults or load from a config YAML here
     )
     logger.info("Generated files: %s", files)
