@@ -7,8 +7,8 @@ Produces:
 """
 import argparse, os, sys, yaml
 import pandas as pd
-from utils.projection_utils import project_hr, apply_plan_rules
-from utils.rules.validators import PlanRules, ValidationError
+from cost_model.utils.projection_utils import project_hr, apply_plan_rules
+from cost_model.rules.validators import PlanRules, ValidationError
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 

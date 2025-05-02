@@ -7,7 +7,7 @@ import os
 import logging
 import numpy as np
 from datetime import datetime
-from utils.columns import (
+from cost_model.utils.columns import (
     RAW_TO_STD_COLS,
     DATE_COLS,
     EMP_SSN,
@@ -18,9 +18,9 @@ from utils.columns import (
     EMP_BIRTH_DATE,
 )
 # Avoid enum name collision: alias status_enums EmploymentStatus
-from utils.status_enums import EmploymentStatus as PhaseStatus
+from cost_model.utils.status_enums import EmploymentStatus as PhaseStatus
 # Use explicit constants for active vs inactive states
-from utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
+from cost_model.utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)
 

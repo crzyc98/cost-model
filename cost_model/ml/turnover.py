@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.utils import check_random_state
-from utils.ml.ml_utils import predict_turnover
+from .ml_utils import predict_turnover
 
 def apply_ml_turnover(
     df: pd.DataFrame,
@@ -41,7 +41,7 @@ def apply_ml_turnover(
         .to_numpy()
     )
 
-    # rand_offsets[i] in [0, days_workable[i])
+    # rand_offsets[i] in [0, days_workable[i))
     rand_offsets = (rng.rand(len(df)) * days_workable).astype(int)
 
     # compute full termination_date vector

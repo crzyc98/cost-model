@@ -7,21 +7,32 @@ are all driven once (from the baseline scenario's settings) and then reused
 by each plan‑rules scenario.
 """
 
-# make sure our project root is on PYTHONPATH before any utils imports
-import os
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from pathlib import Path
+import os
+
+# --- Add project root to Python path FIRST ---
+try:
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
+except Exception as e:
+    print(f"Error determining project root or modifying sys.path: {e}")
+    sys.exit(1)
 
 import argparse
 import pandas as pd
 import yaml
 import numpy as np
-import logging # <-- Import logging
-from pathlib import Path # <-- Use pathlib for cleaner path handling
+import logging
 
-from utils.rules.validators import PlanRules, ValidationError
-from utils.hr_projection import project_hr # Assumes project_hr might also use logging
-from utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP
+# --- Now perform imports from cost_model ---
+try:
+    from cost_model.config.validators import PlanRules, ValidationError
+    from cost_model.dynamics.engine import run_dynamics_for_year
+    from cost_model.utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP
+except ImportError as e:
+    print(f"Error importing from cost_model: {e}. Ensure the necessary modules exist.")
+    sys.exit(1)
 
 # --- Logging Configuration ---
 # Configure logging at the module level or within main()
@@ -31,7 +42,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)-8s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-logger = logging.getLogger(__name__) # Get a logger instance for this module
+logger = logging.getLogger(__name__)
 # ---------------------------
 
 def main():
@@ -68,7 +79,7 @@ def main():
             cfg = yaml.safe_load(f)
         logger.info(f"Successfully loaded configuration from {args.config}")
     except Exception as e:
-        logger.exception(f"Failed to load or parse config file {args.config}") # Logs exception info
+        logger.exception(f"Failed to load or parse config file {args.config}")
         sys.exit(1)
 
     global_params = cfg.get("global_parameters", {})
@@ -190,9 +201,9 @@ def main():
         logger.error(f"Could not create output directory {output_dir}: {e}")
         sys.exit(1)
 
-    logger.info("Calling HR projection logic (project_hr)...")
+    logger.info("Calling HR projection logic (run_dynamics_for_year)...")
     try:
-        hr_snapshots = project_hr(
+        hr_snapshots = run_dynamics_for_year(
             start_df, 
             hr_cfg,
             random_seed=args.seed,
@@ -200,7 +211,7 @@ def main():
         )
         logger.info(f"HR projection finished. Generated {len(hr_snapshots)} yearly snapshots.")
     except Exception as e:
-        logger.exception("Error occurred during HR projection (project_hr).")
+        logger.exception("Error occurred during HR projection (run_dynamics_for_year).")
         sys.exit(1)
 
     # Write out one parquet per year

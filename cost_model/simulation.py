@@ -11,38 +11,47 @@ import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional, List, Tuple, Any
 
-# Import necessary components from the cost_model package
-# Use absolute imports assuming cost_model is on the Python path or installed
+# --- Core Model Components --- #
+# Configuration Loading & Access
+from cost_model.config.loaders import load_yaml_config, ConfigLoadError
+from cost_model.config.models import MainConfig, GlobalParameters # Needed for type hints
+from cost_model.config.accessors import get_scenario_config # Import the actual function
+
+# Data I/O
+# TODO: Update these imports if readers/writers structure changes
 try:
-    from cost_model.config.models import MainConfig, GlobalParameters
-    from cost_model.config.accessors import get_scenario_config
-    from cost_model.data.readers import read_census_data
+    from cost_model.data.readers import read_census_data # Import the specific function
     from cost_model.data.writers import write_snapshots, write_summary_metrics
-    # Assume engine modules exist in dynamics and rules subpackages
-    from cost_model.dynamics.engine import run_dynamics_for_year
-    from cost_model.rules.engine import apply_rules_for_year
-    from cost_model.reporting.metrics import calculate_summary_metrics
-    # Import column constants if needed for initialization/checks here
-    from cost_model.utils.columns import EMP_TERM_DATE, EMP_ID # Example, adjust as needed
-    from cost_model.utils.constants import ACTIVE_STATUS # Example
+except ImportError as e:
+    print(f"Error importing data components: {e}")
+    # Define placeholders if needed for static analysis, though runtime will fail
+    def read_census_data(*args, **kwargs): raise ImportError("read_census_data missing")
+    def write_snapshots(*args, **kwargs): raise ImportError("write_snapshots missing")
+    def write_summary_metrics(*args, **kwargs): raise ImportError("write_summary_metrics missing")
 
+# Simulation Engines
+try:
+    from cost_model.dynamics.engine import run_dynamics_for_year
+    from cost_model.rules.engine import apply_rules_for_year # Corrected function name
 except ImportError as e:
     print(f"Error importing simulation components: {e}")
-    print("Ensure all submodules (config, data, dynamics, rules, reporting, utils) exist and are importable.")
-    # Define dummy functions/classes if needed for static analysis, though runtime will fail
-    class MainConfig: pass
-    class GlobalParameters: pass
-    def get_scenario_config(*args, **kwargs): raise NotImplementedError("get_scenario_config missing")
-    def read_census_data(*args, **kwargs): raise NotImplementedError("read_census_data missing")
-    def write_snapshots(*args, **kwargs): raise NotImplementedError("write_snapshots missing")
-    def write_summary_metrics(*args, **kwargs): raise NotImplementedError("write_summary_metrics missing")
-    def run_dynamics_for_year(*args, **kwargs): raise NotImplementedError("run_dynamics_for_year missing")
-    def apply_rules_for_year(*args, **kwargs): raise NotImplementedError("apply_rules_for_year missing")
-    def calculate_summary_metrics(*args, **kwargs): raise NotImplementedError("calculate_summary_metrics missing")
-    EMP_TERM_DATE, EMP_ID, ACTIVE_STATUS = 'employee_termination_date', 'employee_id', 'Active'
+    def run_dynamics_for_year(*args, **kwargs): raise ImportError("run_dynamics_for_year missing")
+    def apply_rules_for_year(*args, **kwargs): raise ImportError("apply_rules_for_year missing")
 
+# Reporting
+try:
+    from cost_model.reporting.metrics import calculate_summary_metrics
+except ImportError as e:
+    print(f"Error importing reporting components: {e}")
+    # Temporarily define a placeholder if calculate_summary_metrics is missing
+    def calculate_summary_metrics(*args, **kwargs): 
+        print("Warning: calculate_summary_metrics not implemented yet.")
+        return pd.DataFrame() # Return empty DataFrame
+
+# Utilities
+# Example: from cost_model.utils.logging import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +62,8 @@ def run_simulation(
     output_dir_base: Path,
     # Optional flags to control output
     save_detailed_snapshots: bool = True,
-    save_summary_metrics: bool = True
+    save_summary_metrics: bool = True,
+    random_seed: Optional[int] = None # Added explicit seed argument
 ) -> None:
     """
     Runs the full simulation for a single specified scenario.
@@ -66,6 +76,7 @@ def run_simulation(
                          will be created.
         save_detailed_snapshots: If True, save the full agent-level DataFrame for each year.
         save_summary_metrics: If True, calculate and save summary metrics for the scenario.
+        random_seed: Optional random seed to use, overriding the one in the scenario config if provided.
 
     Raises:
         KeyError: If the scenario_name is not found in main_config.
@@ -76,18 +87,29 @@ def run_simulation(
 
     # 1. Get Resolved Scenario Configuration
     try:
+        # Use the imported get_scenario_config function
         scenario_cfg: GlobalParameters = get_scenario_config(main_config, scenario_name)
-        # Extract key parameters for easier access
+    except (KeyError, ValueError) as e:
+        logger.error(f"Error getting or validating scenario config for '{scenario_name}': {e}")
+        # Log the exception details if validation failed within get_scenario_config
+        if isinstance(e, ValueError):
+             logger.exception("Configuration validation failed.")
+        return # Stop simulation if config is invalid
+    except Exception as e:
+        # Catch any other unexpected errors during config resolution
+        logger.exception(f"Unexpected error getting scenario config for '{scenario_name}'.")
+        return
+
+    # Extract key parameters and setup RNG after successful config load
+    try:
         start_year = scenario_cfg.start_year
         projection_years = scenario_cfg.projection_years
-        seed = scenario_cfg.random_seed
+        # Use provided seed if available, otherwise use seed from config
+        seed = random_seed if random_seed is not None else scenario_cfg.random_seed
         scenario_output_name = main_config.scenarios[scenario_name].name or scenario_name # Use defined name or key
-    except KeyError:
-        # Error already logged by get_scenario_config
-        raise # Re-raise the KeyError
     except Exception as e:
-        logger.exception(f"Unexpected error getting scenario config for '{scenario_name}'.")
-        raise
+        logger.exception(f"Error extracting key parameters from scenario config for '{scenario_name}'.")
+        return
 
     # 2. Setup RNG for simulation steps (if needed at this level)
     # Individual engines (dynamics, rules) might manage their own RNGs based on this seed
@@ -97,7 +119,7 @@ def run_simulation(
         # Example: master_rng = np.random.default_rng(seed)
         #          dynamics_rng, rules_rng = master_rng.spawn(2) # If needed to pass down
     else:
-        logger.warning("No random seed provided. Results may not be reproducible.")
+        logger.warning("No random seed provided (neither via argument nor config). Results may not be reproducible.")
         # dynamics_rng, rules_rng = None, None # Or initialize default RNGs
 
     # 3. Load Initial Census Data
@@ -108,8 +130,8 @@ def run_simulation(
             logger.error("Initial census data is empty or failed to load.")
             return # Or raise error
         # Ensure the required ID column exists after loading/renaming in reader
-        if EMP_ID not in current_df.columns:
-             logger.error(f"Required column '{EMP_ID}' not found in loaded census data. Check reader logic.")
+        if 'employee_id' not in current_df.columns:
+             logger.error(f"Required column 'employee_id' not found in loaded census data. Check reader logic.")
              return # Or raise error
 
         logger.info(f"Loaded initial population: {len(current_df)} records.")
@@ -160,8 +182,8 @@ def run_simulation(
             logger.debug(f"Applying plan rules for year {sim_year}...")
             # Pass the output of the dynamics step
             # apply_rules_for_year should add eligibility, contributions, etc.
-            final_year_df = apply_rules_for_year(
-                year_end_df=dynamics_output_df,
+            final_year_df = apply_rules_for_year( # Use corrected function name
+                population_df=dynamics_output_df, # Pass the df after dynamics
                 year_config=scenario_cfg, # Pass the resolved config
                 sim_year=sim_year,
                 # Pass RNG if needed: rng=rules_rng
@@ -183,7 +205,7 @@ def run_simulation(
         # active_mask = final_year_df.get(STATUS_COL, pd.Series(True, index=final_year_df.index)) == ACTIVE_STATUS
         # Or based on termination date
         plan_end_date = pd.Timestamp(f"{sim_year}-12-31")
-        active_mask = final_year_df[EMP_TERM_DATE].isna() | (final_year_df[EMP_TERM_DATE] > plan_end_date)
+        active_mask = final_year_df['employee_termination_date'].isna() | (final_year_df['employee_termination_date'] > plan_end_date)
         current_df = final_year_df[active_mask].copy()
         # Drop the simulation_year column before passing to next iteration if needed
         # current_df = current_df.drop(columns=['simulation_year'])
@@ -234,56 +256,3 @@ def run_simulation(
              logger.exception("Error saving summary metrics.")
 
     logger.info(f"===== Simulation Finished for Scenario: '{scenario_name}' =====")
-
-# --- Example CLI Runner (can be moved to scripts/run_simulation.py) ---
-if __name__ == '__main__':
-    # This block allows running a simulation directly using this file
-    # In practice, you'd likely call run_simulation from scripts/run_simulation.py
-
-    parser = argparse.ArgumentParser(description="Run Retirement Plan Cost Model Simulation")
-    parser.add_argument("--config", "-c", required=True, help="Path to main YAML config file")
-    parser.add_argument("--scenario", "-s", required=True, help="Name of the scenario to run")
-    parser.add_argument("--census", "-d", required=True, help="Path to initial census file (CSV or Parquet)")
-    parser.add_argument("--output", "-o", required=True, help="Base output directory for results")
-    parser.add_argument("--no-snapshots", action="store_true", help="Disable saving detailed yearly snapshots")
-    parser.add_argument("--no-summary", action="store_true", help="Disable calculating and saving summary metrics")
-    parser.add_argument("--debug", action="store_true", help="Enable DEBUG logging level")
-
-    args = parser.parse_args()
-
-    # Configure Logging Level
-    log_level = logging.DEBUG if args.debug else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)-8s] [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
-    # Load Main Config
-    try:
-        from cost_model.config.loaders import load_yaml_config, ConfigLoadError
-        raw_config = load_yaml_config(Path(args.config))
-        if not raw_config: sys.exit(1) # Exit if loading fails
-        main_cfg_obj = MainConfig(**raw_config) # Validate
-    except (ConfigLoadError, FileNotFoundError, Exception) as e:
-        logger.exception(f"Failed to load or validate main config file {args.config}")
-        sys.exit(1)
-
-    # Run the Simulation
-    try:
-        run_simulation(
-            main_config=main_cfg_obj,
-            scenario_name=args.scenario,
-            input_census_path=Path(args.census),
-            output_dir_base=Path(args.output),
-            save_detailed_snapshots=(not args.no_snapshots),
-            save_summary_metrics=(not args.no_summary)
-        )
-        logger.info("Simulation run completed successfully.")
-    except (KeyError, FileNotFoundError) as e:
-        logger.error(f"Simulation setup failed: {e}")
-        sys.exit(1)
-    except Exception as e:
-        logger.exception(f"An error occurred during the simulation run for scenario '{args.scenario}'.")
-        sys.exit(1)
-

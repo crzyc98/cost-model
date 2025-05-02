@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import pandas as pd
 import argparse
-from utils.data_processing import assign_employment_status
-from utils.rules.eligibility import apply as apply_eligibility
-from utils.rules.validators import PlanRules
-from utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
-from utils.columns import (
+from cost_model.utils.data_processing import assign_employment_status
+from cost_model.rules.eligibility import apply as apply_eligibility
+from cost_model.rules.validators import PlanRules
+from cost_model.utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
+from cost_model.utils.columns import (
     EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
     EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
     EMP_DEFERRAL_RATE, EMP_CONTR,
@@ -79,7 +79,7 @@ def preprocess_census(
         sim_year_end = pd.Timestamp(f"{year}-12-31")
         df = apply_eligibility(df, plan_rules.eligibility, sim_year_end)
         # Calculate contributions to retain contribution columns before pruning
-        from utils.rules.contributions import apply as apply_contributions
+        from cost_model.rules.contributions import apply as apply_contributions
         # Apply contributions if enabled in plan rules
         if plan_rules.contributions.enabled:
             year_start = pd.Timestamp(f"{year}-01-01")

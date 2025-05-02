@@ -5,8 +5,9 @@ loaded from YAML files (e.g., config.yaml).
 """
 
 import logging
+import numpy as np
 from pydantic import BaseModel, Field, validator, root_validator
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class AutoEnrollOutcomeDistribution(BaseModel):
 class EligibilityRules(BaseModel):
     min_age: Optional[int] = Field(None, ge=0, description="Minimum age requirement (years)")
     min_service_months: Optional[int] = Field(None, ge=0, description="Minimum service requirement (months)")
+    min_hours_worked: Optional[int] = Field(None, ge=0, description="Minimum hours worked requirement")
     # Add other eligibility criteria like employment status, hours, etc. if needed
 
 class OnboardingBumpRules(BaseModel):
@@ -76,12 +78,29 @@ class OnboardingBumpRules(BaseModel):
 
 class AutoEnrollmentRules(BaseModel):
     enabled: bool = False
+    window_days: Optional[int] = Field(90, description="Enrollment window in days after eligibility", ge=0)
     proactive_enrollment_probability: float = Field(0.0, ge=0.0, le=1.0)
+    proactive_rate_range: Optional[Tuple[float, float]] = Field(None, description="Optional [min, max] rate range for proactive enrollment")
     default_rate: float = Field(0.0, ge=0.0, description="Default deferral rate as percentage (e.g., 0.03 for 3%)")
     opt_down_target_rate: Optional[float] = Field(None, ge=0.0)
     increase_to_match_rate: Optional[float] = Field(None, ge=0.0)
     increase_high_rate: Optional[float] = Field(None, ge=0.0)
     outcome_distribution: Optional[AutoEnrollOutcomeDistribution] = None
+    re_enroll_existing: Optional[bool] = Field(False, description="Whether to re-enroll existing participants with 0% or previous opt-outs")
+
+    @validator('proactive_rate_range')
+    def check_proactive_rate_range(cls, v):
+        if v is not None:
+            if not (isinstance(v, (list, tuple)) and len(v) == 2):
+                raise ValueError("proactive_rate_range must be a list/tuple of two numbers")
+            min_r, max_r = v
+            if not (isinstance(min_r, (int, float)) and isinstance(max_r, (int, float))):
+                raise ValueError("proactive_rate_range values must be numbers")
+            if min_r < 0 or max_r < 0:
+                raise ValueError("proactive_rate_range values cannot be negative")
+            if min_r > max_r:
+                raise ValueError("proactive_rate_range min cannot be greater than max")
+        return v
 
     @root_validator
     def check_distribution_if_enabled(cls, values):
@@ -285,7 +304,6 @@ if __name__ == '__main__':
     # This block is for demonstration/testing purposes only
     import yaml
     from pathlib import Path
-    import numpy as np # Need numpy for isclose
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)-8s] [%(name)s] %(message)s")
 
@@ -327,4 +345,3 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(f"Validation FAILED for dev_tiny.yaml: {e}")
-

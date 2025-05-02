@@ -4,7 +4,7 @@ utils/constants.py
 Project-wide constants for employment status and other magic values.
 """
 
-from utils.status_enums import EmploymentStatus
+from cost_model.utils.status_enums import EmploymentStatus
 
 ## Statuses considered "currently active" in plan logic.
 ACTIVE_STATUSES = {

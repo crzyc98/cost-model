@@ -5,7 +5,7 @@ a more generous match formula compared to a baseline scenario.
 """
 import numpy as np
 import logging
-from utils.rules.formula_parsers import parse_match_formula
+from cost_model.rules.formula_parsers import parse_match_formula
 
 logger = logging.getLogger(__name__)
 

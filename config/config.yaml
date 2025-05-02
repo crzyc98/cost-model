@@ -14,7 +14,7 @@ global_parameters:
   new_hire_average_age:              30
   annual_growth_rate:                0.02
   monthly_transition:                false
-  maintain_headcount:                false
+  maintain_headcount:                true
 
   hazard_model_params:
     file: data/hazard_model_params.yaml
@@ -78,8 +78,11 @@ global_parameters:
 
     auto_enrollment:
       enabled: true
+      window_days: 90
       proactive_enrollment_probability: 0.05
+      proactive_rate_range: [0.01, 0.05] # Optional [min, max] range for proactive enrollment rate
       default_rate: 0.02
+      re_enroll_existing: false # Whether to re-enroll existing participants with 0% or previous opt-outs
       opt_down_target_rate: 0.01
       increase_to_match_rate: 0.05
       increase_high_rate: 0.08
@@ -137,6 +140,11 @@ global_parameters:
         compensation_limit: 385000
         deferral_limit: 28000
         catchup_limit: 8000
+        catchup_eligibility_age: 50
+      2029:
+        compensation_limit: 395000
+        deferral_limit: 29000
+        catchup_limit: 8500
         catchup_eligibility_age: 50
 
     behavioral_params:

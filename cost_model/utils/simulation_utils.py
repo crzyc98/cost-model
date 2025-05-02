@@ -13,10 +13,10 @@ import pandas as pd  # noqa: F401
 import numpy as np  # noqa: F401
 
 # Orchestrator re-exporting domain helpers
-from utils.sampling.terminations import sample_terminations  # noqa: F401
-from utils.sampling.new_hires import sample_new_hire_compensation
-from utils.ml.turnover import apply_ml_turnover  # noqa: F401
-from utils.compensation.bump import apply_comp_increase  # noqa: F401
+from cost_model.utils.sampling.terminations import sample_terminations  # noqa: F401
+from cost_model.utils.sampling.new_hires import sample_new_hire_compensation
+from cost_model.utils.ml.turnover import apply_ml_turnover  # noqa: F401
+from cost_model.utils.compensation.bump import apply_comp_increase  # noqa: F401
 
 __all__ = [
     'sample_terminations',

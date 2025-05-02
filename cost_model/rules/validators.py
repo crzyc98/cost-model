@@ -32,6 +32,7 @@ class EligibilityRule(BaseModel):
     min_age: conint(ge=0) = 21
     min_service_months: conint(ge=0) = 0
     min_hours_worked: Optional[conint(ge=0)] = None
+    min_hours_worked: Optional[conint(ge=0)] = None
 
 class OutcomeDistribution(BaseModel):
     prob_opt_out: confloat(ge=0, le=1)

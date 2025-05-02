@@ -1,11 +1,11 @@
-# utils/columns.py
+# cost_model/utils/columns.py
 
 # Census and snapshot columns (raw and standardized)
 EMP_SSN = "employee_ssn"
 EMP_ROLE = "employee_role"
 EMP_BIRTH_DATE = "employee_birth_date"
 EMP_HIRE_DATE = "employee_hire_date"
-EMP_TERM_DATE = "employee_termination_date"
+EMP_TERM_DATE = "emåployee_termination_date"
 EMP_GROSS_COMP = "employee_gross_compensation"
 EMP_PLAN_YEAR_COMP = "employee_plan_year_compensation"
 EMP_CAPPED_COMP = "employee_capped_compensation"

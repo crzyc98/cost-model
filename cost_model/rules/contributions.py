@@ -1,5 +1,5 @@
 """
-utils/rules/contributions.py
+cost_model/rules/contributions.py
 
 Calculates employee and employer contributions for the simulation year.
 """
@@ -9,8 +9,8 @@ from typing import Dict, Any
 import numpy as np
 import pandas as pd
 
-from utils.rules.validators import ContributionsRule, MatchRule, NonElectiveRule
-from utils.columns import (
+from cost_model.rules.validators import ContributionsRule, MatchRule, NonElectiveRule
+from cost_model.utils.columns import (
     EMP_GROSS_COMP,
     EMP_DEFERRAL_RATE,
     EMP_CONTR,
@@ -20,8 +20,8 @@ from utils.columns import (
     EMP_PLAN_YEAR_COMP,
     to_nullable_bool,
 )
-from utils.date_utils import calculate_age
-from utils.constants import ACTIVE_STATUSES
+from cost_model.utils.date_utils import calculate_age
+from cost_model.utils.constants import ACTIVE_STATUSES
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -60,12 +60,23 @@ def apply(
     logger.info(f"Calculating contributions for {simulation_year}")
 
     # --- Extract IRS limits for the year ---
-    year_limits    = irs_limits.get(simulation_year, {})
-    comp_limit     = year_limits.get('compensation_limit',      345000)
-    def_limit      = year_limits.get('deferral_limit',          23000)
-    catch_limit    = year_limits.get('catchup_limit',           7500)
-    catch_age      = year_limits.get('catchup_eligibility_age', 50)
-    overall_limit  = year_limits.get('overall_limit')
+    year_limits_obj = irs_limits.get(simulation_year) # Get the IRSYearLimits object or None
+
+    if year_limits_obj: # Check if limits exist for the year
+        comp_limit     = getattr(year_limits_obj, 'compensation_limit',      345000)
+        def_limit      = getattr(year_limits_obj, 'deferral_limit',          23000)
+        catch_limit    = getattr(year_limits_obj, 'catchup_limit',           7500)
+        catch_age      = getattr(year_limits_obj, 'catchup_eligibility_age', 50)
+        overall_limit  = getattr(year_limits_obj, 'overall_limit', None) # Use getattr with default None
+        logger.debug(f"Using IRS Limits for {simulation_year}: Comp={comp_limit}, Deferral={def_limit}, Catchup={catch_limit}@{catch_age}, Overall={overall_limit}")
+    else:
+        logger.warning(f"IRS limits for {simulation_year} not found in configuration. Using fallback defaults.")
+        # Fallback defaults if year's limits are missing
+        comp_limit     = 345000
+        def_limit      = 23000
+        catch_limit    = 7500
+        catch_age      = 50
+        overall_limit  = None # Default overall limit if not specified
 
     # --- 1) Initialize output columns with defaults ---
     defaults: Dict[str, Any] = {

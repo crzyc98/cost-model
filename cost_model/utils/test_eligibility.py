@@ -1,9 +1,9 @@
 # utils/test_eligibility.py
 import pandas as pd
 import pytest
-from utils.columns import EMP_BIRTH_DATE, EMP_HIRE_DATE, STATUS_COL, HOURS_WORKED, ELIGIBILITY_ENTRY_DATE, IS_ELIGIBLE
-from utils.rules.eligibility import apply, agent_is_eligible, DEFAULT_MIN_AGE, DEFAULT_SERVICE_MONTHS
-from utils.constants import ACTIVE_STATUSES
+from cost_model.utils.columns import EMP_BIRTH_DATE, EMP_HIRE_DATE, STATUS_COL, HOURS_WORKED, ELIGIBILITY_ENTRY_DATE, IS_ELIGIBLE
+from cost_model.rules.eligibility import apply, agent_is_eligible, DEFAULT_MIN_AGE, DEFAULT_SERVICE_MONTHS
+from cost_model.utils.constants import ACTIVE_STATUSES
 
 # Helper to build simulation end date
 SIM_END = pd.Timestamp("2025-12-31")

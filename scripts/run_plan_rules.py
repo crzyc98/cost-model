@@ -6,23 +6,39 @@ Script to apply plan rules for each scenario and year.
 
 import sys
 from pathlib import Path
+import os
+
+# --- Add project root to Python path FIRST ---
+try:
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
+except Exception as e:
+    print(f"Error determining project root or modifying sys.path: {e}")
+    sys.exit(1)
+
 import logging
 import argparse
 import pandas as pd
 import yaml
-from utils.columns import (
-    EMP_SSN, IS_PARTICIPATING, IS_ELIGIBLE, EMP_CONTR,
-    RAW_TO_STD_COLS, EMP_DEFERRAL_RATE, EMPLOYER_MATCH,
-    EMPLOYER_CORE, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
-    SUM_HEADCOUNT, SUM_ELIGIBLE, SUM_PARTICIPATING,
-    RATE_PARTICIP_ELIG, RATE_PARTICIP_TOTAL,
-    AVG_DEFERRAL_PART, AVG_DEFERRAL_TOTAL,
-    SUM_EMP_CONTR, SUM_EMP_MATCH, SUM_EMP_CORE, SUM_EMP_COST, SUM_CONTRIB,
-    SUM_PLAN_COMP, SUM_CAP_COMP,
-    PCT_EMP_COST_PLAN, PCT_EMP_COST_CAP
-)
-from utils.plan_rules_engine import apply_plan_rules
-from utils.rules.validators import PlanRules, ValidationError
+
+# --- Now perform imports from cost_model ---
+try:
+    from cost_model.utils.columns import (
+        EMP_SSN, IS_PARTICIPATING, IS_ELIGIBLE, EMP_CONTR,
+        RAW_TO_STD_COLS, EMP_DEFERRAL_RATE, EMPLOYER_MATCH,
+        EMPLOYER_CORE, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
+        SUM_HEADCOUNT, SUM_ELIGIBLE, SUM_PARTICIPATING,
+        RATE_PARTICIP_ELIG, RATE_PARTICIP_TOTAL,
+        AVG_DEFERRAL_PART, AVG_DEFERRAL_TOTAL,
+        SUM_EMP_CONTR, SUM_EMP_MATCH, SUM_EMP_CORE, SUM_EMP_COST, SUM_CONTRIB,
+        SUM_PLAN_COMP, SUM_CAP_COMP,
+        PCT_EMP_COST_PLAN, PCT_EMP_COST_CAP
+    )
+    from cost_model.rules.engine import apply_rules_for_year 
+    from cost_model.config.validators import PlanRules, ValidationError 
+except ImportError as e:
+    print(f"Error importing from cost_model: {e}. Ensure the necessary modules exist.")
+    sys.exit(1)
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -96,7 +112,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
             logger.info("Scenario‐level eligibility config: %r",
                         scen_cfg['plan_rules']['eligibility'])
 
-            out_df = apply_plan_rules(df, scen_cfg, year_num)
+            out_df = apply_rules_for_year(df, scen_cfg, year_num)
 
             # --- Participation persistence enforcement ---
             if prev_participation is not None and EMP_SSN in out_df:

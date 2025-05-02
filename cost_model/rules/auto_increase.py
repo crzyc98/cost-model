@@ -1,4 +1,4 @@
-# utils/rules/auto_increase.py
+# cost_model/rules/auto_increase.py
 """
 Auto Increase rule: apply deferral rate increases according to plan rules.
 """
@@ -8,7 +8,7 @@ from typing import Dict, Any
 import pandas as pd
 import numpy as np
 
-from utils.columns import (
+from cost_model.utils.columns import (
     EMP_DEFERRAL_RATE,
     EMP_HIRE_DATE,
     IS_PARTICIPATING,
@@ -16,8 +16,8 @@ from utils.columns import (
     AI_ENROLLED,
     to_nullable_bool,
 )
-from utils.constants import ACTIVE_STATUSES
-from utils.rules.validators import AutoIncreaseRule
+from cost_model.utils.constants import ACTIVE_STATUSES
+from cost_model.rules.validators import AutoIncreaseRule
 
 logger = logging.getLogger(__name__)
 

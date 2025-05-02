@@ -1,69 +1,13 @@
-# utils/data_generation_utils.py - Utility functions for generating synthetic HR data.
-
-import logging
+# cost_model/dynamics/hiring.py
 import pandas as pd
 import numpy as np
-from scipy.stats import truncnorm
-from .date_utils import calculate_age # Assuming date_utils is in the same directory
 from typing import Sequence, Optional, List, Dict, Any
+from cost_model.utils.date_utils import calculate_age, calculate_tenure
+from cost_model.utils.id_generation import _generate_sequential_ids
+import logging
+from scipy.stats import truncnorm
 
 logger = logging.getLogger(__name__)
-
-def _generate_sequential_ids(existing_ids: Optional[Sequence[str]], num_new: int) -> List[str]:
-    """Generates unique sequential placeholder IDs prefixed with 'NEW_'.
-
-    Handles potential numeric suffixes in existing IDs to continue sequence,
-    with fallbacks for non-numeric or complex existing IDs.
-    """
-    new_ids = []
-    temp_new_ids = set() # Use set for efficient checking of newly generated IDs
-
-    current_max = 0
-    existing_ids_set = set(existing_ids) if existing_ids else set()
-
-    if existing_ids_set:
-        try:
-            # Extract numeric parts only if they are strings and match pattern 'prefix_number'
-            numeric_parts = pd.to_numeric(
-                pd.Series([s for s in existing_ids_set if isinstance(s, str)])
-                  .str.extract(r'_(\d+)$', expand=False), # Look for underscore prefix
-                errors='coerce'
-            )
-            if numeric_parts.notna().any():
-                current_max = int(numeric_parts.max())
-            else:
-                # Fallback if no numeric parts found or all NaN
-                current_max = 900000000 + len(existing_ids_set)
-        except Exception as e:
-            logger.warning(f"Error extracting numeric part of existing IDs: {e}. Using fallback sequence start.")
-            current_max = 900000000 + len(existing_ids_set)
-    else:
-        current_max = 900000000 # Starting point if no existing IDs
-
-    loop_count = 0
-    max_loops = num_new * 100 + 100 # Safety break limit
-
-    while len(new_ids) < num_new and loop_count < max_loops:
-        current_max += 1
-        potential_id = f"NEW_{current_max}"
-        if potential_id not in existing_ids_set and potential_id not in temp_new_ids:
-            new_ids.append(potential_id)
-            temp_new_ids.add(potential_id)
-        loop_count += 1
-
-    if len(new_ids) < num_new:
-        logger.warning("Potential issue generating unique sequential IDs or reached loop limit; using fallback for remaining.")
-        needed = num_new - len(new_ids)
-        base_ts = pd.Timestamp.now().value
-        rng_fallback = np.random.default_rng() # Local RNG for fallback
-        for i in range(needed):
-            while True:
-                fallback_id = f"FALLBACK_{base_ts}_{rng_fallback.integers(10000,99999)}_{i}"
-                if fallback_id not in existing_ids_set and fallback_id not in temp_new_ids:
-                    new_ids.append(fallback_id)
-                    temp_new_ids.add(fallback_id)
-                    break
-    return new_ids
 
 def _generate_hire_dates(num: int, year: int, rng: np.random.Generator) -> pd.Series:
     """Generates random hire dates within a given year."""
@@ -116,32 +60,38 @@ def _calculate_birth_dates(hire_dates: pd.Series, ages: np.ndarray, rng: np.rand
     # Create Series with default RangeIndex (0-based) and name
     return pd.Series(birth_dates, name='employee_birth_date')
 
-def _calculate_compensation(roles: np.ndarray, ages: np.ndarray, comp_config: Dict[str, Any], defaults: Dict[str, Any], min_working_age: int, rng: np.random.Generator) -> pd.Series:
-    """Calculates gross compensation based on role, age, and config parameters."""
-    compensation_list = []
+def _calculate_compensation(roles: Sequence[str], ages: np.ndarray, role_comp_params: Dict[str, Dict[str, float]], default_comp_params: Dict[str, float], min_age: int, rng: np.random.Generator) -> np.ndarray:
+    """Calculates initial compensation based on role, age, and config parameters."""
+    compensation = []
     for role, age in zip(roles, ages):
-        role_params = comp_config.get(role, {}).copy() # Get role specific, copy to modify
-        # Apply defaults for any missing parameters
-        for key, default_val in defaults.items():
-            role_params.setdefault(key, default_val)
+        params = role_comp_params.get(role, default_comp_params)
 
-        age_experience_years = max(0, age - min_working_age)
-        tenure_years = 0 # New hire
+        # Calculate base compensation using getattr for Pydantic models
+        base = float(getattr(params, 'comp_base_salary', 50000.0))
 
-        target_comp = (role_params['comp_base_salary'] +
-                       (age_experience_years * role_params['comp_increase_per_age_year']) +
-                       (tenure_years * role_params['comp_increase_per_tenure_year']))
+        # Add age-related increase
+        age_factor = float(getattr(params, 'comp_age_factor', 0.01))
+        age_comp = base * (age - min_age) * age_factor
 
-        # Use lognormal distribution for compensation spread
-        comp_spread_sigma = max(1e-6, role_params['comp_spread_sigma'])
-        base_for_log = max(1000, target_comp * role_params['comp_log_mean_factor'])
-        log_mean = np.log(base_for_log)
+        # Apply minimum salary floor
+        min_salary = float(getattr(params, 'comp_min_salary', 40000.0))
 
-        comp = rng.lognormal(mean=log_mean, sigma=comp_spread_sigma)
-        final_comp = round(max(role_params['comp_min_salary'], comp), 2)
-        compensation_list.append(final_comp)
+        # Combine components
+        initial_comp = max(base + age_comp, min_salary)
 
-    return pd.Series(compensation_list, index=pd.RangeIndex(len(roles)))
+        # Add stochastic element if configured
+        stochastic_std_dev = float(getattr(params, 'comp_stochastic_std_dev', 0.0))
+        if stochastic_std_dev > 0 and rng:
+            # Use log-normal distribution for salaries (often non-negative and right-skewed)
+            log_mean = np.log(initial_comp) - (stochastic_std_dev**2) / 2
+            stochastic_comp = np.exp(rng.normal(log_mean, stochastic_std_dev))
+            compensation.append(stochastic_comp)
+        else:
+            compensation.append(initial_comp)
+
+    logger.debug(f"Calculated initial compensations for {len(roles)} hires. Avg: {np.mean(compensation):.0f}")
+    return pd.Series(compensation)
+
 
 def generate_new_hires(
     num_hires: int,
@@ -195,22 +145,22 @@ def generate_new_hires(
         rng = np.random.default_rng()
 
     # --- Safely Extract Config Parameters ---
-    role_dist = scenario_config.get('role_distribution', {})
-    role_comp_params = scenario_config.get('role_compensation_params', {})
-    age_mean = float(scenario_config.get('new_hire_average_age', 30.0))
-    age_std_dev = float(scenario_config.get('new_hire_age_std_dev', 5.0))
-    min_age = int(scenario_config.get('min_working_age', 18))
-    max_age = int(scenario_config.get('max_working_age', 65))
-    gender_dist = scenario_config.get('gender_distribution', None)
+    role_dist = getattr(scenario_config, 'role_distribution', {})
+    role_comp_params = getattr(scenario_config, 'role_compensation_params', {})
+    age_mean = float(getattr(scenario_config, 'new_hire_average_age', 30.0))
+    age_std_dev = float(getattr(scenario_config, 'new_hire_age_std_dev', 5.0))
+    min_age = int(getattr(scenario_config, 'min_working_age', 18))
+    max_age = int(getattr(scenario_config, 'max_working_age', 65))
+    gender_dist = getattr(scenario_config, 'gender_distribution', None)
 
     # Default compensation parameters (used if not specified per role)
     default_comp_params = {
-        'comp_base_salary': scenario_config.get('comp_base_salary', 50000),
-        'comp_increase_per_age_year': scenario_config.get('comp_increase_per_age_year', 500),
-        'comp_increase_per_tenure_year': scenario_config.get('comp_increase_per_tenure_year', 1000),
-        'comp_log_mean_factor': scenario_config.get('comp_log_mean_factor', 1.0),
-        'comp_spread_sigma': scenario_config.get('comp_spread_sigma', 0.3),
-        'comp_min_salary': scenario_config.get('comp_min_salary', 30000)
+        'comp_base_salary': getattr(scenario_config, 'comp_base_salary', 50000),
+        'comp_increase_per_age_year': getattr(scenario_config, 'comp_increase_per_age_year', 500),
+        'comp_increase_per_tenure_year': getattr(scenario_config, 'comp_increase_per_tenure_year', 1000),
+        'comp_log_mean_factor': getattr(scenario_config, 'comp_log_mean_factor', 1.0),
+        'comp_spread_sigma': getattr(scenario_config, 'comp_spread_sigma', 0.3),
+        'comp_min_salary': getattr(scenario_config, 'comp_min_salary', 30000)
     }
 
     # --- Generate Data using Helper Functions ---

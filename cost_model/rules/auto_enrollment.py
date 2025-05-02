@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 
-from utils.columns import (
+from cost_model.utils.columns import (
     EMP_DEFERRAL_RATE,
     IS_ELIGIBLE,
     IS_PARTICIPATING,
@@ -22,8 +22,8 @@ from utils.columns import (
     BECAME_ELIGIBLE_DURING_YEAR,
     WINDOW_CLOSED_DURING_YEAR,
 )
-from utils.constants import ACTIVE_STATUSES
-from utils.rules.validators import AutoEnrollmentRule
+from cost_model.utils.constants import ACTIVE_STATUSES
+from cost_model.rules.validators import AutoEnrollmentRule
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ import numpy as np
 from typing import Union, Optional
 from numpy.random import Generator, default_rng
 import logging
-from utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, STATUS_COL # Ensure these are correct
+from cost_model.utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, STATUS_COL # Ensure these are correct
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,10 @@ def sample_terminations(
         # Restore random offset logic for termination date
         offsets = np.floor(rng.random(n_terminated) * days_until[terminated_mask].values).astype(int)
         term_dates = hires[terminated_mask] + pd.to_timedelta(offsets, unit='D')
+
+        # Ensure termination date is not before the start of the year and not after the end of the year
+        year_start_dt = pd.Timestamp(year=year_end.year, month=1, day=1)
+        term_dates = term_dates.clip(lower=year_start_dt, upper=year_end)
 
         # Assign termination date and status using .loc
         df_out.loc[terminated_mask, EMP_TERM_DATE] = term_dates

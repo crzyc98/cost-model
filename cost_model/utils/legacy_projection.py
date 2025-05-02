@@ -8,7 +8,7 @@ from typing import Optional, Mapping, Any, Dict
 
 # Import necessary utilities using relative paths
 from .date_utils import calculate_age, calculate_tenure
-from .sandbox_utils import generate_new_hires
+from cost_model.dynamics.hiring import generate_new_hires
 from .sampling.new_hires import sample_new_hire_compensation
 from .sampling.salary import SalarySampler, DefaultSalarySampler
 from .ml.ml_utils import try_load_ml_model, predict_turnover

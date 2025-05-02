@@ -3,7 +3,7 @@
 Generate historical dummy census files for retirement plan modeling.
 
 This script orchestrates the generation process year by year, calling helper
-functions from utils.census_generation_helpers to handle the details of
+functions from cost_model.utils.census_generation_helpers to handle the details of
 employee record creation, termination selection, and derived field calculation.
 """
 import sys
@@ -33,19 +33,19 @@ from typing import Dict, List, Optional, Set
 # --- Import from utils AFTER path modification ---
 try:
     # Import the refactored helper functions
-    from utils.census_generation_helpers import (
+    from cost_model.utils.census_generation_helpers import (
         generate_employee_record,
         calculate_derived_fields,
         select_weighted_terminations
     )
     # Import column constants
-    from utils.columns import (
+    from cost_model.utils.columns import (
         EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
         EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_CAPPED_COMP,
         EMP_DEFERRAL_RATE, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH
     )
 except ImportError as e:
-    print(f"Error importing from utils: {e}. Make sure utils directory exists and contains census_generation_helpers.py and columns.py relative to {project_root}.")
+    print(f"Error importing from cost_model.utils: {e}. Make sure cost_model/utils directory exists and contains census_generation_helpers.py and columns.py relative to {project_root}.")
     # Define fallbacks if running standalone or utils is missing
     print("Warning: Using fallback column names and potentially missing helper functions.")
     EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE = 'employee_ssn', 'employee_role', 'employee_birth_date', 'employee_hire_date', 'employee_termination_date'

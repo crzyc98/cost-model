@@ -10,6 +10,26 @@ This engine enables organizations, consultants, and plan sponsors to simulate an
 - **Regulatory & Compliance Forecasting:** Assess plan compliance with IRS limits and test the impact of regulatory changes.
 - **Detailed Analytics:** Output both summary metrics and granular, agent-level results for further analysis.
 
+## Running Simulations
+
+### Production Simulation (Full Dataset)
+```bash
+python scripts/run_simulation.py \
+  --config config/config.yaml \
+  --scenario baseline \
+  --census data/census_data.csv \
+  --output output/
+```
+
+### Development Simulation (Small Test Dataset)
+```bash
+python scripts/run_simulation.py \
+  --config config/dev_tiny.yaml \
+  --scenario baseline \
+  --census data/dev_tiny/census_2024.csv \
+  --output output_dev/
+```
+
 ---
 
 ## Project Directory Structure
