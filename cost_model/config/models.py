@@ -215,6 +215,7 @@ class GlobalParameters(BaseModel):
     annual_growth_rate: float = Field(0.0) # Can be negative
     monthly_transition: Optional[bool] = False # Optional flag
     maintain_headcount: bool = False # Default to false if growth rate used
+    new_hire_termination_rate_safety_margin: float = Field(0.0, ge=0.0, description="Additive safety margin for calculating number of new hires needed.")
 
     # Hazard Model (Optional)
     hazard_model_params: Optional[HazardModelParams] = None

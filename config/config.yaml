@@ -15,6 +15,7 @@ global_parameters:
   annual_growth_rate:                0.02
   monthly_transition:                false
   maintain_headcount:                true
+  new_hire_termination_rate_safety_margin: 0.0
 
   hazard_model_params:
     file: data/hazard_model_params.yaml

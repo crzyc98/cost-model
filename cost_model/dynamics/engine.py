@@ -8,313 +8,313 @@ import logging
 import math
 import pandas as pd
 import numpy as np
-from typing import Union, Optional, Mapping, Any, Dict
+from typing import Union, Optional, Mapping, Any, Dict, List
 
 # Use relative imports within the cost_model package
 try:
-    # Ensure calculate_tenure is imported correctly
-    from ..utils.date_utils import calculate_tenure
-    # Import specific generation functions from hiring/compensation modules
+    from ..utils.date_utils import calculate_tenure, get_random_dates_in_year
     from .hiring import generate_new_hires
-    from .compensation import apply_comp_bump, apply_onboarding_bump # Assuming these exist now
-    from .termination import apply_turnover # Assuming termination logic is in termination.py
-    # ML imports if needed
+    from .compensation import apply_comp_bump, apply_onboarding_bump
+    from .termination import apply_turnover
     from ..ml.ml_utils import try_load_ml_model, predict_turnover
-    # Import necessary column names
-    from ..utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP
-    # Import sampling helpers if needed directly here, or called within sub-modules
+    from ..utils.columns import EMP_ID, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP
     from .sampling.salary import SalarySampler, DefaultSalarySampler
 except ImportError as e:
-    print(f"Error importing dynamics components: {e}")
-    # Define fallbacks for static analysis if needed
-    EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP = 'employee_hire_date', 'employee_termination_date', 'employee_birth_date', 'employee_gross_compensation'
-    def generate_new_hires(*args, **kwargs): raise NotImplementedError()
-    def apply_comp_bump(*args, **kwargs): raise NotImplementedError()
-    def apply_onboarding_bump(*args, **kwargs): raise NotImplementedError()
-    def apply_turnover(*args, **kwargs): raise NotImplementedError()
+    print(f"Error importing dynamics components from engine.py: {e}")
+    EMP_ID, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP = 'employee_id', 'employee_hire_date', 'employee_termination_date', 'employee_birth_date', 'employee_gross_compensation'
+    def generate_new_hires(*args, **kwargs): raise NotImplementedError("generate_new_hires not imported")
+    def apply_comp_bump(*args, **kwargs): raise NotImplementedError("apply_comp_bump not imported")
+    def apply_onboarding_bump(*args, **kwargs): raise NotImplementedError("apply_onboarding_bump not imported")
+    def apply_turnover(*args, **kwargs): raise NotImplementedError("apply_turnover not imported")
     def try_load_ml_model(*args, **kwargs): return None, None
-    def predict_turnover(*args, **kwargs): raise NotImplementedError()
+    def predict_turnover(*args, **kwargs): raise NotImplementedError("predict_turnover not imported")
+    def get_random_dates_in_year(*args, **kwargs): raise NotImplementedError("get_random_dates_in_year not imported")
     class DefaultSalarySampler: pass
 
-
-# Module-level logger
 logger = logging.getLogger(__name__)
 
-
-# Renamed function from project_hr to run_dynamics_for_year
 def run_dynamics_for_year(
     current_df: pd.DataFrame,
-    year_config: Mapping[str, Any], # Use the resolved scenario config (like GlobalParameters model)
+    year_config: Mapping[str, Any],
     sim_year: int,
-    # Pass RNG if needed, otherwise initialize internally based on seed in config
-    # rng: Optional[np.random.Generator] = None,
-    parent_logger: Optional[logging.Logger] = None # Accept logger
+    parent_logger: Optional[logging.Logger] = None
 ) -> pd.DataFrame:
-    """
-    Runs one year of population dynamics: compensation, terminations, hiring.
-
-    Args:
-        current_df: DataFrame with the active population at the START of the year.
-        year_config: The fully resolved configuration dictionary or object for the scenario for this year.
-        sim_year: The current simulation year (e.g., 2025).
-        parent_logger: Optional logger instance from the calling script.
-
-    Returns:
-        A pandas DataFrame representing the population state AFTER dynamics
-        but BEFORE plan rules are applied for the year. Includes new hires
-        and reflects terminations that occurred during the year.
-    """
-    # --- Setup Logger ---
-    log = parent_logger or logger # Use passed logger or module logger
+    log = parent_logger or logger
     log.info(f"--- Running Dynamics for Simulation Year {sim_year} ---")
 
-    # --- RNG Setup (Example: derive from seed in config if not passed) ---
-    seed = getattr(year_config, 'random_seed', None) # Get random seed from config (now accessing Pydantic model attribute directly)
-    # Create separate RNGs for different processes using SeedSequence for better isolation
+    # --- RNG Setup ---
+    seed = getattr(year_config, 'random_seed', None)
     if seed is not None:
         log.debug(f"Initializing dynamics RNGs with seed: {seed}")
         master_ss = np.random.SeedSequence(seed)
-        # Spawn sequences for each major random process within dynamics
-        ss_bump, ss_term, ss_nh, ss_ml = master_ss.spawn(4)
+        ss_bump, ss_exp_term, ss_nh_gen, ss_nh_term, ss_ml = master_ss.spawn(5)
         rng_bump = np.random.default_rng(ss_bump)
-        rng_term = np.random.default_rng(ss_term)
-        rng_nh = np.random.default_rng(ss_nh)
+        rng_exp_term = np.random.default_rng(ss_exp_term)
+        rng_nh_gen = np.random.default_rng(ss_nh_gen)
+        rng_nh_term = np.random.default_rng(ss_nh_term)
         rng_ml = np.random.default_rng(ss_ml)
     else:
         log.warning("No random seed provided for dynamics. Results may not be reproducible.")
-        # Initialize default RNGs if no seed
-        rng_bump = np.random.default_rng()
-        rng_term = np.random.default_rng()
-        rng_nh = np.random.default_rng()
-        rng_ml = np.random.default_rng()
+        rng_bump, rng_exp_term, rng_nh_gen, rng_nh_term, rng_ml = (np.random.default_rng() for _ in range(5))
     log.debug("Dynamics RNGs initialized.")
 
     # --- Config Parameters ---
-    # Extract parameters needed for this year's dynamics from year_config
-    # Use getattr() with defaults for safety
-    start_date = pd.Timestamp(f"{sim_year}-01-01")
-    end_date = pd.Timestamp(f"{sim_year}-12-31")
     comp_increase_rate = getattr(year_config, 'annual_compensation_increase_rate', 0.0)
     termination_rate = getattr(year_config, 'annual_termination_rate', 0.0)
     new_hire_termination_rate = getattr(year_config, 'new_hire_termination_rate', termination_rate)
+    new_hire_term_rate_safety_margin = getattr(year_config, 'new_hire_termination_rate_safety_margin', 0.0)
     growth_rate = getattr(year_config, 'annual_growth_rate', 0.0)
-    maintain_headcount = getattr(year_config, 'maintain_headcount', False) # Default False if growth used
-    initial_base_count = getattr(year_config, 'initial_headcount_for_target', len(current_df)) # Need a way to track base for growth/maintain
+    maintain_headcount = getattr(year_config, 'maintain_headcount', False)
+    use_expected_attrition = getattr(year_config, 'use_expected_attrition', False)
 
-    log.info(f"Year {sim_year} Dynamics Params: CompRate={comp_increase_rate:.2%}, TermRate={termination_rate:.2%}, NHTermRate={new_hire_termination_rate:.2%}, MaintainHC={maintain_headcount}, GrowthRate={growth_rate:.2%}")
-
-    # --- ML Model Setup ---
-    model_path = getattr(year_config, 'ml_model_path', '')
-    features_path = getattr(year_config, 'model_features_path', '')
-    projection_model, feature_cols = None, []
-    if model_path and features_path:
-        ml_pair = try_load_ml_model(model_path, features_path)
-        if ml_pair:
-             projection_model, feature_cols = ml_pair
-             log.info(f"Loaded ML turnover model from {model_path} with {len(feature_cols)} features.")
-    use_ml = getattr(year_config, 'use_ml_turnover', False) and projection_model is not None
-    log.info(f"Using ML for turnover: {use_ml}")
-
-    # --- Baseline Salaries (Needed for onboarding bump/new hire sampling if applicable) ---
-    # This might need to be loaded once and passed in, or handled differently
-    # For now, assume it might be needed by helpers called below
-    # Re-evaluate if baseline_hire_salaries is truly needed here or just within hiring.py
-    baseline_hire_salaries = getattr(year_config, 'baseline_hire_salary_distribution', pd.Series(dtype=float)) # Example placeholder
-    # if baseline_hire_salaries.empty:
-    #     log.warning("Baseline hire salary distribution not provided or empty.")
-
-
-    # --- Initial State Check ---
-    if current_df.empty:
-        log.warning(f"Starting dynamics for year {sim_year} with empty population.")
-        # Decide behavior: return empty or attempt hiring? Let's attempt hiring.
-        pass # Continue to hiring step
-
-    # Ensure essential columns exist
-    required_cols = [EMP_HIRE_DATE, EMP_GROSS_COMP, EMP_BIRTH_DATE]
-    for col in required_cols:
-         if col not in current_df.columns:
-             log.error(f"Missing required column in current_df: '{col}'. Aborting dynamics for year {sim_year}.")
-             return pd.DataFrame() # Return empty DataFrame on critical error
-    if EMP_TERM_DATE not in current_df.columns:
-         log.warning(f"Column '{EMP_TERM_DATE}' not found. Creating with NaT.")
-         current_df[EMP_TERM_DATE] = pd.NaT
-
-    # Initialize prev_term_salaries as Series (needed for apply_turnover)
-    # Use salaries from the input DataFrame (active at start of year)
-    prev_term_salaries = current_df[EMP_GROSS_COMP].dropna()
-
-
-    # --- Yearly Dynamics Steps ---
-    year_start_headcount = len(current_df)
-    log.info(f"Year {sim_year} Start: Headcount={year_start_headcount}")
-
-    # Calculate Tenure relative to start of current simulation year
-    current_df['tenure'] = calculate_tenure(current_df[EMP_HIRE_DATE], start_date)
-    log.debug(f"Year {sim_year}: Recalculated tenure.")
-
-    # 1. Comp Bump (using compensation.py helper)
-    log.debug(f"Year {sim_year}: Applying compensation bump...")
-    current_df = apply_comp_bump(
-        df=current_df,
-        comp_col=EMP_GROSS_COMP,
-        # Pass relevant config sections if needed by the helper
-        # dist=year_config.get('second_year_compensation_dist', {}), # Example
-        rate=comp_increase_rate,
-        rng=rng_bump,
-        # sampler=DefaultSalarySampler(), # If sampler logic is complex
-        log=log
+    log.info(
+        f"Year {sim_year} Dynamics Params: CompRate={comp_increase_rate:.2%}, TermRate={termination_rate:.2%}, "
+        f"NHTermRate={new_hire_termination_rate:.2%}, NHTermSafetyMargin={new_hire_term_rate_safety_margin:.2%}, "
+        f"GrowthRate={growth_rate:.2%}, MaintainHC={maintain_headcount}, UseExpectedAttrition={use_expected_attrition}"
     )
 
-    # --- 2. Experienced Employee Terminations --- #
-    log.info(f"Year {sim_year}: Applying experienced termination rate ({termination_rate:.2%}) to initial {len(current_df)} employees.")
-    # Apply annual_termination_rate ONLY to the population at the start of the year
-    df_after_exp_term = apply_turnover(
-        df=current_df.copy(), # Operate on a copy to avoid modifying original before counting
-        hire_col=EMP_HIRE_DATE,
-        probs_or_rate=termination_rate, # Use the annual rate for existing employees
-        start_date=start_date,
-        end_date=end_date,
-        rng=rng_term,
-        prev_term_salaries=prev_term_salaries, # Pass salaries from start of year
-        log=log
-    )
+    # --- Prepare df_processed, Set Index, and Calculate n0_exp ---
+    df_processed = current_df.copy()
+    start_date = pd.Timestamp(f"{sim_year}-01-01")
+    end_date = pd.Timestamp(f"{sim_year}-12-31")
 
-    # Identify who was terminated IN THIS STEP
-    exp_terminated_mask = df_after_exp_term[EMP_TERM_DATE].between(start_date, end_date, inclusive='both')
-    num_exp_terminated = exp_terminated_mask.sum()
-    log.info(f"Year {sim_year}: Experienced Terminations applied = {num_exp_terminated}")
+    # 1. Ensure EMP_TERM_DATE column exists
+    if EMP_TERM_DATE not in df_processed.columns and not df_processed.empty:
+         log.warning(f"Column '{EMP_TERM_DATE}' not found in input DataFrame for year {sim_year}. Creating with NaT.")
+         df_processed[EMP_TERM_DATE] = pd.NaT
+    elif df_processed.empty and EMP_TERM_DATE not in df_processed.columns:
+         df_processed[EMP_TERM_DATE] = pd.NaT
 
-    # --- 3. Identify Survivors from the initial cohort --- #
-    survivor_mask = ~exp_terminated_mask # Survivors are those NOT terminated in the above step
-    survivor_df = df_after_exp_term[survivor_mask].copy()
-    num_survivors = len(survivor_df)
-    log.info(f"Year {sim_year}: Survivors from initial cohort = {num_survivors}")
+    # 2. Handle EMP_ID and set index for df_processed (CRITICAL: DO THIS EARLY)
+    if not df_processed.empty:
+        if EMP_ID not in df_processed.columns:
+            log.error(f"CRITICAL: Required column '{EMP_ID}' not found in df_processed. Indexing will be integer-based. This may lead to issues.")
+        elif df_processed.index.name != EMP_ID: # If EMP_ID column exists and is not already the index
+            if df_processed[EMP_ID].is_unique:
+                log.debug(f"Setting '{EMP_ID}' as index for df_processed.")
+                df_processed = df_processed.set_index(EMP_ID, drop=False) # Index is now EMP_ID
+            else:
+                log.error(f"CRITICAL: Column '{EMP_ID}' is not unique. Cannot set as index. Retaining original index. This may lead to issues.")
+    
+    # 3. Calculate n0_exp (truly active employees at year start) using the now stable-indexed df_processed
+    exp_attrition_eligible_df = pd.DataFrame(columns=df_processed.columns, index=pd.Index([], name=df_processed.index.name))
+    n0_exp = 0
+    if not df_processed.empty:
+        active_at_year_start_mask = (df_processed[EMP_TERM_DATE].isna()) | \
+                                    (df_processed[EMP_TERM_DATE] >= start_date)
+        exp_attrition_eligible_df = df_processed[active_at_year_start_mask] # Index will be of the same type as df_processed.index
+        n0_exp = len(exp_attrition_eligible_df)
+    log.info(f"Year {sim_year}: Total records loaded into dynamics = {len(current_df)}, Active employees eligible for exp. attrition (n0_exp) = {n0_exp}")
 
-    # Store term dates from this step before adding new hires
-    terminated_this_step_df = df_after_exp_term[exp_terminated_mask].copy()
+    # 4. Determine the base headcount for calculating growth/maintenance targets
+    if n0_exp == 0 and getattr(year_config, 'initial_headcount_for_target', 0) > 0:
+        year_start_headcount_for_calc = getattr(year_config, 'initial_headcount_for_target', 0)
+        log.info(f"Year {sim_year}: Active headcount (n0_exp) is 0. Using initial_headcount_for_target ({year_start_headcount_for_calc}) as base for calculations.")
+    else:
+        year_start_headcount_for_calc = n0_exp
+        if year_start_headcount_for_calc != len(current_df): # len(current_df) is total records from input for this year
+             log.info(f"Year {sim_year}: Using active headcount (n0_exp = {n0_exp}) as base for growth/maintenance calculations. (Total records from input: {len(current_df)}).")
+        else:
+             log.info(f"Year {sim_year}: Using active headcount (n0_exp = {n0_exp}) as base for growth/maintenance calculations.")
+    
+    # --- Yearly Dynamics Log Start ---
+    log.info(f"Year {sim_year} Start: Total Records Input={len(current_df)}, Active Base for Growth Calc={year_start_headcount_for_calc}")
 
-    # --- 4. New Hires --- #
-    # Determine hires needed based on ACTUAL survivors
-    if maintain_headcount:
-        initial_headcount = len(current_df) # Headcount at the very start of the year
-        target_count = getattr(year_config, 'initial_headcount_for_target', initial_headcount)
-        log.debug(f"Year {sim_year}: MaintainHC=True. Target={target_count}, Survivors={num_survivors}")
-        needed = max(0, target_count - num_survivors)
-    else:  # maintain_headcount is False
-        year_start_headcount = len(current_df) # Active employees at the start of this sim_year
-        growth_rate = getattr(year_config, 'annual_growth_rate', 0.0)
-        # new_hire_termination_rate is already defined from config (around line 91 in the full file)
+    # 5. Apply comp bump and tenure to active employees
+    if n0_exp > 0:
+        # exp_attrition_eligible_df is already the slice of active employees from the correctly indexed df_processed.
+        active_employees_work_df = exp_attrition_eligible_df.copy() # Work on a copy
 
-        # Target number of active employees at the END of sim_year to achieve the year-over-year growth_rate
-        target_active_eoy = math.ceil(year_start_headcount * (1 + growth_rate))
-        log.info(f"Year {sim_year}: MaintainHC=False. YearStartHC={year_start_headcount}, ConfigGrowthRate={growth_rate:.2%}, TargetActiveEOY={target_active_eoy}")
-
-        # Net hires needed (after NH term) to reach TargetActiveEOY, considering survivors from the initial cohort
-        net_hires_needed_after_nh_term = max(0, target_active_eoy - num_survivors)
-        log.info(f"Year {sim_year}: SurvivorsFromInitialCohort={num_survivors}, NetHiresNeededAfterNHTerm={net_hires_needed_after_nh_term} to reach TargetActiveEOY.")
-
-        # Gross up the net_hires_needed to account for new hire terminations
-        calculated_gross_hires = 0
-        if 0 < new_hire_termination_rate < 1:
-            divisor = (1 - new_hire_termination_rate)
-            calculated_gross_hires = math.ceil(net_hires_needed_after_nh_term / divisor)
-            log.info(f"Year {sim_year}: Adjusted for NHTermRate ({new_hire_termination_rate:.2%}). CalculatedGrossHires={calculated_gross_hires} (from NetHiresNeededAfterNHTerm={net_hires_needed_after_nh_term})")
-        elif new_hire_termination_rate >= 1:
-            if net_hires_needed_after_nh_term > 0:
-                log.warning(f"Year {sim_year}: NHTermRate is {new_hire_termination_rate:.2%} (>=100%) and {net_hires_needed_after_nh_term} net hires are needed. Cannot achieve target. Setting calculated gross hires to 0.")
-                calculated_gross_hires = 0
-            else: # net_hires_needed_after_nh_term is 0
-                calculated_gross_hires = 0
-                log.info(f"Year {sim_year}: NHTermRate is {new_hire_termination_rate:.2%}. NetHiresNeededAfterNHTerm is {net_hires_needed_after_nh_term}. Setting calculated gross hires to 0.")
-        else: # new_hire_termination_rate is 0 or not a valid positive fraction (e.g. negative)
-            calculated_gross_hires = net_hires_needed_after_nh_term
-            log.info(f"Year {sim_year}: No adjustment for NHTermRate (rate is {new_hire_termination_rate:.2%}). CalculatedGrossHires={calculated_gross_hires}")
+        active_employees_work_df['tenure'] = calculate_tenure(active_employees_work_df[EMP_HIRE_DATE], start_date)
+        log.debug(f"Year {sim_year}: Recalculated tenure for {len(active_employees_work_df)} active employees.")
         
-        needed = calculated_gross_hires
-
-    log.info(f"Year {sim_year}: Hires needed = {needed}")
-    new_hires_df = pd.DataFrame()
-    if needed > 0:
-        log.info(f"Generating {needed} new hires for {sim_year}.")
-        # Use all known IDs (including those terminated this year) to avoid reuse
-        all_known_ids = df_after_exp_term.index.tolist()
-        new_hires_df = generate_new_hires(
-            num_hires=needed,
-            hire_year=sim_year,
-            scenario_config=year_config,
-            existing_ids=all_known_ids,
-            rng=rng_nh
-        )
-        log.info(f"Generated {len(new_hires_df)} new hire records.")
-
-        # --- Apply Onboarding Compensation Bump --- #
-        if not new_hires_df.empty:
-            # (Onboarding bump logic remains the same)
-            logger.debug(f"Year {sim_year}: Applying onboarding comp bump...")
-            # Safely get onboarding bump config from year_config.plan_rules
-            plan_rules_obj = getattr(year_config, 'plan_rules', None)
-            ob_cfg = getattr(plan_rules_obj, 'onboarding_bump', {}) if plan_rules_obj else {}
-
-            # Use getattr to check the 'apply_onboarding_bump' field on the Pydantic model
-            if ob_cfg and getattr(ob_cfg, 'apply_onboarding_bump', False):
-                logger.info(f"Applying onboarding bump with config: {ob_cfg}")
-                new_hires_df = apply_onboarding_bump(
-                    df=new_hires_df,
-                    comp_col=EMP_GROSS_COMP,
-                    ob_cfg=ob_cfg,
-                    baseline_hire_salaries=baseline_hire_salaries, # Pass baseline salaries
-                    rng=rng_nh, # Can reuse NH RNG or use bump RNG
-                    log=log
-                )
-
-    # --- 5. Apply New Hire Termination Rate --- #
-    if new_hire_termination_rate > 0 and not new_hires_df.empty:
-        log.debug(f"Applying new hire termination rate ({new_hire_termination_rate:.1%}) to {len(new_hires_df)} new hires...")
-        new_hires_df = apply_turnover(
-            df=new_hires_df,
-            hire_col=EMP_HIRE_DATE,
-            probs_or_rate=new_hire_termination_rate, # Apply specific NH rate
-            start_date=start_date, # Terminations happen *during* sim_year
-            end_date=end_date,
-            rng=rng_term, # Can reuse term RNG
-            # sampler=DefaultSalarySampler(), # If needed
-            prev_term_salaries=prev_term_salaries, # Use original term salaries base
+        active_employees_work_df = apply_comp_bump(
+            df=active_employees_work_df,
+            comp_col=EMP_GROSS_COMP,
+            rate=comp_increase_rate,
+            rng=rng_bump,
             log=log
         )
-        num_nh_termed = new_hires_df[EMP_TERM_DATE].notna().sum()
-        log.info(f"Year {sim_year}: {num_nh_termed} new hires terminated within the year.")
+        log.debug(f"Year {sim_year}: Applied compensation bump to active employees.")
+        
+        df_processed.update(active_employees_work_df) # Update the main DataFrame
 
-    # 6. Combine Survivors and New Hires
-    # This represents the population at year end *before* considering NH terminations
-    df_for_terms = df_after_exp_term.copy()
-    if 'new_hires_df' in locals() and not new_hires_df.empty:
-        dynamics_output_df = pd.concat([df_for_terms, new_hires_df], ignore_index=True)
+    # --- 6. Experienced Employee Terminations ---
+    terminated_exp_indices: List[Any] = []
+    if n0_exp > 0: # n0_exp is the count from exp_attrition_eligible_df
+        if use_expected_attrition:
+            log.info(f"Year {sim_year}: Applying DETERMINISTIC experienced termination rate ({termination_rate:.2%}) to {n0_exp} eligible employees.")
+            n_term_exp = math.ceil(n0_exp * termination_rate)
+            if n_term_exp > n0_exp: n_term_exp = n0_exp
+            
+            if n_term_exp > 0:
+                indices_to_choose_from = exp_attrition_eligible_df.index # This index is from the correctly indexed df_processed
+                terminated_exp_indices = rng_exp_term.choice(indices_to_choose_from, size=int(n_term_exp), replace=False).tolist()
+                term_dates_for_exp = get_random_dates_in_year(sim_year, count=len(terminated_exp_indices), rng=rng_exp_term, day_of_month=15)
+                df_processed.loc[terminated_exp_indices, EMP_TERM_DATE] = term_dates_for_exp
+            log.info(f"Year {sim_year}: Deterministically terminated {len(terminated_exp_indices)} experienced employees.")
+        else: # Stochastic
+            log.info(f"Year {sim_year}: Applying STOCHASTIC experienced termination rate ({termination_rate:.2%}) to {n0_exp} eligible employees.")
+            # Operate on a copy of the eligible portion (exp_attrition_eligible_df)
+            temp_eligible_df_for_term = exp_attrition_eligible_df.copy()
+            
+            temp_eligible_df_for_term = apply_turnover(
+                df=temp_eligible_df_for_term,
+                hire_col=EMP_HIRE_DATE,
+                probs_or_rate=termination_rate,
+                start_date=start_date,
+                end_date=end_date,
+                rng=rng_exp_term,
+                prev_term_salaries=temp_eligible_df_for_term[EMP_GROSS_COMP].dropna() if not temp_eligible_df_for_term.empty else pd.Series(dtype=float),
+                log=log
+            )
+            df_processed.update(temp_eligible_df_for_term) # Update main df_processed with results from the slice
+            
+            # Identify who was terminated stochastically from the original eligible indices
+            terminated_this_step_mask = (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE].notna()) & \
+                                        (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] >= start_date) & \
+                                        (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] <= end_date)
+            terminated_exp_indices = df_processed.loc[exp_attrition_eligible_df.index][terminated_this_step_mask].index.tolist()
+            log.info(f"Year {sim_year}: Stochastically terminated {len(terminated_exp_indices)} experienced employees.")
     else:
-        # If no new hires were made (e.g., current_df was empty and no growth, or negative growth led to 0 hires_needed)
-        dynamics_output_df = df_for_terms.copy()
+        log.info(f"Year {sim_year}: No experienced employees eligible for termination (n0_exp is 0).")
+
+    num_survivors_initial_cohort = 0
+    if n0_exp > 0:
+        survivor_mask_on_eligible = (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE].isna()) | \
+                                    (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] > end_date)
+        num_survivors_initial_cohort = survivor_mask_on_eligible.sum()
+    log.info(f"Year {sim_year}: Survivors from initial active cohort (n0_exp={n0_exp}, after experienced attrition): {num_survivors_initial_cohort}")
+
+    # --- 7. New Hires Calculation ---
+    if maintain_headcount:
+        target_eoy_headcount = year_start_headcount_for_calc
+    else: # Growth rate
+        target_eoy_headcount = math.ceil(year_start_headcount_for_calc * (1 + growth_rate))
+    log.info(f"Year {sim_year}: Target EOY headcount (based on active start {year_start_headcount_for_calc} and growth {growth_rate:.2%}) = {target_eoy_headcount}")
     
-    log.info(f"Year {sim_year}: Combined survivors and new hires. Headcount = {len(dynamics_output_df)}")
+    needed_active_new_hires_eoy = max(0, target_eoy_headcount - num_survivors_initial_cohort)
+    log.info(f"Year {sim_year}: Needed active new hires at EOY = {needed_active_new_hires_eoy} (Target: {target_eoy_headcount}, Survivors: {num_survivors_initial_cohort})")
 
-    # 7. Final DataFrame for the Year (to be passed to rules engine)
-    # This DF now includes survivors, new hires, and reflects all terminations for the year
-    final_dynamics_df = dynamics_output_df.copy()
-
-    # --- LOGGING: Track Terminations of Recent Hires (Optional Refined Log) ---
-    # This can be done here or in reporting module
-    terminated_in_year_mask_final = final_dynamics_df[EMP_TERM_DATE].between(start_date, end_date, inclusive='both')
-    terminated_ids_this_year = final_dynamics_df.loc[terminated_in_year_mask_final, EMP_GROSS_COMP]
-    new_hires_terminated_count = 0
-    if not terminated_ids_this_year.empty:
-        terminated_df_subset = final_dynamics_df[final_dynamics_df[EMP_GROSS_COMP].isin(terminated_ids_this_year.tolist())]
-        # Check if hired in or after the overall simulation start_year
-        hired_during_sim_mask = terminated_df_subset[EMP_HIRE_DATE].dt.year >= getattr(year_config, 'start_year', sim_year) # Use global start year
-        new_hires_terminated_count = hired_during_sim_mask.sum()
-        log.info(f"Year {sim_year}: Total {terminated_in_year_mask_final.sum()} terminations. {new_hires_terminated_count} were hired >= {getattr(year_config, 'start_year', sim_year)}.")
+    hires_to_make = 0
+    if needed_active_new_hires_eoy > 0:
+        current_nh_term_rate_for_calc = new_hire_termination_rate
+        log_msg_suffix = "deterministic NH term assumption"
+        if not use_expected_attrition:
+            current_nh_term_rate_for_calc = min(new_hire_termination_rate + new_hire_term_rate_safety_margin, 0.99)
+            log_msg_suffix = "stochastic NH term assumption w/ safety margin"
+        
+        if current_nh_term_rate_for_calc >= 1.0:
+            log.warning(f"Year {sim_year}: NH term rate for calculation ({current_nh_term_rate_for_calc:.2%}) is >= 100%. Cannot achieve {needed_active_new_hires_eoy} active new hires by hiring.")
+        else:
+            hires_to_make = math.ceil(needed_active_new_hires_eoy / (1 - current_nh_term_rate_for_calc))
+        log.info(f"Year {sim_year}: Calculated {hires_to_make} hires needed ({log_msg_suffix} using rate {current_nh_term_rate_for_calc:.2%}) to get {needed_active_new_hires_eoy} active new hires at EOY.")
     else:
-        log.info(f"Year {sim_year}: No employees terminated in this period.")
-    # --- End Termination Tracking Log ---
+        log.info(f"Year {sim_year}: No new hires needed as survivors ({num_survivors_initial_cohort}) meet/exceed EOY target ({target_eoy_headcount}).")
+    
+    hires_to_make = max(0, int(hires_to_make))
 
+    new_hires_df = pd.DataFrame()
+    if hires_to_make > 0:
+        log.info(f"Generating {hires_to_make} new hires for {sim_year}.")
+        existing_ids_list = []
+        if not df_processed.empty:
+            if EMP_ID in df_processed.columns:
+                existing_ids_list = df_processed[EMP_ID].unique().tolist()
+            else:
+                log.warning(f"'{EMP_ID}' column not in df_processed, using its index for existing_ids list generation.")
+                existing_ids_list = df_processed.index.unique().tolist()
+        
+        new_hires_df = generate_new_hires(
+            num_hires=hires_to_make,
+            hire_year=sim_year,
+            scenario_config=year_config,
+            existing_ids=existing_ids_list,
+            rng=rng_nh_gen,
+            id_col_name=EMP_ID
+        )
+        if not new_hires_df.empty:
+            log.info(f"Generated {len(new_hires_df)} new hire records.")
+            if EMP_ID not in new_hires_df.columns:
+                 log.error(f"CRITICAL: generate_new_hires did not produce column '{EMP_ID}'.")
+                 return pd.DataFrame()
+            if not new_hires_df[EMP_ID].is_unique:
+                 log.error(f"CRITICAL: Generated new hire '{EMP_ID}' values are not unique.")
+            
+            new_hires_df = new_hires_df.set_index(EMP_ID, drop=False)
+            if EMP_TERM_DATE not in new_hires_df.columns:
+                new_hires_df[EMP_TERM_DATE] = pd.NaT
+            # Onboarding bump logic can be added here
+        else:
+            log.warning(f"generate_new_hires was expected to create {hires_to_make} hires but returned an empty DataFrame.")
+            hires_to_make = 0
+            
+    # --- 8. Apply New Hire Termination Rate ---
+    terminated_nh_indices: List[Any] = []
+    if hires_to_make > 0 and not new_hires_df.empty and new_hire_termination_rate > 0:
+        n0_nh = len(new_hires_df)
+        # ... (deterministic or stochastic NH term logic, same as before) ...
+        if use_expected_attrition:
+            log.info(f"Year {sim_year}: Applying DETERMINISTIC new hire termination rate ({new_hire_termination_rate:.2%}) to {n0_nh} new hires.")
+            n_term_nh = math.ceil(n0_nh * new_hire_termination_rate)
+            if n_term_nh > n0_nh: n_term_nh = n0_nh
+            if n_term_nh > 0:
+                terminated_nh_indices = rng_nh_term.choice(new_hires_df.index, size=int(n_term_nh), replace=False).tolist()
+                term_dates_for_nh = get_random_dates_in_year(sim_year, count=len(terminated_nh_indices), rng=rng_nh_term, day_of_month=28)
+                new_hires_df.loc[terminated_nh_indices, EMP_TERM_DATE] = term_dates_for_nh
+            log.info(f"Year {sim_year}: Deterministically terminated {len(terminated_nh_indices)} new hires.")
+        else: # Stochastic
+            log.info(f"Year {sim_year}: Applying STOCHASTIC new hire termination rate ({new_hire_termination_rate:.2%}) to {n0_nh} new hires.")
+            temp_nh_df = new_hires_df.copy()
+            temp_nh_df = apply_turnover(
+                df=temp_nh_df,
+                hire_col=EMP_HIRE_DATE,
+                probs_or_rate=new_hire_termination_rate,
+                start_date=start_date,
+                end_date=end_date,
+                rng=rng_nh_term,
+                prev_term_salaries=temp_nh_df[EMP_GROSS_COMP].dropna() if not temp_nh_df.empty else pd.Series(dtype=float),
+                log=log
+            )
+            new_hires_df.update(temp_nh_df)
+            terminated_nh_this_step_mask = (new_hires_df[EMP_TERM_DATE].notna()) & \
+                                           (new_hires_df[EMP_TERM_DATE] >= start_date) & \
+                                           (new_hires_df[EMP_TERM_DATE] <= end_date)
+            terminated_nh_indices = new_hires_df[terminated_nh_this_step_mask].index.tolist()
+            log.info(f"Year {sim_year}: Stochastically terminated {len(terminated_nh_indices)} new hires.")
+
+    # --- 9. Combine Population ---
+    final_df_list = []
+    if not df_processed.empty:
+        final_df_list.append(df_processed.reset_index(drop=True)) 
+    if not new_hires_df.empty:
+        final_df_list.append(new_hires_df.reset_index(drop=True))
+
+    if not final_df_list:
+        final_dynamics_df = pd.DataFrame()
+        log.warning(f"Year {sim_year}: Population is empty at end of dynamics.")
+    else:
+        all_cols = set()
+        for df_item in final_df_list: all_cols.update(df_item.columns)
+        processed_df_list = []
+        for df_item in final_df_list:
+            for col_to_add in all_cols - set(df_item.columns): df_item[col_to_add] = pd.NA
+            processed_df_list.append(df_item[list(all_cols)])
+        final_dynamics_df = pd.concat(processed_df_list, ignore_index=True)
+
+    # --- Final Logging ---
+    final_eoy_active_mask = (final_dynamics_df[EMP_TERM_DATE].isna()) | (final_dynamics_df[EMP_TERM_DATE] > end_date)
+    final_eoy_active_headcount = final_eoy_active_mask.sum()
+    calculated_target_eoy = target_eoy_headcount if 'target_eoy_headcount' in locals() else 'N/A'
+    log.info(
+        f"Year {sim_year}: Combined population. Total records = {len(final_dynamics_df)}. "
+        f"Active EOY = {final_eoy_active_headcount} (Calculated Target EOY for hiring: {calculated_target_eoy})"
+    )
+    total_terminated_this_year_mask = (final_dynamics_df[EMP_TERM_DATE].notna()) & \
+                                      (final_dynamics_df[EMP_TERM_DATE] >= start_date) & \
+                                      (final_dynamics_df[EMP_TERM_DATE] <= end_date)
+    num_total_terminated_this_year = total_terminated_this_year_mask.sum()
+    log.info(f"Year {sim_year}: Total terminations recorded in {sim_year} = {num_total_terminated_this_year} (Exp: {len(terminated_exp_indices)}, NH: {len(terminated_nh_indices)})")
 
     log.info(f"--- Finished Dynamics for Simulation Year {sim_year} ---")
     return final_dynamics_df

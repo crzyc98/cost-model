@@ -16,6 +16,7 @@ import argparse
 import logging
 import pathlib
 import os  # Needed for sys.path modification
+import subprocess
 
 # Add project root to the Python path
 # Assumes the script is in <project_root>/scripts/
@@ -133,6 +134,17 @@ def main():
         )
         logger.info(f"Simulation for scenario '{args.scenario}' completed successfully.")
         logger.info(f"Results saved in a subdirectory under: {output_dir_base}")
+        
+        # Run employment status summary script to provide additional insights
+        logger.info("Running employment status summary script...")
+        try:
+            result = subprocess.run([sys.executable, "scripts/employment_status_summary.py"], 
+                                  capture_output=True, text=True, check=True)
+            logger.info("Employment status summary completed successfully.")
+            logger.debug("Employment status summary output:\n%s", result.stdout)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error running employment status summary: {e}")
+            logger.error(f"Error output:\n{e.stderr}")
 
     except KeyError as e:
         logger.error(f"Scenario '{args.scenario}' not found in configuration: {e}")

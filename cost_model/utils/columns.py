@@ -13,6 +13,7 @@ EMP_DEFERRAL_RATE = "employee_deferral_rate"
 EMP_CONTR = "employee_contribution"
 EMPLOYER_CORE = "employer_core_contribution"
 EMPLOYER_MATCH = "employer_match_contribution"
+EMP_ID = 'employee_id' 
 
 # Flags
 IS_ELIGIBLE = "is_eligible"
