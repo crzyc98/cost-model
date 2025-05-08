@@ -161,25 +161,22 @@ def apply_rules_for_year(
     elig_config = getattr(plan_rules_config, 'eligibility', None)
     if elig_config:
         try:
-            # No need to re-validate with EligibilityRule(**...); elig_config is already the correct model type
-            log.debug(f"Applying eligibility rules with config: {elig_config}") # Log the existing model
-            # Call apply via the imported module, passing the config model directly
+            log.debug(f"Applying eligibility rules with config: {elig_config}")
             df = eligibility.apply(df, elig_config, sim_year_end_date)
+            log.info(f"After eligibility.apply, columns: {list(df.columns)}")
         except Exception as e:
             log.error(f"Error applying Eligibility rules: {e}", exc_info=True)
     else:
         log.warning("No 'eligibility' configuration found in plan_rules. Skipping eligibility rules.")
 
     # 5. Auto-Enrollment (AE)
-    # Safely get AE config (should be AutoEnrollmentRules instance or None)
     ae_config = getattr(plan_rules_config, 'auto_enrollment', None)
     if ae_config:
         try:
-            # No need to re-validate with AutoEnrollmentRule(**...); ae_config is already the model
             if getattr(ae_config, 'enabled', False):
                 log.debug(f"Applying Auto-Enrollment rules with config: {ae_config}")
-                # Call apply via the imported module, passing the config model and dates
                 df = auto_enrollment.apply(df, ae_config, sim_year_start_date, sim_year_end_date)
+                log.info(f"After auto_enrollment.apply, columns: {list(df.columns)}")
             else:
                 log.info(f"Auto-Enrollment disabled in config for {sim_year}.")
         except Exception as e:
@@ -209,33 +206,37 @@ def apply_rules_for_year(
     contrib_config = getattr(plan_rules_config, 'contributions', None)
     match_config = getattr(plan_rules_config, 'employer_match', None)
     nec_config = getattr(plan_rules_config, 'employer_nec', None)
-
-    # Check if all necessary config objects exist and IRS limits are available
+    days_worked_col = None
     if contrib_config and match_config and nec_config and irs_limits_all_years:
         try:
             # No need to re-validate; contrib_config, match_config, nec_config are already models
-            if getattr(contrib_config, 'enabled', False):
-                 log.debug(f"Applying Contribution rules: Contrib={contrib_config}, Match={match_config}, NEC={nec_config}")
-                 # Call contributions.apply, passing the config models and the full IRS limits dict
-                 df = contributions.apply(
-                    df=df,
-                    contrib_rules=contrib_config, # Pass config model directly
-                    match_rules=match_config,   # Pass config model directly
-                    nec_rules=nec_config,     # Pass config model directly
-                    irs_limits=irs_limits_all_years, # Pass the full dictionary
-                    simulation_year=sim_year,
-                    year_start=sim_year_start_date, # Pass date range
-                    year_end=sim_year_end_date
-                 )
-            else:
-                 log.info(f"Contributions disabled in config for {sim_year}.")
-
+            log.debug(f"Applying contributions with config: {contrib_config}")
+            df = contributions.apply(
+                df,
+                contrib_config,
+                match_config,
+                nec_config,
+                irs_limits_all_years,
+                sim_year,
+                sim_year_start_date,
+                sim_year_end_date,
+            )
+            log.info(f"After contributions.apply, columns: {list(df.columns)}")
+            # Save days_worked column if present
+            if 'days_worked' in df.columns:
+                days_worked_col = df['days_worked'].copy()
         except Exception as e:
             log.error(f"Error applying Contributions rules: {e}", exc_info=True)
     elif not irs_limits_all_years:
         log.warning(f"Skipping contribution calculation for {sim_year} due to missing or invalid IRS limits configuration.")
     else:
         log.info(f"Contributions calculation skipped for {sim_year} due to missing contribution/match/nec configurations.")
+
+    # Ensure days_worked is present in the final DataFrame
+    if days_worked_col is not None:
+        df['days_worked'] = days_worked_col
+    elif 'days_worked' not in df.columns:
+        log.warning("days_worked column missing after rule application; check contributions logic.")
 
     # === Final Cleanup ===
     # (Add checks for expected output columns if necessary)

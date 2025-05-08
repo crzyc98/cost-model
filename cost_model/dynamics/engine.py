@@ -166,81 +166,91 @@ def run_dynamics_for_year(
         log=log
     )
 
-    # 2. Terminations (using termination.py helper)
-    log.debug(f"Year {sim_year}: Applying terminations (ML={use_ml})...")
-    if use_ml:
-        log.debug("Predicting ML turnover probabilities...")
-        # Ensure current_df has features needed by the model
-        term_probs = predict_turnover(
-            current_df, projection_model, feature_cols, random_state=rng_ml
-        )
-        term_rate_or_probs = term_probs
-    else:
-         # Rule-based: Apply different rates if configured
-         log.debug(f"Applying rule-based turnover (NH Rate={new_hire_termination_rate:.2%}, Other Rate={termination_rate:.2%})")
-         is_new_hire_this_year = (current_df[EMP_HIRE_DATE].dt.year == sim_year) # Check if hired *this* year (unlikely before hiring step)
-         # More likely: check tenure == 0 or based on a flag
-         is_new_hire_tenure_check = current_df['tenure'] < 1.0 # Example: less than 1 year tenure
-         term_rate_or_probs = np.where(is_new_hire_tenure_check, new_hire_termination_rate, termination_rate)
-
-    current_df = apply_turnover(
-        df=current_df,
+    # --- 2. Experienced Employee Terminations --- #
+    log.info(f"Year {sim_year}: Applying experienced termination rate ({termination_rate:.2%}) to initial {len(current_df)} employees.")
+    # Apply annual_termination_rate ONLY to the population at the start of the year
+    df_after_exp_term = apply_turnover(
+        df=current_df.copy(), # Operate on a copy to avoid modifying original before counting
         hire_col=EMP_HIRE_DATE,
-        probs_or_rate=term_rate_or_probs,
-        start_date=start_date, # Terminations happen *during* sim_year
+        probs_or_rate=termination_rate, # Use the annual rate for existing employees
+        start_date=start_date,
         end_date=end_date,
         rng=rng_term,
-        # sampler=DefaultSalarySampler(), # Pass sampler if needed by apply_turnover
         prev_term_salaries=prev_term_salaries, # Pass salaries from start of year
         log=log
     )
-    # Update prev_term_salaries for next year's *potential* use (if needed)
-    # Note: This captures terms based on start-of-year pop. New hire terms aren't included yet.
-    terminated_in_year_mask = current_df[EMP_TERM_DATE].between(start_date, end_date, inclusive='both')
-    prev_term_salaries = current_df.loc[terminated_in_year_mask, EMP_GROSS_COMP].dropna()
 
+    # Identify who was terminated IN THIS STEP
+    exp_terminated_mask = df_after_exp_term[EMP_TERM_DATE].between(start_date, end_date, inclusive='both')
+    num_exp_terminated = exp_terminated_mask.sum()
+    log.info(f"Year {sim_year}: Experienced Terminations applied = {num_exp_terminated}")
 
-    # 3. Identify Survivors (those not terminated *yet*)
-    survivor_mask = current_df[EMP_TERM_DATE].isna() | (current_df[EMP_TERM_DATE] > end_date)
-    survivor_df = current_df[survivor_mask].copy()
+    # --- 3. Identify Survivors from the initial cohort --- #
+    survivor_mask = ~exp_terminated_mask # Survivors are those NOT terminated in the above step
+    survivor_df = df_after_exp_term[survivor_mask].copy()
     num_survivors = len(survivor_df)
-    log.info(f"Year {sim_year}: {num_survivors} survivors after initial termination step.")
+    log.info(f"Year {sim_year}: Survivors from initial cohort = {num_survivors}")
 
-    # 4. New Hires (using hiring.py helper)
-    # Determine hires needed
+    # Store term dates from this step before adding new hires
+    terminated_this_step_df = df_after_exp_term[exp_terminated_mask].copy()
+
+    # --- 4. New Hires --- #
+    # Determine hires needed based on ACTUAL survivors
     if maintain_headcount:
-        target_count = getattr(year_config, 'initial_headcount_for_target', len(current_df))
+        initial_headcount = len(current_df) # Headcount at the very start of the year
+        target_count = getattr(year_config, 'initial_headcount_for_target', initial_headcount)
         log.debug(f"Year {sim_year}: MaintainHC=True. Target={target_count}, Survivors={num_survivors}")
         needed = max(0, target_count - num_survivors)
-    else:
-        target_count = int(getattr(year_config, 'initial_headcount_for_target', len(current_df)) * (1 + getattr(year_config, 'annual_growth_rate', 0.0)) ** (sim_year - getattr(year_config, 'start_year', sim_year) + 1)) # Cumulative growth
-        net_needed = max(0, target_count - num_survivors)
-        log.debug(f"Year {sim_year}: MaintainHC=False. Target={target_count}, Survivors={num_survivors}, NetNeeded={net_needed}")
-        # Gross up based on *expected* NH term rate? Or handle NH terms separately?
-        # Let's assume generate_new_hires creates the target 'needed' and term logic handles NH rate.
-        needed = net_needed
-        # --- Alternative 'gross up' logic ---
-        # if new_hire_termination_rate < 1 and net_needed > 0:
-        #     needed = math.ceil(net_needed / (1 - new_hire_termination_rate))
-        #     log.debug(f"Year {sim_year}: Grossing up hires needed ({net_needed}) by NH term rate ({new_hire_termination_rate:.1%}) to {needed}")
-        # else: needed = net_needed
+    else:  # maintain_headcount is False
+        year_start_headcount = len(current_df) # Active employees at the start of this sim_year
+        growth_rate = getattr(year_config, 'annual_growth_rate', 0.0)
+        # new_hire_termination_rate is already defined from config (around line 91 in the full file)
+
+        # Target number of active employees at the END of sim_year to achieve the year-over-year growth_rate
+        target_active_eoy = math.ceil(year_start_headcount * (1 + growth_rate))
+        log.info(f"Year {sim_year}: MaintainHC=False. YearStartHC={year_start_headcount}, ConfigGrowthRate={growth_rate:.2%}, TargetActiveEOY={target_active_eoy}")
+
+        # Net hires needed (after NH term) to reach TargetActiveEOY, considering survivors from the initial cohort
+        net_hires_needed_after_nh_term = max(0, target_active_eoy - num_survivors)
+        log.info(f"Year {sim_year}: SurvivorsFromInitialCohort={num_survivors}, NetHiresNeededAfterNHTerm={net_hires_needed_after_nh_term} to reach TargetActiveEOY.")
+
+        # Gross up the net_hires_needed to account for new hire terminations
+        calculated_gross_hires = 0
+        if 0 < new_hire_termination_rate < 1:
+            divisor = (1 - new_hire_termination_rate)
+            calculated_gross_hires = math.ceil(net_hires_needed_after_nh_term / divisor)
+            log.info(f"Year {sim_year}: Adjusted for NHTermRate ({new_hire_termination_rate:.2%}). CalculatedGrossHires={calculated_gross_hires} (from NetHiresNeededAfterNHTerm={net_hires_needed_after_nh_term})")
+        elif new_hire_termination_rate >= 1:
+            if net_hires_needed_after_nh_term > 0:
+                log.warning(f"Year {sim_year}: NHTermRate is {new_hire_termination_rate:.2%} (>=100%) and {net_hires_needed_after_nh_term} net hires are needed. Cannot achieve target. Setting calculated gross hires to 0.")
+                calculated_gross_hires = 0
+            else: # net_hires_needed_after_nh_term is 0
+                calculated_gross_hires = 0
+                log.info(f"Year {sim_year}: NHTermRate is {new_hire_termination_rate:.2%}. NetHiresNeededAfterNHTerm is {net_hires_needed_after_nh_term}. Setting calculated gross hires to 0.")
+        else: # new_hire_termination_rate is 0 or not a valid positive fraction (e.g. negative)
+            calculated_gross_hires = net_hires_needed_after_nh_term
+            log.info(f"Year {sim_year}: No adjustment for NHTermRate (rate is {new_hire_termination_rate:.2%}). CalculatedGrossHires={calculated_gross_hires}")
+        
+        needed = calculated_gross_hires
 
     log.info(f"Year {sim_year}: Hires needed = {needed}")
-    new_hires_df = pd.DataFrame() # Initialize empty
+    new_hires_df = pd.DataFrame()
     if needed > 0:
         log.info(f"Generating {needed} new hires for {sim_year}.")
-        existing_ids = current_df.index.tolist() # Get all IDs currently in DF (active or termed this year)
+        # Use all known IDs (including those terminated this year) to avoid reuse
+        all_known_ids = df_after_exp_term.index.tolist()
         new_hires_df = generate_new_hires(
             num_hires=needed,
             hire_year=sim_year,
-            scenario_config=year_config, # Pass the resolved config
-            existing_ids=existing_ids,
-            rng=rng_nh # Use the NH-specific RNG
+            scenario_config=year_config,
+            existing_ids=all_known_ids,
+            rng=rng_nh
         )
-        log.debug(f"Generated {len(new_hires_df)} new hire records.")
+        log.info(f"Generated {len(new_hires_df)} new hire records.")
 
-        # --- Apply Onboarding Compensation Bump for New Hires (if applicable) ---
+        # --- Apply Onboarding Compensation Bump --- #
         if not new_hires_df.empty:
+            # (Onboarding bump logic remains the same)
             logger.debug(f"Year {sim_year}: Applying onboarding comp bump...")
             # Safely get onboarding bump config from year_config.plan_rules
             plan_rules_obj = getattr(year_config, 'plan_rules', None)
@@ -258,36 +268,37 @@ def run_dynamics_for_year(
                     log=log
                 )
 
-    # 5. Combine Survivors and New Hires
+    # --- 5. Apply New Hire Termination Rate --- #
+    if new_hire_termination_rate > 0 and not new_hires_df.empty:
+        log.debug(f"Applying new hire termination rate ({new_hire_termination_rate:.1%}) to {len(new_hires_df)} new hires...")
+        new_hires_df = apply_turnover(
+            df=new_hires_df,
+            hire_col=EMP_HIRE_DATE,
+            probs_or_rate=new_hire_termination_rate, # Apply specific NH rate
+            start_date=start_date, # Terminations happen *during* sim_year
+            end_date=end_date,
+            rng=rng_term, # Can reuse term RNG
+            # sampler=DefaultSalarySampler(), # If needed
+            prev_term_salaries=prev_term_salaries, # Use original term salaries base
+            log=log
+        )
+        num_nh_termed = new_hires_df[EMP_TERM_DATE].notna().sum()
+        log.info(f"Year {sim_year}: {num_nh_termed} new hires terminated within the year.")
+
+    # 6. Combine Survivors and New Hires
     # This represents the population at year end *before* considering NH terminations
-    combined_df = pd.concat([survivor_df, new_hires_df], ignore_index=True)
-    log.info(f"Year {sim_year}: Combined survivors and new hires. Headcount = {len(combined_df)}")
-
-    # 6. Apply New Hire Termination Rate (Optional Step - depends on desired model flow)
-    # If new_hire_termination_rate should apply *after* hires join within the same year:
-    if getattr(year_config, 'new_hire_termination_rate', 0.0) > 0 and not new_hires_df.empty:
-         log.debug(f"Applying new hire termination rate ({getattr(year_config, 'new_hire_termination_rate', 0.0):.1%}) to {len(new_hires_df)} new hires...")
-         new_hire_mask = combined_df.index.isin(new_hires_df.index) # Identify new hires in combined DF
-         # Create a rate array specific to new hires
-         nh_term_rate_array = np.where(new_hire_mask, getattr(year_config, 'new_hire_termination_rate', 0.0), 0.0) # Only apply rate to new hires
-
-         combined_df = apply_turnover(
-             df=combined_df,
-             hire_col=EMP_HIRE_DATE,
-             probs_or_rate=nh_term_rate_array, # Apply specific NH rate
-             start_date=start_date, # Terminations happen *during* sim_year
-             end_date=end_date,
-             rng=rng_term, # Can reuse term RNG
-             # sampler=DefaultSalarySampler(), # If needed
-             prev_term_salaries=prev_term_salaries, # Use original term salaries base
-             log=log
-         )
-         num_nh_termed = combined_df.loc[new_hire_mask, EMP_TERM_DATE].notna().sum()
-         log.info(f"Year {sim_year}: {num_nh_termed} new hires terminated within the year.")
+    df_for_terms = df_after_exp_term.copy()
+    if 'new_hires_df' in locals() and not new_hires_df.empty:
+        dynamics_output_df = pd.concat([df_for_terms, new_hires_df], ignore_index=True)
+    else:
+        # If no new hires were made (e.g., current_df was empty and no growth, or negative growth led to 0 hires_needed)
+        dynamics_output_df = df_for_terms.copy()
+    
+    log.info(f"Year {sim_year}: Combined survivors and new hires. Headcount = {len(dynamics_output_df)}")
 
     # 7. Final DataFrame for the Year (to be passed to rules engine)
     # This DF now includes survivors, new hires, and reflects all terminations for the year
-    final_dynamics_df = combined_df.copy()
+    final_dynamics_df = dynamics_output_df.copy()
 
     # --- LOGGING: Track Terminations of Recent Hires (Optional Refined Log) ---
     # This can be done here or in reporting module

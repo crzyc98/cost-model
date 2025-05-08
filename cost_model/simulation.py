@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple, Any
+import os
 
 # --- Core Model Components --- #
 # Configuration Loading & Access
@@ -51,7 +52,8 @@ except ImportError as e:
         return pd.DataFrame() # Return empty DataFrame
 
 # Utilities
-# Example: from cost_model.utils.logging import setup_logging
+from cost_model.utils.columns import STATUS_COL, ACTIVE_STATUS, EMP_PLAN_YEAR_COMP # Import constants
+from cost_model.utils.labels import label_employment_status # Import the new function
 
 logger = logging.getLogger(__name__)
 
@@ -196,20 +198,31 @@ def run_simulation(
 
         # --- Step 5c: Store Snapshot & Prepare for Next Year ---
         final_year_df['simulation_year'] = sim_year # Add year column
+
+        # Assign employment_status label using the utility function
+        final_year_df = label_employment_status(final_year_df, sim_year)
+
         yearly_snapshots[sim_year] = final_year_df.copy()
         logger.debug(f"Stored snapshot for year {sim_year}.")
 
         # Prepare for the next iteration: Carry forward only the active population
         # Active status should be determined correctly within apply_rules_for_year or here
-        # Example: Assuming a STATUS_COL exists and is set correctly
-        # active_mask = final_year_df.get(STATUS_COL, pd.Series(True, index=final_year_df.index)) == ACTIVE_STATUS
-        # Or based on termination date
-        plan_end_date = pd.Timestamp(f"{sim_year}-12-31")
-        active_mask = final_year_df['employee_termination_date'].isna() | (final_year_df['employee_termination_date'] > plan_end_date)
-        current_df = final_year_df[active_mask].copy()
-        # Drop the simulation_year column before passing to next iteration if needed
-        # current_df = current_df.drop(columns=['simulation_year'])
-
+        # Filter for snapshot: only include those who earned salary in the sim year
+        # This ensures that people terminated in prior years (and not re-hired)
+        # or those who had zero comp for other reasons are excluded from the snapshot.
+        salary_mask = final_year_df[EMP_PLAN_YEAR_COMP] > 0
+        snapshot_df = final_year_df[salary_mask].copy()
+        # Ensure days_worked is present in the output for debugging
+        if 'days_worked' not in snapshot_df.columns:
+            logger.warning("days_worked column missing from snapshot_df; attempting to merge from final_year_df.")
+            if 'days_worked' in final_year_df.columns:
+                snapshot_df['days_worked'] = final_year_df.loc[snapshot_df.index, 'days_worked']
+            else:
+                logger.error("days_worked column missing from both snapshot_df and final_year_df!")
+        if 'days_worked' in snapshot_df.columns:
+            logger.info(f"days_worked column present in snapshot_df for {sim_year} (min={snapshot_df['days_worked'].min()}, max={snapshot_df['days_worked'].max()})")
+        logger.info(f"End of Year {sim_year}: Active Headcount in snapshot = {len(snapshot_df)} (days_worked included)")
+        current_df = snapshot_df.copy()
         logger.info(f"End of Year {sim_year}: Active Headcount = {len(current_df)}")
         if current_df.empty and year_idx < projection_years - 1:
              logger.warning(f"Population empty at end of year {sim_year}. Stopping simulation early.")
@@ -240,12 +253,35 @@ def run_simulation(
     output_prefix = scenario_output_name # Use scenario name for file prefix
 
     # Save Snapshots
-    if save_detailed_snapshots:
+    if save_detailed_snapshots and yearly_snapshots: # Ensure list is not empty
+        logger.info(f"Saving {len(yearly_snapshots)} yearly snapshots...")
         try:
-            write_snapshots(yearly_snapshots, scenario_output_dir, output_prefix)
-            logger.info("Detailed yearly snapshots saved.")
+            sim_years_to_run = list(yearly_snapshots.keys())
+            for current_sim_year, year_df in zip(sim_years_to_run, yearly_snapshots.values()):
+                processed_df = year_df.copy() # Start with a copy for this year's snapshot
+
+                # Filter to only employees who worked at least 1 day
+                if 'days_worked' in processed_df.columns:
+                    orig_count = len(processed_df)
+                    processed_df = processed_df[processed_df['days_worked'] > 0]
+                    logger.info(
+                        f"Year {current_sim_year}: Filtered snapshot to days_worked > 0. "
+                        f"{len(processed_df)} of {orig_count} rows retained."
+                    )
+                else:
+                    logger.warning(
+                        f"Year {current_sim_year}: 'days_worked' column missing from snapshot_df. No filtering applied."
+                    )
+
+                # Write output snapshot for the current year
+                output_snapshot_path = os.path.join(
+                    scenario_output_dir, f"{output_prefix}_year{current_sim_year}.parquet"
+                )
+                processed_df.to_parquet(output_snapshot_path, index=False)
+                logger.info(f"Wrote snapshot: {output_snapshot_path}")
+            logger.info("All yearly snapshots saved successfully.")
         except Exception as e:
-            logger.exception("Error saving detailed snapshots.")
+            logger.exception("Error saving detailed yearly snapshots.")
 
     # Save Summary Metrics
     if save_summary_metrics and summary_metrics_df is not None:

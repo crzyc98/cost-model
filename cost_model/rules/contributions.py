@@ -18,6 +18,8 @@ from cost_model.utils.columns import (
     EMPLOYER_CORE,
     EMP_CAPPED_COMP,
     EMP_PLAN_YEAR_COMP,
+    EMP_HIRE_DATE,
+    EMP_TERM_DATE,
     to_nullable_bool,
 )
 from cost_model.utils.date_utils import calculate_age
@@ -110,24 +112,75 @@ def apply(
         else:
             df[col] = 0.0
 
-    # --- 3) Proration of compensation for terminations ---
-    total_days = (pd.to_datetime(year_end) - pd.to_datetime(year_start)).days + 1
-    df['days_worked'] = total_days
-    if 'termination_date' in df.columns:
-        df['termination_date'] = pd.to_datetime(df['termination_date'], errors='coerce')
-        mask_term = (
-            df['termination_date'].notna() &
-            df['termination_date'].between(year_start, year_end)
-        )
-        df.loc[mask_term, 'days_worked'] = (
-            (df.loc[mask_term, 'termination_date'] - year_start).dt.days + 1
-        ).clip(lower=1, upper=total_days)
+    # --- 3) Proration of compensation ---
+    total_days_in_year = (pd.to_datetime(year_end) - pd.to_datetime(year_start)).days + 1
 
-    df['proration'] = df['days_worked'] / total_days
-    df[EMP_PLAN_YEAR_COMP] = df[EMP_GROSS_COMP] * df['proration']
-    df[EMP_CAPPED_COMP]    = np.minimum(
-        df[EMP_PLAN_YEAR_COMP], comp_limit * df['proration']
-    )
+    # Ensure date columns are in datetime format
+    hire_date_col = pd.to_datetime(df.get(EMP_HIRE_DATE), errors='coerce')
+    term_date_col = pd.to_datetime(df.get(EMP_TERM_DATE), errors='coerce')
+
+    # Determine the actual start and end of work within the simulation year for each employee
+    # Effective start date for the year is the later of year_start or hire_date
+    effective_start_date_in_year = pd.Series(year_start, index=df.index)
+    if EMP_HIRE_DATE in df.columns and hire_date_col.notna().any():
+        effective_start_date_in_year = np.maximum(effective_start_date_in_year, hire_date_col.fillna(pd.Timestamp.min))
+    
+    # Effective end date for the year is the earlier of year_end or term_date
+    effective_end_date_in_year = pd.Series(year_end, index=df.index)
+    if EMP_TERM_DATE in df.columns and term_date_col.notna().any():
+        effective_end_date_in_year = np.minimum(effective_end_date_in_year, term_date_col.fillna(pd.Timestamp.max))
+
+    # Calculate days_worked based on the effective employment period within the year
+    df['days_worked'] = (effective_end_date_in_year - effective_start_date_in_year).dt.days + 1
+    
+    # If effective_end_date_in_year is before effective_start_date_in_year, it means no overlap, so days_worked is 0.
+    # This also handles cases where term_date is before year_start, or hire_date is after year_end.
+    no_overlap_mask = effective_end_date_in_year < effective_start_date_in_year
+    df.loc[no_overlap_mask, 'days_worked'] = 0
+    
+    # Clip days_worked to be within [0, total_days_in_year]
+    df['days_worked'] = df['days_worked'].clip(lower=0, upper=total_days_in_year)
+
+    # If original termination date was present but unparseable (became NaT),
+    # these individuals should not be considered as having worked correctly.
+    if EMP_TERM_DATE in df.columns: # only if original column exists
+        original_term_dates_series = df[EMP_TERM_DATE]
+        # Check for non-None/non-NaN in original, and NaT in coerced
+        unparseable_term_date_mask = original_term_dates_series.notna() & term_date_col.isna()
+        if unparseable_term_date_mask.any():
+            df.loc[unparseable_term_date_mask, 'days_worked'] = 0
+            logger.warning(
+                f"Found {unparseable_term_date_mask.sum()} records with unparseable original termination dates "
+                f"(e.g., became NaT after coercion). Their 'days_worked' has been set to 0."
+            )
+
+    # If original hire date was present but unparseable (became NaT),
+    # this could also lead to incorrect days_worked (e.g., treating them as starting Jan 1st by default).
+    # Setting days_worked to 0 is a safe default if hire date is essential and unparseable.
+    if EMP_HIRE_DATE in df.columns: # only if original column exists
+        original_hire_dates_series = df[EMP_HIRE_DATE]
+        # Check for non-None/non-NaN in original, and NaT in coerced
+        unparseable_hire_date_mask = original_hire_dates_series.notna() & hire_date_col.isna()
+        if unparseable_hire_date_mask.any():
+            df.loc[unparseable_hire_date_mask, 'days_worked'] = 0
+            logger.warning(
+                f"Found {unparseable_hire_date_mask.sum()} records with unparseable original hire dates "
+                f"(e.g., became NaT after coercion). Their 'days_worked' has been set to 0."
+            )
+
+    df['proration'] = 0.0 # Initialize proration column
+    # Avoid division by zero if total_days_in_year is somehow zero (should not happen)
+    if total_days_in_year > 0:
+        df['proration'] = df['days_worked'] / total_days_in_year
+    
+    # Ensure EMP_GROSS_COMP is numeric before multiplication
+    current_gross_comp = pd.to_numeric(df.get(EMP_GROSS_COMP), errors='coerce').fillna(0.0)
+    df[EMP_PLAN_YEAR_COMP] = current_gross_comp * df['proration']
+    
+    # Calculate capped compensation based on prorated comp_limit
+    # comp_limit is already defined earlier in the function
+    prorated_comp_limit = comp_limit * df['proration']
+    df[EMP_CAPPED_COMP] = np.minimum(df[EMP_PLAN_YEAR_COMP], prorated_comp_limit)
 
     # --- 4) Catch-up eligibility & effective limits ---
     df['current_age'] = calculate_age(df.get('birth_date'), year_end)
@@ -184,5 +237,5 @@ def apply(
             df.loc[over, 'total_contributions'] = overall_limit
 
     # --- Cleanup intermediate columns ---
-    df.drop(columns=['days_worked', 'proration', 'current_age'], inplace=True)
+    df.drop(columns=['proration', 'current_age'], inplace=True)
     return df

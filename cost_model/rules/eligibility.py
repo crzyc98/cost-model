@@ -91,12 +91,16 @@ def apply(df: pd.DataFrame, eligibility_cfg: EligibilityRule, simulation_year_en
     # Create object-dtype Series of Python bools for identity-safe comparisons
     df[IS_ELIGIBLE] = pd.Series([bool(v) for v in mask], index=df.index, dtype=object)
 
-    # Drop intermediate columns
-    df.drop(columns=['current_age', 'tenure_months'], inplace=True)
-
+    # Drop only intermediate columns if present
+    pre_drop_cols = set(df.columns)
+    for col in ['current_age', 'tenure_months']:
+        if col in df.columns:
+            df.drop(columns=[col], inplace=True)
+    post_drop_cols = set(df.columns)
+    logger.debug(f"Eligibility columns before drop: {sorted(pre_drop_cols)}")
+    logger.debug(f"Eligibility columns after drop: {sorted(post_drop_cols)}")
     eligible_count = df[IS_ELIGIBLE].sum()
     logger.info(f"Eligibility determined: {eligible_count} eligible employees.")
-
     return df
 
 def agent_is_eligible(birth_date: pd.Timestamp, hire_date: pd.Timestamp, status: Any, hours_worked: Optional[float], eligibility_config: Dict[str, Any], simulation_year_end_date: pd.Timestamp) -> bool:
