@@ -123,18 +123,19 @@ def main():
     # --- Call Core Simulation Logic ---
     try:
         logger.info(f"Running simulation for scenario: {args.scenario}")
+        from cost_model.simulation import run_simulation
         run_simulation(
             main_config=main_cfg_obj,
             scenario_name=args.scenario,
             input_census_path=input_census_path,
             output_dir_base=output_dir_base,
-            save_detailed_snapshots=(not args.no_snapshots),
-            save_summary_metrics=(not args.no_summary),
-            random_seed=args.seed, # Pass the seed
+            random_seed=args.seed,
+            save_detailed_snapshots=not args.no_snapshots,
+            save_summary_metrics=not args.no_summary,
         )
         logger.info(f"Simulation for scenario '{args.scenario}' completed successfully.")
         logger.info(f"Results saved in a subdirectory under: {output_dir_base}")
-        
+
         # Run employment status summary script to provide additional insights
         logger.info("Running employment status summary script...")
         try:

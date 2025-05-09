@@ -1,0 +1,50 @@
+from datetime import date
+import pandas as pd
+from cost_model.config.plan_rules import EligibilityConfig
+from typing import List
+
+import uuid
+import logging
+from cost_model.plan_rules.enrollment import EVENT_COLS, EVENT_DTYPES, EVT_ELIGIBLE
+
+logger = logging.getLogger(__name__)
+EMP_ID = 'employee_id'
+
+def run(snapshot: pd.DataFrame, as_of: date, cfg: EligibilityConfig) -> List[pd.DataFrame]:
+    """
+    Determine eligibility events for each employee in the snapshot.
+    Returns a list of DataFrames (event records) in canonical event log schema.
+    """
+    rows = []
+    for idx, row in snapshot.iterrows():
+        birth = row.get('employee_birth_date')
+        hire = row.get('employee_hire_date')
+        if birth is None or hire is None:
+            logger.debug(f"Skipping {row.get(EMP_ID, idx)}: missing birth or hire date")
+            continue
+        # Calculate age
+        age = (as_of.year - birth.year) - ((as_of.month, as_of.day) < (birth.month, birth.day))
+        # Calculate service in months
+        service_months = (as_of.year - hire.year) * 12 + (as_of.month - hire.month)
+        logger.debug(
+            f"Eligibility check for '{row.get(EMP_ID, idx)}': "
+            f"birth={birth}, hire={hire}, age={age}, service_months={service_months}"
+        )
+        if age >= cfg.min_age and service_months >= cfg.min_service_months:
+            rows.append({
+                "event_id": str(uuid.uuid4()),
+                "event_time": as_of,
+                "employee_id": row['employee_id'],
+                "event_type": EVT_ELIGIBLE,
+                "value_num": None,
+                "value_json": None,
+                "meta": None
+            })
+        else:
+            logger.debug(f"Not eligible: {row.get(EMP_ID, idx)} (age={age}, service_months={service_months})")
+    if rows:
+        return [pd.DataFrame(rows, columns=EVENT_COLS).astype(EVENT_DTYPES)]
+    else:
+        return []
+
+

@@ -97,7 +97,8 @@ def write_summary_metrics(
         #     metrics_df[col] = metrics_df[col].dt.strftime('%Y-%m-%d')
 
         metrics_df.to_csv(summary_path, index=False, float_format='%.4f') # Control float precision
-        logger.info(f"Wrote summary metrics: {summary_path}")
+        logger.info(f"Wrote summary metrics: {summary_path}\n{metrics_df.head().to_string()}")
+        return summary_path
     except Exception as e:
         logger.exception(f"Failed to write summary metrics file {summary_path}")
         raise DataWriteError(f"Failed to write summary metrics {summary_path}") from e

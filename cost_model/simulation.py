@@ -113,135 +113,70 @@ def run_simulation(
         logger.exception(f"Error extracting key parameters from scenario config for '{scenario_name}'.")
         return
 
-    # 2. Setup RNG for simulation steps (if needed at this level)
-    # Individual engines (dynamics, rules) might manage their own RNGs based on this seed
-    # Or we could create specific RNGs here and pass them down
-    if seed is not None:
-        logger.info(f"Using Master Random Seed: {seed}")
-        # Example: master_rng = np.random.default_rng(seed)
-        #          dynamics_rng, rules_rng = master_rng.spawn(2) # If needed to pass down
-    else:
-        logger.warning("No random seed provided (neither via argument nor config). Results may not be reproducible.")
-        # dynamics_rng, rules_rng = None, None # Or initialize default RNGs
+    # 2. Setup RNG
+    seed = random_seed if random_seed is not None else scenario_cfg.random_seed or 42
+    rng = np.random.default_rng(seed)
+    logger.info(f"Using RNG seed: {seed}")
 
-    # 3. Load Initial Census Data
-    logger.info(f"Loading initial census data from: {input_census_path}")
+    # 3. Load census and bootstrap events/snapshot
     try:
-        current_df = read_census_data(input_census_path)
-        if current_df is None or current_df.empty:
-            logger.error("Initial census data is empty or failed to load.")
-            return # Or raise error
-        # Ensure the required ID column exists after loading/renaming in reader
-        if 'employee_id' not in current_df.columns:
-             logger.error(f"Required column 'employee_id' not found in loaded census data. Check reader logic.")
-             return # Or raise error
-
-        logger.info(f"Loaded initial population: {len(current_df)} records.")
-    except FileNotFoundError:
-        logger.error(f"Input census file not found: {input_census_path}")
-        raise # Re-raise FileNotFoundError
+        if str(input_census_path).endswith('.csv'):
+            census_df = pd.read_csv(input_census_path)
+        else:
+            census_df = pd.read_parquet(input_census_path)
     except Exception as e:
-        logger.exception(f"Error loading initial census data from {input_census_path}.")
+        logger.error(f"Error loading census file: {input_census_path}")
         raise
+    # Bootstrap events (empty for now, or could seed with hires)
+    events = pd.DataFrame()
+    # Build snapshot
+    from cost_model.state import snapshot as snapmod
+    snap = snapmod.build_full(census_df)
+    # Patch in role and tenure_band if present
+    for col in ['role', 'tenure_band']:
+        if col in census_df.columns:
+            snap[col] = snap.index.map(census_df.set_index('employee_id')[col].to_dict()).astype(str)
 
-    # 4. Prepare Output Directory
+    # 4. Load hazard table
+    hazard_path = Path('cost_model/state/hazard_table.csv')
+    hazard = pd.read_csv(hazard_path)
+
+    # 5. Prepare output dir
     scenario_output_dir = output_dir_base / scenario_output_name
-    try:
-        scenario_output_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Output will be saved to: {scenario_output_dir}")
-    except OSError as e:
-        logger.error(f"Could not create output directory {scenario_output_dir}: {e}")
-        raise
+    scenario_output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Output will be saved to: {scenario_output_dir}")
 
-    # 5. Run Yearly Simulation Loop
-    yearly_snapshots: Dict[int, pd.DataFrame] = {}
-    all_results_df: Optional[pd.DataFrame] = None # To store combined results if needed
+    # 6. Run multi-year engine pipeline
+    yearly_snapshots = {}
+    all_events = events.copy()
+    snapshot_df = snap.copy()
+    for i in range(projection_years):
+        year = start_year + i
+        logger.info(f"Simulating year {year}")
+        snapshot_df, all_events = run_one_year(
+            year=year,
+            prev_snapshot=snapshot_df,
+            event_log=all_events,
+            hazard_table=hazard,
+            rng=rng,
+            deterministic_term=True
+        )
+        yearly_snapshots[year] = snapshot_df.copy()
+        # Save snapshot and events for this year
+        year_dir = scenario_output_dir / f"year={year}"
+        year_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_df.to_parquet(year_dir / "snapshot.parquet")
+        all_events.to_parquet(year_dir / "events.parquet")
+        logger.info(f"Saved outputs for year {year}")
 
-    for year_idx in range(projection_years):
-        sim_year = start_year + year_idx
-        logger.info(f"--- Simulating Year {sim_year} (Index {year_idx}) ---")
-
-        # --- Step 5a: Population Dynamics (Phase 1 Logic) ---
-        try:
-            logger.debug(f"Running population dynamics for year {sim_year}...")
-            # Pass the DataFrame from the *end* of the previous year
-            # run_dynamics_for_year should handle comp bumps, terms, hires
-            # It should return the DataFrame representing the state *before* plan rules
-            dynamics_output_df = run_dynamics_for_year(
-                current_df=current_df,
-                year_config=scenario_cfg, # Pass the resolved config
-                sim_year=sim_year,
-                # Pass RNG if needed: rng=dynamics_rng
-            )
-            logger.info(f"Dynamics complete for {sim_year}. Headcount before rules: {len(dynamics_output_df)}")
-
-        except Exception as e:
-            logger.exception(f"Error during population dynamics for year {sim_year}.")
-            raise # Stop simulation on error
-
-        # --- Step 5b: Apply Plan Rules (Phase 2 Logic) ---
-        try:
-            logger.debug(f"Applying plan rules for year {sim_year}...")
-            # Pass the output of the dynamics step
-            # apply_rules_for_year should add eligibility, contributions, etc.
-            final_year_df = apply_rules_for_year( # Use corrected function name
-                population_df=dynamics_output_df, # Pass the df after dynamics
-                year_config=scenario_cfg, # Pass the resolved config
-                sim_year=sim_year,
-                # Pass RNG if needed: rng=rules_rng
-            )
-            logger.info(f"Plan rules applied for {sim_year}.")
-
-        except Exception as e:
-            logger.exception(f"Error applying plan rules for year {sim_year}.")
-            raise # Stop simulation on error
-
-        # --- Step 5c: Store Snapshot & Prepare for Next Year ---
-        final_year_df['simulation_year'] = sim_year # Add year column
-
-        # Assign employment_status label using the utility function
-        final_year_df = label_employment_status(final_year_df, sim_year)
-
-        yearly_snapshots[sim_year] = final_year_df.copy()
-        logger.debug(f"Stored snapshot for year {sim_year}.")
-
-        # Prepare for the next iteration: Carry forward only the active population
-        # Active status should be determined correctly within apply_rules_for_year or here
-        # Filter for snapshot: only include those who earned salary in the sim year
-        # This ensures that people terminated in prior years (and not re-hired)
-        # or those who had zero comp for other reasons are excluded from the snapshot.
-        salary_mask = final_year_df[EMP_PLAN_YEAR_COMP] > 0
-        snapshot_df = final_year_df[salary_mask].copy()
-        # Ensure days_worked is present in the output for debugging
-        if 'days_worked' not in snapshot_df.columns:
-            logger.warning("days_worked column missing from snapshot_df; attempting to merge from final_year_df.")
-            if 'days_worked' in final_year_df.columns:
-                snapshot_df['days_worked'] = final_year_df.loc[snapshot_df.index, 'days_worked']
-            else:
-                logger.error("days_worked column missing from both snapshot_df and final_year_df!")
-        if 'days_worked' in snapshot_df.columns:
-            logger.info(f"days_worked column present in snapshot_df for {sim_year} (min={snapshot_df['days_worked'].min()}, max={snapshot_df['days_worked'].max()})")
-        logger.info(f"End of Year {sim_year}: Active Headcount in snapshot = {len(snapshot_df)} (days_worked included)")
-        current_df = snapshot_df.copy()
-        logger.info(f"End of Year {sim_year}: Active Headcount = {len(current_df)}")
-        if current_df.empty and year_idx < projection_years - 1:
-             logger.warning(f"Population empty at end of year {sim_year}. Stopping simulation early.")
-             break # Stop if population dies out
-
-
-    # 6. Combine Results (Optional, useful for metrics)
-    if yearly_snapshots:
-        all_results_df = pd.concat(yearly_snapshots.values(), ignore_index=True)
-        logger.info(f"Combined results from {len(yearly_snapshots)} snapshots.")
-    else:
-        logger.warning("No yearly snapshots were generated.")
-        return # Exit if no results
+    logger.info(f"Simulation complete for scenario '{scenario_name}'.")
 
     # 7. Calculate Summary Metrics (Optional)
     summary_metrics_df = None
-    if save_summary_metrics and all_results_df is not None:
+    if save_summary_metrics and yearly_snapshots: 
         logger.info("Calculating summary metrics...")
         try:
+            all_results_df = pd.concat(yearly_snapshots.values(), ignore_index=True)
             summary_metrics_df = calculate_summary_metrics(all_results_df, scenario_cfg)
             logger.info("Summary metrics calculated.")
         except Exception as e:
@@ -252,43 +187,42 @@ def run_simulation(
     logger.info("Saving simulation outputs...")
     output_prefix = scenario_output_name # Use scenario name for file prefix
 
-    # Save Snapshots
-    if save_detailed_snapshots and yearly_snapshots: # Ensure list is not empty
-        logger.info(f"Saving {len(yearly_snapshots)} yearly snapshots...")
-        try:
-            sim_years_to_run = list(yearly_snapshots.keys())
-            for current_sim_year, year_df in zip(sim_years_to_run, yearly_snapshots.values()):
-                processed_df = year_df.copy() # Start with a copy for this year's snapshot
-
-                # Filter to only employees who worked at least 1 day
-                if 'days_worked' in processed_df.columns:
-                    orig_count = len(processed_df)
-                    processed_df = processed_df[processed_df['days_worked'] > 0]
-                    logger.info(
-                        f"Year {current_sim_year}: Filtered snapshot to days_worked > 0. "
-                        f"{len(processed_df)} of {orig_count} rows retained."
-                    )
-                else:
-                    logger.warning(
-                        f"Year {current_sim_year}: 'days_worked' column missing from snapshot_df. No filtering applied."
-                    )
-
-                # Write output snapshot for the current year
-                output_snapshot_path = os.path.join(
-                    scenario_output_dir, f"{output_prefix}_year{current_sim_year}.parquet"
-                )
-                processed_df.to_parquet(output_snapshot_path, index=False)
-                logger.info(f"Wrote snapshot: {output_snapshot_path}")
-            logger.info("All yearly snapshots saved successfully.")
-        except Exception as e:
-            logger.exception("Error saving detailed yearly snapshots.")
-
-    # Save Summary Metrics
+    # Save Summary Metrics & Sanity Checks
     if save_summary_metrics and summary_metrics_df is not None:
-         try:
-             write_summary_metrics(summary_metrics_df, scenario_output_dir, output_prefix)
+        try:
+            _validate_summary(summary_metrics_df)
+            from cost_model.data.writers import write_summary_metrics
+            summary_path = write_summary_metrics(summary_metrics_df, scenario_output_dir, output_prefix)
+            logger.info(f"Summary metrics written to {summary_path}")
+        except Exception as e:
+            logger.exception("Sanity check or write of summary metrics failed.")
+            raise
              logger.info("Summary metrics saved.")
          except Exception as e:
              logger.exception("Error saving summary metrics.")
 
     logger.info(f"===== Simulation Finished for Scenario: '{scenario_name}' =====")
+
+
+def _validate_summary(df):
+    """Fast-fail checks for your summary metrics."""
+    import numpy as np
+    required_cols = {
+        'Active Headcount',
+        'Eligible Count',
+        'Participant Count',
+        'Participation Rate',
+        'Total Compensation'
+    }
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise ValueError(f"Summary is missing required columns: {missing}")
+    # No zero headcounts
+    if (df['Active Headcount'] == 0).any():
+        zero_years = df.index[df['Active Headcount'] == 0].tolist()
+        raise ValueError(f"Year(s) with zero headcount: {zero_years}")
+    # Internal consistency: hires - terms + initial == final
+    if 'Hires' in df.columns and 'Terms' in df.columns:
+        diffs = df['Hires'] - df['Terms'] + df['Active Headcount'].iloc[0]
+        if not np.allclose(diffs.cumsum().iloc[-1], df['Active Headcount'].iloc[-1]):
+            raise ValueError("Headcount evolution inconsistency detected.")
