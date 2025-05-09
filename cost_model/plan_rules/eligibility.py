@@ -6,9 +6,9 @@ from typing import List
 import uuid
 import logging
 from cost_model.plan_rules.enrollment import EVENT_COLS, EVENT_DTYPES, EVT_ELIGIBLE
+from cost_model.utils.columns import EMP_ID, EMP_BIRTH_DATE, EMP_HIRE_DATE
 
 logger = logging.getLogger(__name__)
-EMP_ID = "employee_id"
 
 
 def run(
@@ -20,8 +20,8 @@ def run(
     """
     rows = []
     for idx, row in snapshot.iterrows():
-        birth = row.get("employee_birth_date")
-        hire = row.get("employee_hire_date")
+        birth = row.get(EMP_BIRTH_DATE)
+        hire = row.get(EMP_HIRE_DATE)
         if birth is None or hire is None:
             logger.debug(f"Skipping {row.get(EMP_ID, idx)}: missing birth or hire date")
             continue
@@ -35,12 +35,14 @@ def run(
             f"Eligibility check for '{row.get(EMP_ID, idx)}': "
             f"birth={birth}, hire={hire}, age={age}, service_months={service_months}"
         )
+        print(f"[ELIGIBILITY DEBUG] emp={row.get(EMP_ID, idx)}, birth={birth}, hire={hire}, age={age}, service_months={service_months}")
         if age >= cfg.min_age and service_months >= cfg.min_service_months:
+            print(f"[ELIGIBILITY DEBUG] --> ELIGIBLE")
             rows.append(
                 {
                     "event_id": str(uuid.uuid4()),
                     "event_time": as_of,
-                    "employee_id": row["employee_id"],
+                    EMP_ID: row[EMP_ID],
                     "event_type": EVT_ELIGIBLE,
                     "value_num": None,
                     "value_json": None,
@@ -48,6 +50,7 @@ def run(
                 }
             )
         else:
+            print(f"[ELIGIBILITY DEBUG] --> NOT eligible")
             logger.debug(
                 f"Not eligible: {row.get(EMP_ID, idx)} (age={age}, service_months={service_months})"
             )

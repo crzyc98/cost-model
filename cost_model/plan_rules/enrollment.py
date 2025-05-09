@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from cost_model.config.plan_rules import EnrollmentConfig
+from cost_model.utils.columns import EMP_ID
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ EVT_OPT_OUT = "EVT_OPT_OUT"
 EVENT_COLS = [
     "event_id",
     "event_time",
-    "employee_id",
+    EMP_ID,
     "event_type",
     "value_num",
     "value_json",
@@ -30,7 +31,7 @@ EVENT_COLS = [
 EVENT_DTYPES = {
     "event_id": "string",
     "event_time": "datetime64[ns]",
-    "employee_id": "string",
+    EMP_ID: "string",
     "event_type": "string",
     "value_num": "float64",
     "value_json": "string",
@@ -44,38 +45,47 @@ def run(
     as_of: pd.Timestamp,
     cfg: EnrollmentConfig,
 ) -> List[pd.DataFrame]:
+    # 0) Check if config is present and enabled
+    if not cfg or not getattr(cfg, 'enabled', True): # Default to enabled if 'enabled' attr is missing, but cfg must exist
+        logger.debug("[Enrollment] rule skipped, config missing or disabled.")
+        return []
+
     # 1) Ensure employee_id is index (optional)
-    if snapshot.index.name != "employee_id" and "employee_id" in snapshot.columns:
-        snapshot = snapshot.set_index("employee_id", drop=False)
+    if snapshot.index.name != EMP_ID and EMP_ID in snapshot.columns:
+        snapshot = snapshot.set_index(EMP_ID, drop=False)
 
     # 2) Sanity check on events
-    if not {"employee_id", "event_type", "event_time"}.issubset(events.columns):
+    if not {EMP_ID, "event_type", "event_time"}.issubset(events.columns):
         return []
 
     # 3) Who’s eligible?
+    # Convert timestamps to date objects for more robust comparison
+    event_dates = events.event_time.dt.date
+    as_of_date = as_of.date()
+    
     eligible_ids = (
         events.loc[
-            (events.event_type == EVT_ELIGIBLE) & (events.event_time <= as_of),
-            "employee_id",
+            (events.event_type == EVT_ELIGIBLE) & (event_dates <= as_of_date),
+            EMP_ID,
         ]
         .astype(str)
         .unique()
     )
-    logger.debug(f"[Enrollment] eligible_ids  {eligible_ids.tolist()}")
+    logger.debug(f"[Enrollment] eligible_ids   {eligible_ids.tolist()}")
 
     # 4) Who’s already opted out or enrolled?
     blocked_ids = (
         events.loc[
             events.event_type.isin({EVT_OPT_OUT, EVT_ENROLL, EVT_AUTO_ENROLL}),
-            "employee_id",
+            EMP_ID,
         ]
         .astype(str)
         .unique()
     )
-    logger.debug(f"[Enrollment] blocked_ids  {blocked_ids.tolist()}")
+    logger.debug(f"[Enrollment] blocked_ids   {blocked_ids.tolist()}")
 
     candidates = set(eligible_ids) - set(blocked_ids)
-    logger.debug(f"[Enrollment] candidates after exclusion  {candidates}")
+    logger.debug(f"[Enrollment] candidates after exclusion   {candidates}")
     if not candidates:
         return []
 
@@ -90,7 +100,7 @@ def run(
                 {
                     "event_id": str(uuid.uuid4()),
                     "event_time": as_of,
-                    "employee_id": emp,
+                    EMP_ID: emp,
                     "event_type": EVT_AUTO_ENROLL,
                     "value_num": cfg.auto_enrollment.default_rate,
                     "value_json": None,
@@ -119,17 +129,17 @@ def run(
         sample = True
     else:
         rate = 1.0
-        logger.debug(f"[Enrollment] no sampling; enrolling all  rate = {rate:.2%}")
+        logger.debug(f"[Enrollment] no sampling; enrolling all  rate = {rate:.2%}")
         sample = False
 
     if sample:
         flips = rng.random(len(vol_ids))
         logger.debug(f"[Enrollment] flips = {flips}")
         chosen = [emp for emp, f in zip(vol_ids, flips) if f < rate]
-        logger.debug(f"[Enrollment] chosen for voluntary  {chosen}")
+        logger.debug(f"[Enrollment] chosen for voluntary   {chosen}")
     else:
         chosen = vol_ids
-        logger.debug(f"[Enrollment] chosen (no sampling)  {chosen}")
+        logger.debug(f"[Enrollment] chosen (no sampling)   {chosen}")
 
     window = (
         getattr(cfg.auto_enrollment, "window_days", 0)
@@ -140,35 +150,35 @@ def run(
     for emp in chosen:
         # --- DEBUG: show what the engine sees for this employee ---
         subset = events.loc[
-            events.event_type.eq(EVT_ELIGIBLE), ["employee_id", "event_time"]
+            events.event_type.eq(EVT_ELIGIBLE), [EMP_ID, "event_time"]
         ]
         logger.debug(f"[Enrollment] all eligibility rows:\n{subset}")
 
         # Try matching with a direct .eq() on employee_id
-        mask = events.employee_id.eq(emp) & events.event_type.eq(EVT_ELIGIBLE)
-        elig_dates = events.loc[mask, "event_time"].dropna()
-        logger.debug(f"[Enrollment] elig_dates for '{emp}': {elig_dates.tolist()}")
-
-        if elig_dates.empty:
-            logger.debug(f"[Enrollment] skipping {emp}: no matching elig_dates")
+        eligibility_rows = subset.loc[subset[EMP_ID].eq(emp)]
+        logger.debug(f"[Enrollment] emp {emp} eligible rows:\n{eligibility_rows}")
+        if eligibility_rows.empty:
+            logger.warning(f"[Enrollment] emp {emp} has no eligibility event? Skipping.")
+            continue
+        first_eligible_dt = eligibility_rows.event_time.min()
+        effective_dt = first_eligible_dt + timedelta(days=window)
+        logger.debug(f"[Enrollment]   emp {emp} eligible {first_eligible_dt}, effective {effective_dt}")
+        if effective_dt.date() > as_of.date():
+            logger.debug(f"[Enrollment]   emp {emp} not yet enrolled, window not passed")
             continue
 
-        enroll_date = elig_dates.min() + timedelta(days=window)
-        logger.debug(f"[Enrollment] computed enroll_date for {emp}: {enroll_date}")
+        rows.append(
+            {
+                "event_id": str(uuid.uuid4()),
+                "event_time": as_of,
+                EMP_ID: emp,
+                "event_type": EVT_ENROLL,
+                "value_num": cfg.voluntary_default_rate,
+                "value_json": None,
+                "meta": None,
+            }
+        )
 
-        if enroll_date <= as_of:
-            logger.debug(f"[Enrollment] appending enrollment event for {emp}")
-            rows.append(
-                {
-                    "event_id": str(uuid.uuid4()),
-                    "event_time": enroll_date,
-                    "employee_id": emp,
-                    "event_type": EVT_ENROLL,
-                    "value_num": cfg.default_rate,
-                    "value_json": None,
-                    "meta": None,
-                }
-            )
     if rows:
         out.append(pd.DataFrame(rows, columns=EVENT_COLS).astype(EVENT_DTYPES))
 

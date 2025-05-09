@@ -29,36 +29,49 @@ except ImportError:
 
 # Assumed defined in cost_model/utils/columns.py
 try:
-    from ..utils.columns import EMP_ID
+    from ..utils.columns import (
+        EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
+        EMP_GROSS_COMP, EMP_TERM_DATE, EMP_DEFERRAL_RATE
+    )
 except ImportError:
     print(
-        "Warning: Could not import EMP_ID from utils.columns. Defaulting to 'employee_id'."
+        "Warning: Could not import EMP_ID or other constants from utils.columns. Defaulting..."
     )
     EMP_ID = "employee_id"
+    EMP_HIRE_DATE = "hire_date"
+    EMP_BIRTH_DATE = "birth_date"
+    EMP_ROLE = "role"
+    EMP_GROSS_COMP = "current_comp" # or some other default
+    EMP_TERM_DATE = "term_date"
+    EMP_DEFERRAL_RATE = "employee_deferral_rate"
 
 logger = logging.getLogger(__name__)
 
 # --- Snapshot Schema Definition ---
 # Columns and their desired order in the snapshot
 SNAPSHOT_COLS = [
-    # EMP_ID will be the index, so not listed here
-    "hire_date",
-    "birth_date",
-    "role",
-    "current_comp",  # Last known compensation
-    "term_date",  # Changed from termination_date for brevity, NaT if active
-    "active",  # pandas BooleanDtype (True/False/NA)
+    EMP_ID,          # Ensure EMP_ID is part of the columns
+    EMP_HIRE_DATE,
+    EMP_BIRTH_DATE,
+    EMP_ROLE,
+    EMP_GROSS_COMP,  # Was "current_comp", maps to gross compensation
+    EMP_TERM_DATE,   # Was "term_date"
+    "active",        # pandas BooleanDtype (True/False/NA) - snapshot specific
+    EMP_DEFERRAL_RATE, # Was "employee_deferral_rate"
+    "tenure_band",   # Snapshot specific for grouping/logic
 ]
 
 # Corresponding Pandas dtypes using nullable types where appropriate
 SNAPSHOT_DTYPES = {
-    # EMP_ID is the index, dtype checked separately if needed
-    "hire_date": "datetime64[ns]",
-    "birth_date": "datetime64[ns]",
-    "role": pd.StringDtype(),  # Nullable string
-    "current_comp": pd.Float64Dtype(),  # Nullable float
-    "term_date": "datetime64[ns]",  # Stays datetime, NaT represents null
-    "active": pd.BooleanDtype(),  # Nullable boolean
+    EMP_ID: pd.StringDtype(),           # Add dtype for EMP_ID
+    EMP_HIRE_DATE: "datetime64[ns]",
+    EMP_BIRTH_DATE: "datetime64[ns]",
+    EMP_ROLE: pd.StringDtype(),          # Nullable string
+    EMP_GROSS_COMP: pd.Float64Dtype(),  # Nullable float, was "current_comp"
+    EMP_TERM_DATE: "datetime64[ns]",     # Stays datetime, NaT represents null
+    "active": pd.BooleanDtype(),         # Nullable boolean - snapshot specific
+    EMP_DEFERRAL_RATE: pd.Float64Dtype(),# Was "employee_deferral_rate"
+    "tenure_band": pd.StringDtype(),     # Snapshot specific
 }
 
 # --- Helper Function ---

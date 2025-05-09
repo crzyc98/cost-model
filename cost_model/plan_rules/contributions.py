@@ -6,6 +6,8 @@ import uuid
 from typing import List, Dict
 from pydantic import BaseModel  # Keep Pydantic if models used
 
+from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_DEFERRAL_RATE
+
 # Import the actual config models you need
 # Adjust path based on your structure
 try:
@@ -31,12 +33,10 @@ try:
         EVT_ENROLL,
         EVENT_COLS,
         EVENT_PANDAS_DTYPES,
-        EMP_ID,
     )
 except ImportError:
     EVT_CONTRIB = "EVT_CONTRIB"
     EVT_ENROLL = "EVT_ENROLL"
-    EMP_ID = "employee_id"
     EVENT_COLS = [
         "event_id",
         "event_time",
@@ -113,10 +113,14 @@ def run(
         return pd.DataFrame(columns=EVENT_COLS).astype(EVENT_PANDAS_DTYPES)
 
     # 4) Find enrolled employees
+    # Convert timestamps to date objects for more robust comparison
+    event_dates = events.event_time.dt.date
+    as_of_date = as_of.date()
+    
     try:
         enrolled = events.loc[
-            (events.event_type == EVT_ENROLL) & (events.event_time <= as_of),
-            "employee_id",
+            (events.event_type == EVT_ENROLL) & (event_dates <= as_of_date),
+            EMP_ID,
         ].unique()
         if not enrolled.size:
             logger.info("No employees found enrolled by the specified 'as_of' date.")
@@ -130,7 +134,7 @@ def run(
     # 5) Find who already contributed today
     try:
         already_contributed_mask = (events["event_type"] == EVT_CONTRIB) & (
-            events["event_time"] == as_of
+            event_dates == as_of_date
         )
         already_contributed_ids = set(
             events.loc[already_contributed_mask, EMP_ID].astype(str).unique()
@@ -147,7 +151,7 @@ def run(
     candidate_ids = enrolled_ids - already_contributed_ids
     logger.debug(f"Processing contributions for {len(candidate_ids)} candidates.")
 
-    required_snapshot_cols = ["employee_gross_compensation", "employee_deferral_rate"]
+    required_snapshot_cols = [EMP_GROSS_COMP, EMP_DEFERRAL_RATE]
     if not all(col in snapshot.columns for col in required_snapshot_cols):
         logger.error(
             f"Snapshot missing required columns for contribution calc: {required_snapshot_cols}"
@@ -163,8 +167,8 @@ def run(
             continue
 
         try:
-            comp = snapshot.loc[emp_id, "employee_gross_compensation"]
-            rate = snapshot.loc[emp_id, "employee_deferral_rate"]
+            comp = snapshot.loc[emp_id, EMP_GROSS_COMP]
+            rate = snapshot.loc[emp_id, EMP_DEFERRAL_RATE]
             if pd.isna(comp) or pd.isna(rate):
                 continue  # Skip if data missing
             comp = float(comp)

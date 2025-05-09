@@ -7,7 +7,7 @@ loaded from YAML files (e.g., config.yaml).
 import logging
 import numpy as np
 from pydantic import BaseModel, Field, validator, root_validator
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
 
@@ -254,6 +254,10 @@ class PlanRules(BaseModel):
     contributions: Optional[ContributionRules] = Field(
         default_factory=ContributionRules
     )  # Ensure default exists
+    eligibility_events: Optional[Any] = None
+    proactive_decrease: Optional[Any] = None  # Added for proactive decrease rules
+    contribution_increase: Optional[Any] = None # Added for contribution increase rules
+
 
 
 # --- Top-Level Configuration Models ---

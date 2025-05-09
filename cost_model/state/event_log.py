@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 EVT_HIRE = "hire"
 EVT_TERM = "term"
 EVT_COMP = "comp"
+EVT_CONTRIB = "contrib"  # Contribution event type for plan rules/engines
 # Add future retirement event types here, e.g.:
 # EVT_ELIG_ACHIEVED = 'elig_achieved'
 # EVT_ENROLL_AUTO = 'enroll_auto'

@@ -3,6 +3,7 @@
 from typing import List
 import pandas as pd
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP
+from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP
 import json
 
 
@@ -16,14 +17,23 @@ def bump(
     """
     # 1. Filter to active employees only
     active = snapshot[
-        (snapshot["term_date"].isna()) | (snapshot["term_date"] > as_of)
+        (snapshot[EMP_TERM_DATE].isna()) | (snapshot[EMP_TERM_DATE] > as_of)
     ].copy()
-    if "employee_id" not in active.columns:
-        active = active.reset_index()  # ensure employee_id is a column
+    if EMP_ID not in active.columns:
+        # If EMP_ID (index name) is not a column, reset index. 
+        # This happens if snapshot was set_index(EMP_ID) without drop=False and then not reset.
+        # Or if EMP_ID is indeed the index name as expected by snapshot schema.
+        if active.index.name == EMP_ID:
+            active = active.reset_index() # Makes EMP_ID a column
+        else:
+            # This case would be unexpected if snapshot conforms to schema where EMP_ID is index or column
+            raise ValueError(f"{EMP_ID} not found as index or column in active snapshot slice.")
+
     # 2. Merge in comp_raise_pct
+    # Assuming hazard_slice uses EMP_ROLE for 'role'. 'tenure_band' is specific.
     df = active.merge(
-        hazard_slice[["role", "tenure_band", "comp_raise_pct"]],
-        on=["role", "tenure_band"],
+        hazard_slice[[EMP_ROLE, "tenure_band", "comp_raise_pct"]],
+        on=[EMP_ROLE, "tenure_band"],
         how="left",
     )
     # 3. For everyone with comp_raise_pct > 0, build one event row
@@ -31,13 +41,13 @@ def bump(
     for _, row in df.iterrows():
         pct = row["comp_raise_pct"]
         if pct is not None and pct > 0:
-            old_comp = row.get("current_compensation", 0)
+            old_comp = row.get(EMP_GROSS_COMP, 0)
             new_comp = old_comp * (1 + pct)
             meta = {"old_comp": old_comp, "new_comp": new_comp, "pct": pct}
             events.append(
                 {
                     "event_time": as_of,
-                    "employee_id": row["employee_id"],
+                    EMP_ID: row[EMP_ID],
                     "event_type": EVT_COMP,
                     "value_num": pct,
                     "meta": json.dumps(meta),
