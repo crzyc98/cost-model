@@ -56,7 +56,11 @@ def load_all_census_data(data_dir: Path, pattern: str, date_cols: list) -> pd.Da
         df["year"] = year
         df["census_date"] = pd.to_datetime(f"{year}-12-31")
         df_list.append(df)
-    combined = pd.concat(df_list, ignore_index=True)
+    df_list = [df for df in df_list if not df.empty]
+    if df_list:
+        combined = pd.concat(df_list, ignore_index=True)
+    else:
+        combined = pd.DataFrame()
     logging.info("Combined data shape: %s", combined.shape)
     return combined
 
@@ -79,7 +83,11 @@ def add_termination_target(
         sub[target] = (~sub[id_col].isin(ids_next)).astype(int)
         dfs.append(sub)
         logging.info("Year %d → %d: %d terminations", yr, next_yr, sub[target].sum())
-    final = pd.concat(dfs, ignore_index=True)
+    dfs = [df for df in dfs if not df.empty]
+    if dfs:
+        final = pd.concat(dfs, ignore_index=True)
+    else:
+        final = pd.DataFrame()
     logging.info("After target creation: %s", final.shape)
     return final
 

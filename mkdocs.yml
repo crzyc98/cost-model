@@ -1,0 +1,37 @@
+site_name: Cost Model Simulation
+theme:
+  name: material
+nav:
+  - Home: index.md
+  - Overview:
+      - Runbook: runbook.md
+      - Structure: structure.md
+      - Scripts: scripts.md
+  - Cost-Model:
+      - Columns: columns.md
+      - Match Formulas: match_formulas.md
+      - Match Update: match_update.md
+  - API Reference:
+      - Simulation: api/simulation.md
+      - Engines:
+          - Compensation: api/engines/comp.md
+          - Termination: api/engines/term.md
+          - Hiring: api/engines/hire.md
+          - One-Year: api/engines/run_one_year.md
+      - State: api/state.md
+      - Plan Rules: api/plan_rules.md
+      - Reporting: api/reporting.md
+      - Config: api/config.md
+      - Dynamics: api/dynamics.md
+  - Updates: updates.md
+      # Add more modules above as needed
+markdown_extensions:
+  - admonition
+  - codehilite
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy

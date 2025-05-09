@@ -136,8 +136,16 @@ def main():
         all_raw.append(raw_df)
         all_sum.append(sum_df)
 
-    full_raw = pd.concat(all_raw, ignore_index=True)
-    full_sum = pd.concat(all_sum, ignore_index=True)
+    all_raw = [df for df in all_raw if not df.empty]
+    all_sum = [df for df in all_sum if not df.empty]
+    if all_raw:
+        full_raw = pd.concat(all_raw, ignore_index=True)
+    else:
+        full_raw = pd.DataFrame()
+    if all_sum:
+        full_sum = pd.concat(all_sum, ignore_index=True)
+    else:
+        full_sum = pd.DataFrame()
 
     os.makedirs(os.path.dirname(args.outfile), exist_ok=True)
     raw_out = args.outfile.replace(".csv", "_raw.parquet")

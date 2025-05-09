@@ -40,7 +40,11 @@ def load_plan_metrics(plan_outputs_dir):
         if fname.endswith("_metrics.csv"):
             df = pd.read_csv(os.path.join(plan_outputs_dir, fname))
             dfs.append(df)
-    return pd.concat(dfs, ignore_index=True)
+    dfs = [df for df in dfs if not df.empty]
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+    else:
+        return pd.DataFrame()
 
 
 def main(snapshots_dir, plan_outputs_dir):

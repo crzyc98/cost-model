@@ -349,9 +349,11 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFram
         # Append new hires to the main snapshot
         # ignore_index=False keeps the EMP_ID index
         # verify_integrity=True checks for duplicate indices (shouldn't happen if logic is right)
-        current_snapshot = pd.concat(
-            [current_snapshot, new_hire_rows_df], verify_integrity=True, copy=False
-        )
+        dfs = [df for df in [current_snapshot, new_hire_rows_df] if not df.empty]
+        if dfs:
+            current_snapshot = pd.concat(dfs, verify_integrity=True, copy=False)
+        else:
+            current_snapshot = pd.DataFrame()
         logger.debug(f"Appended {len(new_hire_rows_df)} new hire rows to snapshot.")
 
     # --- 2. Process Updates for Existing Employees ---

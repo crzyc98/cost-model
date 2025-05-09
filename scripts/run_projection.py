@@ -45,9 +45,11 @@ def aggregate_scenario_results(
 
 def combine_raw(name: str, data: dict, out_dir: Path):
     """Combine per-year dataframes and save a single CSV."""
-    combined = pd.concat(
-        [df.assign(Year=yr) for yr, df in data.items()], ignore_index=True
-    )
+    dfs = [df.assign(Year=yr) for yr, df in data.items() if not df.empty]
+    if dfs:
+        combined = pd.concat(dfs, ignore_index=True)
+    else:
+        combined = pd.DataFrame()
     path = out_dir / f"{name}_combined_raw.csv"
     combined.to_csv(path, index=False)
     logger.info("Saved combined raw for %s: %s", name, path)
@@ -127,6 +129,7 @@ def main():
             continue
 
     # Combine all summaries
+    summary_list = [df for df in summary_list if not df.empty]
     if summary_list:
         combined = pd.concat(summary_list, ignore_index=True)
         combined_file = out_dir / "all_scenarios_summary.csv"

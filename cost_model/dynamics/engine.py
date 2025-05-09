@@ -472,7 +472,11 @@ def run_dynamics_for_year(
             for col_to_add in all_cols - set(df_item.columns):
                 df_item[col_to_add] = pd.NA
             processed_df_list.append(df_item[list(all_cols)])
-        final_dynamics_df = pd.concat(processed_df_list, ignore_index=True)
+        processed_df_list = [df for df in processed_df_list if not df.empty]
+        if processed_df_list:
+            final_dynamics_df = pd.concat(processed_df_list, ignore_index=True)
+        else:
+            final_dynamics_df = pd.DataFrame()
 
     # --- Final Logging ---
     final_eoy_active_mask = (final_dynamics_df[EMP_TERM_DATE].isna()) | (
