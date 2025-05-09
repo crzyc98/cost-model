@@ -6,26 +6,35 @@ the merging of global parameters and scenario-specific overrides.
 
 import logging
 from copy import deepcopy
-from typing import Dict, Any, Optional, Union # Added Union
+from typing import Dict, Any, Optional, Union  # Added Union
 
 # Import the Pydantic models
 try:
     # Use relative import if accessors.py is inside config package
-    from .models import MainConfig, GlobalParameters, ScenarioDefinition, PlanRules, IRSYearLimits
+    from .models import (
+        MainConfig,
+        GlobalParameters,
+        PlanRules,
+    )
 except ImportError:
     # Fallback if running standalone or structure differs
     try:
-        from cost_model.config.models import MainConfig, GlobalParameters, ScenarioDefinition, PlanRules, IRSYearLimits
+        from cost_model.config.models import (
+            MainConfig,
+            GlobalParameters,
+            PlanRules,
+        )
     except ImportError:
-        print("Warning (accessors.py): Could not import config models. Using Any type hint.")
-        from typing import Any as MainConfig # type: ignore
-        from typing import Any as GlobalParameters # type: ignore
-        from typing import Any as ScenarioDefinition # type: ignore
-        from typing import Any as PlanRules # type: ignore
-        from typing import Any as IRSYearLimits # type: ignore
+        print(
+            "Warning (accessors.py): Could not import config models. Using Any type hint."
+        )
+        from typing import Any as MainConfig  # type: ignore
+        from typing import Any as GlobalParameters  # type: ignore
+        from typing import Any as PlanRules  # type: ignore
 
 
 logger = logging.getLogger(__name__)
+
 
 # --- Helper for Deep Merging Dictionaries ---
 def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -35,16 +44,20 @@ def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
     Simple values in override replace values in base.
     Handles nested PlanRules objects by converting them to dicts first if needed.
     """
-    merged = deepcopy(base) # Start with a copy of the base
+    merged = deepcopy(base)  # Start with a copy of the base
 
     for key, override_value in override.items():
         base_value = merged.get(key)
 
         # Special handling for PlanRules merging if needed
         # This assumes override_value is already a dict if it's overriding plan_rules
-        if key == 'plan_rules' and isinstance(base_value, dict) and isinstance(override_value, dict):
-             # Make sure base_value is a dict (it should be from global_params.dict())
-             merged[key] = _deep_merge_dicts(base_value, override_value)
+        if (
+            key == "plan_rules"
+            and isinstance(base_value, dict)
+            and isinstance(override_value, dict)
+        ):
+            # Make sure base_value is a dict (it should be from global_params.dict())
+            merged[key] = _deep_merge_dicts(base_value, override_value)
         elif isinstance(base_value, dict) and isinstance(override_value, dict):
             # If both values are other dicts, recurse
             merged[key] = _deep_merge_dicts(base_value, override_value)
@@ -55,11 +68,12 @@ def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
 
     return merged
 
+
 # --- Main Accessor Function ---
 
+
 def get_scenario_config(
-    main_config: MainConfig,
-    scenario_name: str
+    main_config: MainConfig, scenario_name: str
 ) -> GlobalParameters:
     """
     Retrieves the configuration for a specific scenario, merging global
@@ -89,10 +103,12 @@ def get_scenario_config(
 
     # 2. Start with a deep copy of the global parameters dictionary
     # Use .dict() to work with dictionaries for merging, exclude defaults that weren't set
-    global_dict = main_config.global_parameters.dict(exclude_unset=False) # Keep defaults
+    global_dict = main_config.global_parameters.dict(
+        exclude_unset=False
+    )  # Keep defaults
 
     # 3. Get the scenario overrides dictionary, excluding None values and 'name'
-    scenario_overrides = scenario_def.dict(exclude={'name'}, exclude_none=True)
+    scenario_overrides = scenario_def.dict(exclude={"name"}, exclude_none=True)
 
     # 4. Perform the deep merge
     merged_config_dict = _deep_merge_dicts(global_dict, scenario_overrides)
@@ -101,17 +117,21 @@ def get_scenario_config(
     try:
         # Pass the merged dictionary to the GlobalParameters model constructor
         resolved_config = GlobalParameters(**merged_config_dict)
-        logger.info(f"Successfully resolved configuration for scenario: '{scenario_name}'")
+        logger.info(
+            f"Successfully resolved configuration for scenario: '{scenario_name}'"
+        )
         return resolved_config
-    except Exception as e: # Catch Pydantic validation errors or others
-        logger.exception(f"Error validating merged configuration for scenario '{scenario_name}': {e}\nMerged Dict: {merged_config_dict}")
-        raise ValueError(f"Merged configuration for scenario '{scenario_name}' failed validation.") from e
+    except Exception as e:  # Catch Pydantic validation errors or others
+        logger.exception(
+            f"Error validating merged configuration for scenario '{scenario_name}': {e}\nMerged Dict: {merged_config_dict}"
+        )
+        raise ValueError(
+            f"Merged configuration for scenario '{scenario_name}' failed validation."
+        ) from e
 
 
 def get_irs_limit_for_year(
-    config: Union[GlobalParameters, PlanRules],
-    year: int,
-    limit_type: str
+    config: Union[GlobalParameters, PlanRules], year: int, limit_type: str
 ) -> Optional[Any]:
     """
     Safely retrieves a specific IRS limit for a given year.
@@ -129,7 +149,7 @@ def get_irs_limit_for_year(
     # Determine where the plan_rules are located
     if isinstance(config, PlanRules):
         plan_rules = config
-    elif hasattr(config, 'plan_rules') and isinstance(config.plan_rules, PlanRules):
+    elif hasattr(config, "plan_rules") and isinstance(config.plan_rules, PlanRules):
         plan_rules = config.plan_rules
     else:
         logger.error("Could not find PlanRules within the provided config object.")
@@ -148,20 +168,28 @@ def get_irs_limit_for_year(
         # Fallback to the latest available year if the specific year is missing
         try:
             latest_year = max(k for k in irs_limits_dict.keys() if isinstance(k, int))
-            logger.warning(f"IRS limits for year {year} not found. Using limits from latest available year: {latest_year}")
+            logger.warning(
+                f"IRS limits for year {year} not found. Using limits from latest available year: {latest_year}"
+            )
             year_limits_model = irs_limits_dict.get(latest_year)
-        except ValueError: # Handle case where dict is empty or has non-int keys
-             logger.error("Could not find any valid year keys in IRS limits dictionary.")
-             return None
+        except ValueError:  # Handle case where dict is empty or has non-int keys
+            logger.error("Could not find any valid year keys in IRS limits dictionary.")
+            return None
 
-        if year_limits_model is None: # Should not happen if dict not empty, but check anyway
-             logger.error(f"Could not find any IRS limits, even for fallback year {latest_year}.")
-             return None
+        if (
+            year_limits_model is None
+        ):  # Should not happen if dict not empty, but check anyway
+            logger.error(
+                f"Could not find any IRS limits, even for fallback year {latest_year}."
+            )
+            return None
 
     # Access the specific limit using getattr from the Pydantic model instance
     limit_value = getattr(year_limits_model, limit_type, None)
 
     if limit_value is None:
-        logger.warning(f"Limit type '{limit_type}' not found for year {year} (or fallback year).")
+        logger.warning(
+            f"Limit type '{limit_type}' not found for year {year} (or fallback year)."
+        )
 
     return limit_value

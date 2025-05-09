@@ -5,13 +5,14 @@ import numpy as np
 from sklearn.utils import check_random_state
 from .ml_utils import predict_turnover
 
+
 def apply_ml_turnover(
     df: pd.DataFrame,
     model,
     feature_cols: list[str],
     year_start: pd.Timestamp,
     year_end: pd.Timestamp,
-    random_state: int | np.random.RandomState | None = None
+    random_state: int | np.random.RandomState | None = None,
 ) -> pd.DataFrame:
     """
     1) Predict P(terminate) with the ML model.
@@ -33,13 +34,7 @@ def apply_ml_turnover(
     # 3) uniformly choose a day between hire_date and year_end (inclusive)
     #    clip negative intervals to zero
     #    days_workable[i] = number of possible days (>= 1)
-    days_workable = (
-        (year_end - df["hire_date"])
-        .dt.days
-        .clip(lower=0)
-        .add(1)
-        .to_numpy()
-    )
+    days_workable = (year_end - df["hire_date"]).dt.days.clip(lower=0).add(1).to_numpy()
 
     # rand_offsets[i] in [0, days_workable[i))
     rand_offsets = (rng.rand(len(df)) * days_workable).astype(int)

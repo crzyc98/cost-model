@@ -5,9 +5,9 @@ from utils.sampling.salary import DefaultSalarySampler
 
 
 def test_default_second_year_bump():
-    df = pd.DataFrame({'tenure': [1, 2], 'gross_compensation': [100, 200]})
+    df = pd.DataFrame({"tenure": [1, 2], "gross_compensation": [100, 200]})
     sampler = DefaultSalarySampler()
-    out = sampler.sample_second_year(df, 'gross_compensation', {}, rate=0.1, seed=42)
+    out = sampler.sample_second_year(df, "gross_compensation", {}, rate=0.1, seed=42)
     assert out.iloc[0] == pytest.approx(110)
     assert out.iloc[1] == pytest.approx(200)
 

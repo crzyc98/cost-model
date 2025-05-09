@@ -6,7 +6,6 @@ import logging
 from typing import Dict, Any
 
 import pandas as pd
-import numpy as np
 
 from cost_model.utils.columns import (
     EMP_DEFERRAL_RATE,
@@ -16,15 +15,13 @@ from cost_model.utils.columns import (
     AI_ENROLLED,
     to_nullable_bool,
 )
-from cost_model.utils.constants import ACTIVE_STATUSES
 from cost_model.rules.validators import AutoIncreaseRule
 
 logger = logging.getLogger(__name__)
 
+
 def apply(
-    df: pd.DataFrame,
-    ai_rules: Dict[str, Any],
-    simulation_year: int
+    df: pd.DataFrame, ai_rules: Dict[str, Any], simulation_year: int
 ) -> pd.DataFrame:
     """
     Apply auto-increase rules to the DataFrame.
@@ -40,12 +37,7 @@ def apply(
     # coerce plain dicts into the validator object
     if isinstance(ai_rules, dict):
         # Fill in defaults if keys are missing
-        ai = {
-            'enabled': False,
-            'increase_rate': 0.0,
-            'cap_rate': 0.0,
-            **ai_rules
-        }
+        ai = {"enabled": False, "increase_rate": 0.0, "cap_rate": 0.0, **ai_rules}
         ai_rules = AutoIncreaseRule(**ai)
 
     if not ai_rules.enabled:
@@ -53,11 +45,11 @@ def apply(
         return df
 
     increase_rate = ai_rules.increase_rate
-    cap_rate      = ai_rules.cap_rate
+    cap_rate = ai_rules.cap_rate
 
     # --- Initialize flags as nullable booleans ---
     df[AI_OPTED_OUT] = to_nullable_bool(df.get(AI_OPTED_OUT, False))
-    df[AI_ENROLLED]  = to_nullable_bool(df.get(AI_ENROLLED, False))
+    df[AI_ENROLLED] = to_nullable_bool(df.get(AI_ENROLLED, False))
 
     # Ensure participation column exists
     df[IS_PARTICIPATING] = to_nullable_bool(df.get(IS_PARTICIPATING, False))
@@ -80,11 +72,7 @@ def apply(
     logger.debug("AI seeding: %d enrolled/%d total", df[AI_ENROLLED].sum(), len(df))
 
     # --- Build bump mask ---
-    bump_mask = (
-        df[AI_ENROLLED]
-        & ~df[AI_OPTED_OUT]
-        & df[EMP_DEFERRAL_RATE].lt(cap_rate)
-    )
+    bump_mask = df[AI_ENROLLED] & ~df[AI_OPTED_OUT] & df[EMP_DEFERRAL_RATE].lt(cap_rate)
     logger.debug("AI candidates: %d / %d", bump_mask.sum(), len(df))
 
     if bump_mask.any():
@@ -99,7 +87,7 @@ def apply(
             "Auto Increase applied to %d employees: +%.2f%% up to cap %.2f%%",
             bump_mask.sum(),
             increase_rate * 100,
-            cap_rate * 100
+            cap_rate * 100,
         )
     else:
         logger.info("No eligible participants for Auto Increase.")

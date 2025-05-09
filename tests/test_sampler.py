@@ -1,8 +1,10 @@
 """
 Tests for ParameterSampler (distribution logic, reproducibility, error handling).
 """
+
 import pytest
 import json
+
 # Update this import if ParameterSampler has moved:
 from cost_model.sampler import ParameterSampler
 
@@ -18,7 +20,7 @@ def test_constant_and_edge_distributions(tmp_path):
         "pkg": {
             "a": {"dist": "constant", "value": 10},
             "b": {"dist": "uniform", "low": 5, "high": 5},
-            "c": {"dist": "normal", "mean": 2, "sd": 0}
+            "c": {"dist": "normal", "mean": 2, "sd": 0},
         }
     }
     path = write_json(tmp_path, data)
@@ -30,8 +32,12 @@ def test_constant_and_edge_distributions(tmp_path):
 
 
 def test_reproducible_with_same_seed(tmp_path):
-    data = {"pkg": {"x": {"dist": "uniform", "low": 0, "high": 1},
-                     "y": {"dist": "normal", "mean": 0, "sd": 1}}}
+    data = {
+        "pkg": {
+            "x": {"dist": "uniform", "low": 0, "high": 1},
+            "y": {"dist": "normal", "mean": 0, "sd": 1},
+        }
+    }
     path = write_json(tmp_path, data)
     s1 = ParameterSampler(path, seed=123).sample("pkg")
     s2 = ParameterSampler(path, seed=123).sample("pkg")

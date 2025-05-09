@@ -2,6 +2,7 @@
 import argparse
 import pandas as pd
 
+
 def main():
     p = argparse.ArgumentParser(
         description="Quick inspection of a plan-rules Parquet output"
@@ -23,7 +24,7 @@ def main():
 
     # 4) missing
     miss = df.isna().sum()
-    miss = miss[ miss > 0 ].sort_values(ascending=False)
+    miss = miss[miss > 0].sort_values(ascending=False)
     if not miss.empty:
         print("Missing values per column:")
         print(miss.to_string())
@@ -35,6 +36,7 @@ def main():
     print(df.head().to_string(index=False))
     print("\nLast 5 rows:")
     print(df.tail().to_string(index=False))
+
 
 if __name__ == "__main__":
     main()

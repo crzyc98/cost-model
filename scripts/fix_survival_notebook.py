@@ -12,7 +12,8 @@ import os
 import nbformat
 from nbformat.v4 import new_code_cell
 
-def patch_notebook(nb_path:str, backup:bool=True):
+
+def patch_notebook(nb_path: str, backup: bool = True):
     if not os.path.exists(nb_path):
         raise FileNotFoundError(f"Notebook not found: {nb_path}")
     # Backup
@@ -24,12 +25,14 @@ def patch_notebook(nb_path:str, backup:bool=True):
     nb = nbformat.read(nb_path, as_version=4)
     cells = []
     # 1) Insert cwd cell
-    cwd_cell = new_code_cell(source=(
-        "import os\n"
-        "from pathlib import Path\n"
-        "# jump to project root (script lives in scripts/)\n"
-        "os.chdir(Path(__file__).parents[1])\n"
-    ))
+    cwd_cell = new_code_cell(
+        source=(
+            "import os\n"
+            "from pathlib import Path\n"
+            "# jump to project root (script lives in scripts/)\n"
+            "os.chdir(Path(__file__).parents[1])\n"
+        )
+    )
     cells.append(cwd_cell)
     # 2) Patch existing cells
     exec_cnt = 1
@@ -45,8 +48,7 @@ def patch_notebook(nb_path:str, backup:bool=True):
                 cell["source"] = csv_pattern.sub(r"\1../data/\2\1", cell["source"])
             else:
                 cell["source"] = [
-                    csv_pattern.sub(r"\1../data/\2\1", line)
-                    for line in cell["source"]
+                    csv_pattern.sub(r"\1../data/\2\1", line) for line in cell["source"]
                 ]
         cells.append(cell)
     nb.cells = cells
@@ -54,15 +56,16 @@ def patch_notebook(nb_path:str, backup:bool=True):
     nbformat.write(nb, nb_path)
     print(f"✓ Patched notebook: {nb_path}")
 
+
 def main():
     p = argparse.ArgumentParser(
         description="Patch paths and execution metadata in a Jupyter notebook."
     )
     p.add_argument("notebook", help="Path to .ipynb file")
-    p.add_argument("--no-backup", action="store_true", 
-                   help="Skip making a .bak backup")
+    p.add_argument("--no-backup", action="store_true", help="Skip making a .bak backup")
     args = p.parse_args()
     patch_notebook(args.notebook, backup=not args.no_backup)
+
 
 if __name__ == "__main__":
     main()

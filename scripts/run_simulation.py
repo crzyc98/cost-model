@@ -15,7 +15,6 @@ import sys
 import argparse
 import logging
 import pathlib
-import os  # Needed for sys.path modification
 import subprocess
 
 # Add project root to the Python path
@@ -27,10 +26,13 @@ sys.path.insert(0, str(project_root))
 try:
     from cost_model.config.loaders import load_yaml_config, ConfigLoadError
     from cost_model.config.models import MainConfig
-    from cost_model.simulation import run_simulation # Assuming the core logic is here
+    # from cost_model.simulation import run_simulation  # Assuming the core logic is here
 except ImportError as e:
     print(f"Error importing cost_model components: {e}", file=sys.stderr)
-    print(f"Ensure the cost_model package is in the Python path: {sys.path}", file=sys.stderr)
+    print(
+        f"Ensure the cost_model package is in the Python path: {sys.path}",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -43,25 +45,29 @@ def main():
     )
 
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
         required=True,
         help="Path to the main YAML configuration file.",
     )
     parser.add_argument(
-        "--scenario", "-s",
+        "--scenario",
+        "-s",
         type=str,
         required=True,
         help="Name of the scenario within the config file to execute.",
     )
     parser.add_argument(
-        "--census", "-d",
+        "--census",
+        "-d",
         type=str,
         required=True,
         help="Path to the initial input census file (CSV or Parquet).",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=str,
         required=True,
         help="Path to the base output directory. A subdirectory named after the scenario will be created here.",
@@ -69,7 +75,7 @@ def main():
     parser.add_argument(
         "--seed",
         type=int,
-        default=None, # Let the simulation logic handle default if None
+        default=None,  # Let the simulation logic handle default if None
         help="Integer for the random seed for reproducibility.",
     )
     parser.add_argument(
@@ -94,7 +100,7 @@ def main():
     log_level = logging.DEBUG if args.debug else logging.INFO
     log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
     logging.basicConfig(level=log_level, format=log_format)
-    logger = logging.getLogger(__name__) # Get logger for this script
+    logger = logging.getLogger(__name__)  # Get logger for this script
 
     logger.info("Starting simulation run...")
     logger.debug("Parsed arguments: %s", args)
@@ -116,7 +122,7 @@ def main():
     except ConfigLoadError as e:
         logger.error(f"Error loading configuration: {e}")
         sys.exit(1)
-    except Exception as e: # Catch Pydantic validation errors and others
+    except Exception as e:  # Catch Pydantic validation errors and others
         logger.error(f"Error validating configuration: {e}", exc_info=args.debug)
         sys.exit(1)
 
@@ -124,6 +130,7 @@ def main():
     try:
         logger.info(f"Running simulation for scenario: {args.scenario}")
         from cost_model.simulation import run_simulation
+
         run_simulation(
             main_config=main_cfg_obj,
             scenario_name=args.scenario,
@@ -133,14 +140,20 @@ def main():
             save_detailed_snapshots=not args.no_snapshots,
             save_summary_metrics=not args.no_summary,
         )
-        logger.info(f"Simulation for scenario '{args.scenario}' completed successfully.")
+        logger.info(
+            f"Simulation for scenario '{args.scenario}' completed successfully."
+        )
         logger.info(f"Results saved in a subdirectory under: {output_dir_base}")
 
         # Run employment status summary script to provide additional insights
         logger.info("Running employment status summary script...")
         try:
-            result = subprocess.run([sys.executable, "scripts/employment_status_summary.py"], 
-                                  capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                [sys.executable, "scripts/employment_status_summary.py"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             logger.info("Employment status summary completed successfully.")
             logger.debug("Employment status summary output:\n%s", result.stdout)
         except subprocess.CalledProcessError as e:

@@ -1,8 +1,10 @@
 """
 Tests for scenario/config YAML loader (file, directory, inheritance, error handling).
 """
+
 import pytest
 import yaml
+
 # Update this import if scenario_loader has moved:
 from loaders.scenario_loader import load
 

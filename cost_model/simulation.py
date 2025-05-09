@@ -11,12 +11,10 @@ import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Any
-import os
+from typing import Optional
 
 # --- Core Model Components --- #
 # Configuration Loading & Access
-from cost_model.config.loaders import load_yaml_config, ConfigLoadError
 from cost_model.config.models import MainConfig, GlobalParameters # Needed for type hints
 from cost_model.config.accessors import get_scenario_config # Import the actual function
 
@@ -51,9 +49,16 @@ except ImportError as e:
         print("Warning: calculate_summary_metrics not implemented yet.")
         return pd.DataFrame() # Return empty DataFrame
 
+# Import run_one_year for simulation loop
+def _import_run_one_year():
+    try:
+        from cost_model.engines.run_one_year import run_one_year
+        return run_one_year
+    except ImportError:
+        raise ImportError("run_one_year could not be imported from cost_model.engines.run_one_year")
+run_one_year = _import_run_one_year()
+
 # Utilities
-from cost_model.utils.columns import STATUS_COL, ACTIVE_STATUS, EMP_PLAN_YEAR_COMP # Import constants
-from cost_model.utils.labels import label_employment_status # Import the new function
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +102,7 @@ def run_simulation(
         if isinstance(e, ValueError):
              logger.exception("Configuration validation failed.")
         return # Stop simulation if config is invalid
-    except Exception as e:
+    except Exception:
         # Catch any other unexpected errors during config resolution
         logger.exception(f"Unexpected error getting scenario config for '{scenario_name}'.")
         return
@@ -109,7 +114,7 @@ def run_simulation(
         # Use provided seed if available, otherwise use seed from config
         seed = random_seed if random_seed is not None else scenario_cfg.random_seed
         scenario_output_name = main_config.scenarios[scenario_name].name or scenario_name # Use defined name or key
-    except Exception as e:
+    except Exception:
         logger.exception(f"Error extracting key parameters from scenario config for '{scenario_name}'.")
         return
 
@@ -124,7 +129,7 @@ def run_simulation(
             census_df = pd.read_csv(input_census_path)
         else:
             census_df = pd.read_parquet(input_census_path)
-    except Exception as e:
+    except Exception:
         logger.error(f"Error loading census file: {input_census_path}")
         raise
     # Bootstrap events (empty for now, or could seed with hires)
@@ -179,7 +184,7 @@ def run_simulation(
             all_results_df = pd.concat(yearly_snapshots.values(), ignore_index=True)
             summary_metrics_df = calculate_summary_metrics(all_results_df, scenario_cfg)
             logger.info("Summary metrics calculated.")
-        except Exception as e:
+        except Exception:
             logger.exception("Error calculating summary metrics.")
             # Continue without metrics if calculation fails
 
@@ -194,12 +199,10 @@ def run_simulation(
             from cost_model.data.writers import write_summary_metrics
             summary_path = write_summary_metrics(summary_metrics_df, scenario_output_dir, output_prefix)
             logger.info(f"Summary metrics written to {summary_path}")
-        except Exception as e:
+            logger.info("Summary metrics saved.")
+        except Exception:
             logger.exception("Sanity check or write of summary metrics failed.")
             raise
-             logger.info("Summary metrics saved.")
-         except Exception as e:
-             logger.exception("Error saving summary metrics.")
 
     logger.info(f"===== Simulation Finished for Scenario: '{scenario_name}' =====")
 

@@ -2,6 +2,7 @@
 import pandas as pd
 import sys
 
+
 def main(path):
     # 1) Load the Parquet
     try:
@@ -23,6 +24,7 @@ def main(path):
     # 4) Print first few rows for inspection
     print("\nFirst 5 rows:")
     print(df.head().to_string(index=False))
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

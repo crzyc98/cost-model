@@ -1,16 +1,19 @@
 # utils/test_data_processing.py
 import pytest
-import os
 import pandas as pd
 from datetime import datetime
 
 from utils.data_processing import _infer_plan_year_end, load_and_clean_census
 
-@pytest.mark.parametrize("fname,expected_year", [
-    ("foo_2025.csv", 2025),
-    ("foo_1970.csv", datetime.now().year - 1),
-    ("foo_bad.csv", datetime.now().year - 1),
-])
+
+@pytest.mark.parametrize(
+    "fname,expected_year",
+    [
+        ("foo_2025.csv", 2025),
+        ("foo_1970.csv", datetime.now().year - 1),
+        ("foo_bad.csv", datetime.now().year - 1),
+    ],
+)
 def test_infer_plan_year_end(fname, expected_year):
     ts = _infer_plan_year_end(fname)
     assert ts == pd.Timestamp(f"{expected_year}-12-31")

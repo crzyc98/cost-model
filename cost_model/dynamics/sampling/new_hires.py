@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 from numpy.random import Generator, default_rng
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence
 
 
 def sample_new_hire_compensation(
@@ -12,7 +12,7 @@ def sample_new_hire_compensation(
     prev_salaries: Sequence[float],
     rng: Optional[Generator] = None,
     *,
-    replace: bool = True
+    replace: bool = True,
 ) -> pd.DataFrame:
     """
     Sample starting compensation for new hires by drawing from historical salaries.
@@ -38,11 +38,7 @@ def sample_new_hire_compensation(
         raise ValueError("prev_salaries must contain at least one historical salary")
 
     # draw samples
-    sampled = rng.choice(
-        prev_salaries_arr,
-        size=len(df),
-        replace=replace
-    )
+    sampled = rng.choice(prev_salaries_arr, size=len(df), replace=replace)
 
     # assign back as a new column
     df[comp_col] = pd.Series(sampled, index=df.index)
