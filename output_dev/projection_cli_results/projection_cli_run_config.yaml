@@ -1,0 +1,129 @@
+global_parameters: !!python/object/apply:types.SimpleNamespace
+  state:
+    annual_compensation_increase_rate: 0.05
+    annual_growth_rate: 0.05
+    annual_termination_rate: 0.15
+    maintain_headcount: false
+    monthly_transition: false
+    new_hire_average_age: 30
+    new_hire_compensation_params: !!python/object/apply:types.SimpleNamespace
+      state:
+        comp_base_salary: 55000
+        comp_increase_per_age_year: 500
+        comp_increase_per_tenure_year: 1000
+        comp_log_mean_factor: 1.0
+        comp_min_salary: 40000
+        comp_spread_sigma: 0.3
+        comp_std: 10000
+    new_hire_start_salary: 55000
+    new_hire_termination_rate: 0.2
+    new_hire_termination_rate_safety_margin: 0.01
+    onboarding: !!python/object/apply:types.SimpleNamespace
+      state:
+        early_tenure_months: 6
+        enabled: true
+        hazard_multiplier: 1.5
+        productivity_curve:
+        - 0.8
+        - 0.85
+        - 0.9
+        - 0.95
+        - 1.0
+        - 1.0
+    projection_years: 5
+    random_seed: 42
+    role_compensation_params: !!python/object/apply:types.SimpleNamespace
+      state:
+        Staff: !!python/object/apply:types.SimpleNamespace
+          state:
+            comp_base_salary: 55000
+            comp_increase_per_age_year: 500
+            comp_increase_per_tenure_year: 1000
+            comp_log_mean_factor: 1.0
+            comp_min_salary: 40000
+            comp_spread_sigma: 0.3
+            comp_std: 10000
+    role_distribution: !!python/object/apply:types.SimpleNamespace
+      state:
+        Staff: 1.0
+    start_year: 2025
+    use_expected_attrition: true
+plan_rules: !!python/object/apply:types.SimpleNamespace
+  state:
+    auto_enrollment: !!python/object/apply:types.SimpleNamespace
+      state:
+        default_rate: 0.0
+        enabled: false
+        increase_high_rate: 0.0
+        increase_to_match_rate: 0.0
+        opt_down_target_rate: 0.0
+        outcome_distribution: !!python/object/apply:types.SimpleNamespace
+          state:
+            prob_increase_high: 0.0
+            prob_increase_to_match: 0.0
+            prob_opt_down: 0.0
+            prob_opt_out: 0.0
+            prob_stay_default: 1.0
+        proactive_enrollment_probability: 0.0
+        proactive_rate_range:
+        - 0.0
+        - 0.0
+        re_enroll_existing: false
+        window_days: 90
+    auto_increase: !!python/object/apply:types.SimpleNamespace
+      state:
+        cap_rate: 0.0
+        enabled: false
+        increase_rate: 0.0
+    behavioral_params: !!python/object/apply:types.SimpleNamespace
+      state:
+        prob_decrease_given_change: 0.3
+        prob_increase_given_change: 0.4
+        prob_stop_given_change: 0.05
+        voluntary_change_probability: 0.1
+        voluntary_decrease_amount: 0.01
+        voluntary_default_deferral: 0.05
+        voluntary_enrollment_rate: 0.2
+        voluntary_increase_amount: 0.01
+        voluntary_window_days: 180
+    contributions: !!python/object/apply:types.SimpleNamespace
+      state:
+        enabled: true
+    eligibility: !!python/object/apply:types.SimpleNamespace
+      state:
+        min_age: 21
+        min_service_months: 0
+    eligibility_events: !!python/object/apply:types.SimpleNamespace
+      state:
+        event_type_map: !!python/object/apply:types.SimpleNamespace []
+        milestone_months: []
+        milestone_years: []
+    employer_match: !!python/object/apply:types.SimpleNamespace
+      state:
+        dollar_cap: 0.0
+        tiers:
+        - !!python/object/apply:types.SimpleNamespace
+          state:
+            cap_deferral_pct: 0.0
+            match_rate: 0.0
+    employer_nec: !!python/object/apply:types.SimpleNamespace
+      state:
+        rate: 0.01
+    irs_limits: !!python/object/apply:types.SimpleNamespace
+      state:
+        '2024': !!python/object/apply:types.SimpleNamespace
+          state:
+            catchup_eligibility_age: 50
+            catchup_limit: 7500
+            compensation_limit: 345000
+            deferral_limit: 23000
+    onboarding_bump: !!python/object/apply:types.SimpleNamespace
+      state:
+        enabled: true
+        method: sample_plus_rate
+        rate: 0.05
+scenarios: !!python/object/apply:types.SimpleNamespace
+  state:
+    baseline: !!python/object/apply:types.SimpleNamespace
+      state:
+        name: TinyDev

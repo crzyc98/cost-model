@@ -9,6 +9,8 @@ global_parameters:
   new_hire_start_salary: 55000
   new_hire_average_age: 30
   annual_growth_rate: 0.05
+  census_template_path: "data/census_template.parquet"
+  deterministic_termination: False
   monthly_transition: false
   maintain_headcount: false
   use_expected_attrition: true
