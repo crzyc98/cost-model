@@ -29,7 +29,7 @@ def run(
         logger.warning("[HIRE.RUN] Hazard slice is empty. Cannot determine simulation year or new hire term rates. Returning no hires.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
     
-    simulation_year = hazard_slice['year'].iloc[0] # Derive simulation_year from hazard_slice
+    simulation_year = hazard_slice['simulation_year'].iloc[0] # Derive simulation_year from hazard_slice
     as_of = pd.Timestamp(f"{simulation_year}-01-01")
     survivors = snapshot[
         (snapshot[EMP_TERM_DATE].isna()) | (snapshot[EMP_TERM_DATE] > as_of)
@@ -89,12 +89,23 @@ def run(
         start + pd.Timedelta(days=int(d))
         for d in rng.integers(0, days, size=hires_to_make)
     ]
-    # Assign starting comp (use mean or fixed value for demo)
-    # Here, just use 50,000 + 10,000*role index for demo
-    base_comp = 50000
-    comp_step = 10000
-    role_to_idx = {r: idx for idx, r in enumerate(roles)} 
-    starting_comps = [base_comp + comp_step * role_to_idx[r] for r in role_choices]
+    # Assign starting comp using config-driven logic
+    plan_rules_config = hazard_slice.iloc[0]['cfg']
+    role_comp_params = plan_rules_config.role_compensation_params
+    global_comp_params = plan_rules_config.new_hire_compensation_params
+    
+    starting_comps = []
+    for r in role_choices:
+        comp = None
+        if role_comp_params and r in role_comp_params:
+            role_cfg = role_comp_params[r]
+            comp = getattr(role_cfg, 'comp_base_salary', None)
+        if comp is None and global_comp_params:
+            comp = getattr(global_comp_params, 'comp_base_salary', None)
+        if comp is None:
+            comp = 50000
+        starting_comps.append(comp)
+
     # 1. Derive year from hazard_slice['simulation_year']
     simulation_year = int(hazard_slice['simulation_year'].iloc[0])
     as_of = pd.Timestamp(f"{simulation_year}-01-01")

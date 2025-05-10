@@ -1,56 +1,70 @@
 # cost_model/engines/comp.py
 
-from typing import List
 import pandas as pd
+import numpy as np
+import json
+from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP
 from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP
-import json
+import logging
 
+logger = logging.getLogger(__name__)
 
 def bump(
-    snapshot: pd.DataFrame, hazard_slice: pd.DataFrame, as_of: pd.Timestamp
+    snapshot: pd.DataFrame,
+    hazard_slice: pd.DataFrame,
+    as_of: pd.Timestamp
 ) -> List[pd.DataFrame]:
     """
-    For each *active* employee in `snapshot`, applies the compensation‐raise percentage
-    from `hazard_slice` based on their role and tenure band, and returns a list containing
-    one DataFrame of 'comp' events with columns EVENT_COLS.
+    Apply the comp_raise_pct from hazard_slice for each active employee,
+    and emit one DataFrame of compensation bump events adhering to EVENT_COLS.
     """
-    # 1. Filter to active employees only
+    # 1) Derive year and filter active
+    year = int(hazard_slice["simulation_year"].iloc[0])
+    as_of = pd.Timestamp(as_of)
     active = snapshot[
-        (snapshot[EMP_TERM_DATE].isna()) | (snapshot[EMP_TERM_DATE] > as_of)
+        snapshot[EMP_TERM_DATE].isna() | (snapshot[EMP_TERM_DATE] > as_of)
     ].copy()
-    if EMP_ID not in active.columns:
-        # If EMP_ID (index name) is not a column, reset index. 
-        # This happens if snapshot was set_index(EMP_ID) without drop=False and then not reset.
-        # Or if EMP_ID is indeed the index name as expected by snapshot schema.
-        if active.index.name == EMP_ID:
-            active = active.reset_index() # Makes EMP_ID a column
-        else:
-            # This case would be unexpected if snapshot conforms to schema where EMP_ID is index or column
-            raise ValueError(f"{EMP_ID} not found as index or column in active snapshot slice.")
 
-    # 2. Merge in comp_raise_pct
-    # Assuming hazard_slice uses EMP_ROLE for 'role'. 'tenure_band' is specific.
+    # 2) Ensure EMP_ID is a column
+    if EMP_ID not in active.columns:
+        if active.index.name == EMP_ID:
+            active = active.reset_index()
+        else:
+            raise ValueError(f"{EMP_ID} not found in active snapshot")
+
+    # 3) Merge in the raise pct
     df = active.merge(
         hazard_slice[[EMP_ROLE, "tenure_band", "comp_raise_pct"]],
         on=[EMP_ROLE, "tenure_band"],
-        how="left",
+        how="left"
+    ).fillna({"comp_raise_pct": 0})
+
+    # 4) Only rows with a positive raise
+    df = df[df["comp_raise_pct"] > 0].copy()
+    if df.empty:
+        return [pd.DataFrame(columns=EVENT_COLS)]
+
+    # 5) Build event columns
+    df.reset_index(drop=True, inplace=True)
+    df["event_id"]    = df.index.map(lambda i: f"evt_comp_{year}_{i:04d}")
+    df["event_type"]  = EVT_COMP
+    df["event_date"]  = as_of
+    df["year"]        = year
+    df["value_num"]   = df["comp_raise_pct"]
+    df["old_comp"]    = df.get(EMP_GROSS_COMP, np.nan)
+    df["new_comp"]    = df["old_comp"] * (1 + df["comp_raise_pct"])
+    df["pct"]         = df["comp_raise_pct"]
+    df["value_json"]  = df.apply(
+        lambda row: json.dumps({
+            "old_comp": row["old_comp"],
+            "new_comp": row["new_comp"],
+            "pct":      row["pct"]
+        }),
+        axis=1
     )
-    # 3. For everyone with comp_raise_pct > 0, build one event row
-    events = []
-    for _, row in df.iterrows():
-        pct = row["comp_raise_pct"]
-        if pct is not None and pct > 0:
-            old_comp = row.get(EMP_GROSS_COMP, 0)
-            new_comp = old_comp * (1 + pct)
-            meta = {"old_comp": old_comp, "new_comp": new_comp, "pct": pct}
-            events.append(
-                {
-                    "event_time": as_of,
-                    EMP_ID: row[EMP_ID],
-                    "event_type": EVT_COMP,
-                    "value_num": pct,
-                    "meta": json.dumps(meta),
-                }
-            )
-    return [pd.DataFrame(events, columns=EVENT_COLS)]
+    df["notes"]       = None  # or fill in a descriptive string
+
+    # 6) Select and return
+    events = df[EVENT_COLS]
+    return [events]

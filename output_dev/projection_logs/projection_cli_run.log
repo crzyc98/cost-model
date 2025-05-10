@@ -6496,3 +6496,229 @@ Traceback (most recent call last):
   File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/engines/term.py", line 86, in run
     losers = df.loc[draw < probs, EMP_ID].tolist()
 ValueError: operands could not be broadcast together with shapes (150,) (750,) 
+2025-05-10 10:11:25,974 [INFO    ] [cost_model.projections.cli.main:63] Starting projection run with CLI arguments: Namespace(config='config/dev_tiny.yaml', census='data/census_preprocessed.parquet', output_dir=None, scenario_name='projection_cli')
+2025-05-10 10:11:25,975 [INFO    ] [cost_model.projections.cli.main:67] Loading configuration from: config/dev_tiny.yaml
+2025-05-10 10:11:25,980 [INFO    ] [cost_model.projections.cli.main:73] Logging level set to: INFO
+2025-05-10 10:11:25,980 [INFO    ] [cost_model.projections.cli.main:83] Output will be saved to: output_dev/projection_cli_results
+2025-05-10 10:11:25,980 [INFO    ] [cost_model.projections.cli.main:88] Creating initial snapshot from census: data/census_preprocessed.parquet for start year: 2025
+2025-05-10 10:11:25,980 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:18] Creating initial snapshot for start year: 2025 from data/census_preprocessed.parquet
+2025-05-10 10:11:26,030 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:28] Loaded census data with 150 records. Columns: ['employee_id', 'employee_role', 'employee_birth_date', 'employee_hire_date', 'employee_termination_date', 'employee_gross_compensation', 'employee_plan_year_compensation', 'employee_capped_compensation', 'employee_deferral_rate', 'employee_contribution', 'employer_core_contribution', 'employer_match_contribution']
+2025-05-10 10:11:26,031 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:38] Setting active status based on termination dates: 100 active out of 150
+2025-05-10 10:11:26,036 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:119] Initial snapshot created with 150 records. Columns: ['employee_id', 'employee_hire_date', 'employee_birth_date', 'employee_role', 'employee_gross_compensation', 'employee_termination_date', 'active', 'employee_deferral_rate', 'tenure_band']
+2025-05-10 10:11:26,037 [INFO    ] [cost_model.projections.cli.main:92] Creating initial event log for start year: 2025
+2025-05-10 10:11:26,037 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:15] Creating initial event log for events up to start of year: 2025
+2025-05-10 10:11:26,038 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:52] Initial event log created with 2 records. Dtypes:
+event_id       string[python]
+event_time     datetime64[ns]
+employee_id    string[python]
+event_type     string[python]
+value_num             Float64
+value_json     string[python]
+meta           string[python]
+dtype: object
+2025-05-10 10:11:26,038 [INFO    ] [cost_model.projections.cli.main:96] Starting projection engine...
+2025-05-10 10:11:26,038 [INFO    ] [cost_model.projections.runner.run_projection_engine:88] Running 5-year projection starting from 2025.
+2025-05-10 10:11:26,038 [INFO    ] [cost_model.projections.runner.run_projection_engine:89] Random seed: 42
+2025-05-10 10:11:26,038 [INFO    ] [cost_model.projections.runner.run_projection_engine:113] Runner: Initial active headcount from snapshot's 'active' column: 100
+2025-05-10 10:11:26,039 [WARNING ] [cost_model.projections.runner.run_projection_engine:119] Initial Snapshot: Mismatch between active count from 'employee_termination_date'.isna() (150) and 'active' column (100). Proceeding with 'active' column as definitive.
+2025-05-10 10:11:26,039 [INFO    ] [cost_model.projections.runner._generate_hazard_table:34] Generating hazard table...
+2025-05-10 10:11:26,040 [INFO    ] [cost_model.projections.runner._generate_hazard_table:48] Using global rates for hazard table: Term Rate=0.15, Growth Rate=0.05, Comp Raise Pct=0.05
+2025-05-10 10:11:26,041 [INFO    ] [cost_model.projections.runner._generate_hazard_table:65] Hazard table constructed for 12 role/tenure combinations across 5 years.
+2025-05-10 10:11:26,041 [INFO    ] [cost_model.projections.runner.run_projection_engine:159] --- Simulating Year 2025 (Index 0) ---
+2025-05-10 10:11:26,041 [INFO    ] [cost_model.engines.run_one_year.run_one_year:69] [RUN_ONE_YEAR YR=2025] Hazard Slice Rates: Term=0.14999999999999997, Growth=0.05000000000000001, CompRaise=0.05000000000000001, NewHireTerm=N/A
+2025-05-10 10:11:26,050 [INFO    ] [cost_model.engines.run_one_year.run_one_year:145] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:11:26,055 [INFO    ] [cost_model.engines.run_one_year.run_one_year:157] [RUN_ONE_YEAR YR=2025] Applying terminations based on configured rates in hazard_slice.
+2025-05-10 10:11:26,057 [INFO    ] [cost_model.engines.run_one_year.run_one_year:162] [RUN_ONE_YEAR YR=2025] Generated 15 termination events for existing employees.
+2025-05-10 10:11:26,058 [INFO    ] [cost_model.engines.run_one_year.run_one_year:171] [RUN_ONE_YEAR YR=2025] Combined 165 comp and existing term events.
+2025-05-10 10:11:26,058 [INFO    ] [cost_model.state.snapshot.update:273] Updating snapshot ((150, 9)) with 165 new events...
+2025-05-10 10:11:26,062 [INFO    ] [cost_model.state.snapshot.update:428] Snapshot update complete. New shape: (150, 11)
+2025-05-10 10:11:26,062 [ERROR   ] [cost_model.projections.cli.main:124] An unexpected error occurred during the projection run: too many values to unpack (expected 2)
+Traceback (most recent call last):
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/cli.py", line 98, in main
+    run_projection_engine(config_ns, initial_snapshot, initial_event_log)
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/runner.py", line 165, in run_projection_engine
+    event_log_for_year, _ = run_one_year(
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/engines/run_one_year.py", line 180, in run_one_year
+    updated_snapshot_for_survivors, _ = snapshot.update(current_snapshot_for_survivors, temp_events_df)
+ValueError: too many values to unpack (expected 2)
+2025-05-10 10:11:58,092 [INFO    ] [cost_model.projections.cli.main:63] Starting projection run with CLI arguments: Namespace(config='config/dev_tiny.yaml', census='data/census_preprocessed.parquet', output_dir=None, scenario_name='projection_cli')
+2025-05-10 10:11:58,092 [INFO    ] [cost_model.projections.cli.main:67] Loading configuration from: config/dev_tiny.yaml
+2025-05-10 10:11:58,097 [INFO    ] [cost_model.projections.cli.main:73] Logging level set to: INFO
+2025-05-10 10:11:58,097 [INFO    ] [cost_model.projections.cli.main:83] Output will be saved to: output_dev/projection_cli_results
+2025-05-10 10:11:58,097 [INFO    ] [cost_model.projections.cli.main:88] Creating initial snapshot from census: data/census_preprocessed.parquet for start year: 2025
+2025-05-10 10:11:58,097 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:18] Creating initial snapshot for start year: 2025 from data/census_preprocessed.parquet
+2025-05-10 10:11:58,120 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:28] Loaded census data with 150 records. Columns: ['employee_id', 'employee_role', 'employee_birth_date', 'employee_hire_date', 'employee_termination_date', 'employee_gross_compensation', 'employee_plan_year_compensation', 'employee_capped_compensation', 'employee_deferral_rate', 'employee_contribution', 'employer_core_contribution', 'employer_match_contribution']
+2025-05-10 10:11:58,121 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:38] Setting active status based on termination dates: 100 active out of 150
+2025-05-10 10:11:58,124 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:119] Initial snapshot created with 150 records. Columns: ['employee_id', 'employee_hire_date', 'employee_birth_date', 'employee_role', 'employee_gross_compensation', 'employee_termination_date', 'active', 'employee_deferral_rate', 'tenure_band']
+2025-05-10 10:11:58,124 [INFO    ] [cost_model.projections.cli.main:92] Creating initial event log for start year: 2025
+2025-05-10 10:11:58,124 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:15] Creating initial event log for events up to start of year: 2025
+2025-05-10 10:11:58,125 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:52] Initial event log created with 2 records. Dtypes:
+event_id       string[python]
+event_time     datetime64[ns]
+employee_id    string[python]
+event_type     string[python]
+value_num             Float64
+value_json     string[python]
+meta           string[python]
+dtype: object
+2025-05-10 10:11:58,125 [INFO    ] [cost_model.projections.cli.main:96] Starting projection engine...
+2025-05-10 10:11:58,125 [INFO    ] [cost_model.projections.runner.run_projection_engine:88] Running 5-year projection starting from 2025.
+2025-05-10 10:11:58,125 [INFO    ] [cost_model.projections.runner.run_projection_engine:89] Random seed: 42
+2025-05-10 10:11:58,125 [INFO    ] [cost_model.projections.runner.run_projection_engine:113] Runner: Initial active headcount from snapshot's 'active' column: 100
+2025-05-10 10:11:58,125 [WARNING ] [cost_model.projections.runner.run_projection_engine:119] Initial Snapshot: Mismatch between active count from 'employee_termination_date'.isna() (150) and 'active' column (100). Proceeding with 'active' column as definitive.
+2025-05-10 10:11:58,126 [INFO    ] [cost_model.projections.runner._generate_hazard_table:34] Generating hazard table...
+2025-05-10 10:11:58,126 [INFO    ] [cost_model.projections.runner._generate_hazard_table:48] Using global rates for hazard table: Term Rate=0.15, Growth Rate=0.05, Comp Raise Pct=0.05
+2025-05-10 10:11:58,126 [INFO    ] [cost_model.projections.runner._generate_hazard_table:65] Hazard table constructed for 12 role/tenure combinations across 5 years.
+2025-05-10 10:11:58,127 [INFO    ] [cost_model.projections.runner.run_projection_engine:159] --- Simulating Year 2025 (Index 0) ---
+2025-05-10 10:11:58,127 [INFO    ] [cost_model.engines.run_one_year.run_one_year:69] [RUN_ONE_YEAR YR=2025] Hazard Slice Rates: Term=0.14999999999999997, Growth=0.05000000000000001, CompRaise=0.05000000000000001, NewHireTerm=N/A
+2025-05-10 10:11:58,135 [INFO    ] [cost_model.engines.run_one_year.run_one_year:145] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:11:58,140 [INFO    ] [cost_model.engines.run_one_year.run_one_year:157] [RUN_ONE_YEAR YR=2025] Applying terminations based on configured rates in hazard_slice.
+2025-05-10 10:11:58,142 [INFO    ] [cost_model.engines.run_one_year.run_one_year:162] [RUN_ONE_YEAR YR=2025] Generated 15 termination events for existing employees.
+2025-05-10 10:11:58,142 [INFO    ] [cost_model.engines.run_one_year.run_one_year:171] [RUN_ONE_YEAR YR=2025] Combined 165 comp and existing term events.
+2025-05-10 10:11:58,142 [INFO    ] [cost_model.state.snapshot.update:273] Updating snapshot ((150, 9)) with 165 new events...
+2025-05-10 10:11:58,145 [INFO    ] [cost_model.state.snapshot.update:428] Snapshot update complete. New shape: (150, 11)
+2025-05-10 10:11:58,145 [INFO    ] [cost_model.engines.run_one_year.run_one_year:185] [RUN_ONE_YEAR YR=2025] After comp and term events (existing employees), n_survivors = 150
+2025-05-10 10:11:58,146 [INFO    ] [cost_model.engines.run_one_year.run_one_year:196] [RUN_ONE_YEAR YR=2025] Starting count: 100, Terminated: -50, Survivors: 150
+2025-05-10 10:11:58,146 [INFO    ] [cost_model.engines.run_one_year.run_one_year:212] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:11:58,146 [INFO    ] [cost_model.engines.run_one_year.run_one_year:228] [RUN_ONE_YEAR YR=2025] Hires needed (net before new hire term adjustment): 0
+2025-05-10 10:11:58,146 [INFO    ] [cost_model.engines.run_one_year.run_one_year:237] [RUN_ONE_YEAR YR=2025] No adjustment for new hire termination rate (Rate: 0.0000, Hires Needed: 0)
+2025-05-10 10:11:58,146 [ERROR   ] [cost_model.projections.cli.main:124] An unexpected error occurred during the projection run: 'year'
+Traceback (most recent call last):
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/.venv/lib/python3.9/site-packages/pandas/core/indexes/base.py", line 3805, in get_loc
+    return self._engine.get_loc(casted_key)
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'year'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/cli.py", line 98, in main
+    run_projection_engine(config_ns, initial_snapshot, initial_event_log)
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/runner.py", line 165, in run_projection_engine
+    event_log_for_year, _ = run_one_year(
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/engines/run_one_year.py", line 241, in run_one_year
+    hire_events_tuple = hire.run(updated_snapshot_for_survivors, hires_needed, hazard_slice, year_specific_rng, census_template_path) # Ensure hire.run uses the (potentially grossed-up) hires_needed
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/engines/hire.py", line 32, in run
+    simulation_year = hazard_slice['year'].iloc[0] # Derive simulation_year from hazard_slice
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/.venv/lib/python3.9/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/.venv/lib/python3.9/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'year'
+2025-05-10 10:12:20,542 [INFO    ] [cost_model.projections.cli.main:63] Starting projection run with CLI arguments: Namespace(config='config/dev_tiny.yaml', census='data/census_preprocessed.parquet', output_dir=None, scenario_name='projection_cli')
+2025-05-10 10:12:20,543 [INFO    ] [cost_model.projections.cli.main:67] Loading configuration from: config/dev_tiny.yaml
+2025-05-10 10:12:20,548 [INFO    ] [cost_model.projections.cli.main:73] Logging level set to: INFO
+2025-05-10 10:12:20,548 [INFO    ] [cost_model.projections.cli.main:83] Output will be saved to: output_dev/projection_cli_results
+2025-05-10 10:12:20,548 [INFO    ] [cost_model.projections.cli.main:88] Creating initial snapshot from census: data/census_preprocessed.parquet for start year: 2025
+2025-05-10 10:12:20,548 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:18] Creating initial snapshot for start year: 2025 from data/census_preprocessed.parquet
+2025-05-10 10:12:20,570 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:28] Loaded census data with 150 records. Columns: ['employee_id', 'employee_role', 'employee_birth_date', 'employee_hire_date', 'employee_termination_date', 'employee_gross_compensation', 'employee_plan_year_compensation', 'employee_capped_compensation', 'employee_deferral_rate', 'employee_contribution', 'employer_core_contribution', 'employer_match_contribution']
+2025-05-10 10:12:20,570 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:38] Setting active status based on termination dates: 100 active out of 150
+2025-05-10 10:12:20,573 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:119] Initial snapshot created with 150 records. Columns: ['employee_id', 'employee_hire_date', 'employee_birth_date', 'employee_role', 'employee_gross_compensation', 'employee_termination_date', 'active', 'employee_deferral_rate', 'tenure_band']
+2025-05-10 10:12:20,573 [INFO    ] [cost_model.projections.cli.main:92] Creating initial event log for start year: 2025
+2025-05-10 10:12:20,573 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:15] Creating initial event log for events up to start of year: 2025
+2025-05-10 10:12:20,574 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:52] Initial event log created with 2 records. Dtypes:
+event_id       string[python]
+event_time     datetime64[ns]
+employee_id    string[python]
+event_type     string[python]
+value_num             Float64
+value_json     string[python]
+meta           string[python]
+dtype: object
+2025-05-10 10:12:20,574 [INFO    ] [cost_model.projections.cli.main:96] Starting projection engine...
+2025-05-10 10:12:20,574 [INFO    ] [cost_model.projections.runner.run_projection_engine:88] Running 5-year projection starting from 2025.
+2025-05-10 10:12:20,574 [INFO    ] [cost_model.projections.runner.run_projection_engine:89] Random seed: 42
+2025-05-10 10:12:20,574 [INFO    ] [cost_model.projections.runner.run_projection_engine:113] Runner: Initial active headcount from snapshot's 'active' column: 100
+2025-05-10 10:12:20,574 [WARNING ] [cost_model.projections.runner.run_projection_engine:119] Initial Snapshot: Mismatch between active count from 'employee_termination_date'.isna() (150) and 'active' column (100). Proceeding with 'active' column as definitive.
+2025-05-10 10:12:20,575 [INFO    ] [cost_model.projections.runner._generate_hazard_table:34] Generating hazard table...
+2025-05-10 10:12:20,575 [INFO    ] [cost_model.projections.runner._generate_hazard_table:48] Using global rates for hazard table: Term Rate=0.15, Growth Rate=0.05, Comp Raise Pct=0.05
+2025-05-10 10:12:20,575 [INFO    ] [cost_model.projections.runner._generate_hazard_table:65] Hazard table constructed for 12 role/tenure combinations across 5 years.
+2025-05-10 10:12:20,576 [INFO    ] [cost_model.projections.runner.run_projection_engine:159] --- Simulating Year 2025 (Index 0) ---
+2025-05-10 10:12:20,576 [INFO    ] [cost_model.engines.run_one_year.run_one_year:69] [RUN_ONE_YEAR YR=2025] Hazard Slice Rates: Term=0.14999999999999997, Growth=0.05000000000000001, CompRaise=0.05000000000000001, NewHireTerm=N/A
+2025-05-10 10:12:20,585 [INFO    ] [cost_model.engines.run_one_year.run_one_year:145] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:12:20,590 [INFO    ] [cost_model.engines.run_one_year.run_one_year:157] [RUN_ONE_YEAR YR=2025] Applying terminations based on configured rates in hazard_slice.
+2025-05-10 10:12:20,591 [INFO    ] [cost_model.engines.run_one_year.run_one_year:162] [RUN_ONE_YEAR YR=2025] Generated 15 termination events for existing employees.
+2025-05-10 10:12:20,592 [INFO    ] [cost_model.engines.run_one_year.run_one_year:171] [RUN_ONE_YEAR YR=2025] Combined 165 comp and existing term events.
+2025-05-10 10:12:20,592 [INFO    ] [cost_model.state.snapshot.update:273] Updating snapshot ((150, 9)) with 165 new events...
+2025-05-10 10:12:20,595 [INFO    ] [cost_model.state.snapshot.update:428] Snapshot update complete. New shape: (150, 11)
+2025-05-10 10:12:20,596 [INFO    ] [cost_model.engines.run_one_year.run_one_year:185] [RUN_ONE_YEAR YR=2025] After comp and term events (existing employees), n_survivors = 150
+2025-05-10 10:12:20,596 [INFO    ] [cost_model.engines.run_one_year.run_one_year:196] [RUN_ONE_YEAR YR=2025] Starting count: 100, Terminated: -50, Survivors: 150
+2025-05-10 10:12:20,596 [INFO    ] [cost_model.engines.run_one_year.run_one_year:212] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:12:20,596 [INFO    ] [cost_model.engines.run_one_year.run_one_year:228] [RUN_ONE_YEAR YR=2025] Hires needed (net before new hire term adjustment): 0
+2025-05-10 10:12:20,596 [INFO    ] [cost_model.engines.run_one_year.run_one_year:237] [RUN_ONE_YEAR YR=2025] No adjustment for new hire termination rate (Rate: 0.0000, Hires Needed: 0)
+2025-05-10 10:12:20,596 [INFO    ] [cost_model.engines.hire.run:39] [HIRE.RUN YR=2025] Initial survivors (curr): 150, Target EOY: 0, Needed before gross-up: 0
+2025-05-10 10:12:20,597 [INFO    ] [cost_model.engines.hire.run:42] [HIRE.RUN YR=2025] No hires needed as target is met or exceeded by current survivors.
+2025-05-10 10:12:20,597 [INFO    ] [cost_model.engines.run_one_year.run_one_year:257] [RUN_ONE_YEAR YR=2025] Generated 0 hire events (aimed for 0).
+2025-05-10 10:12:20,597 [INFO    ] [cost_model.engines.run_one_year.run_one_year:269] [RUN_ONE_YEAR YR=2025] Combined 165 events before new hire terminations.
+2025-05-10 10:12:20,597 [INFO    ] [cost_model.state.snapshot.update:273] Updating snapshot ((150, 11)) with 165 new events...
+2025-05-10 10:12:20,601 [INFO    ] [cost_model.state.snapshot.update:428] Snapshot update complete. New shape: (150, 11)
+2025-05-10 10:12:20,601 [INFO    ] [cost_model.engines.run_one_year.run_one_year:276] [RUN_ONE_YEAR YR=2025] Snapshot updated with hires, active before NH term: 91
+2025-05-10 10:12:20,601 [ERROR   ] [cost_model.projections.cli.main:124] An unexpected error occurred during the projection run: module 'cost_model.engines.term' has no attribute 'run_new_hires'
+Traceback (most recent call last):
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/cli.py", line 98, in main
+    run_projection_engine(config_ns, initial_snapshot, initial_event_log)
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/runner.py", line 165, in run_projection_engine
+    event_log_for_year, _ = run_one_year(
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/engines/run_one_year.py", line 280, in run_one_year
+    new_hire_term_events_list = term.run_new_hires(snapshot_with_hires, hazard_slice, year_specific_rng, year, deterministic_term)
+AttributeError: module 'cost_model.engines.term' has no attribute 'run_new_hires'
+2025-05-10 10:13:00,589 [INFO    ] [cost_model.projections.cli.main:63] Starting projection run with CLI arguments: Namespace(config='config/dev_tiny.yaml', census='data/census_preprocessed.parquet', output_dir=None, scenario_name='projection_cli')
+2025-05-10 10:13:00,589 [INFO    ] [cost_model.projections.cli.main:67] Loading configuration from: config/dev_tiny.yaml
+2025-05-10 10:13:00,594 [INFO    ] [cost_model.projections.cli.main:73] Logging level set to: INFO
+2025-05-10 10:13:00,594 [INFO    ] [cost_model.projections.cli.main:83] Output will be saved to: output_dev/projection_cli_results
+2025-05-10 10:13:00,594 [INFO    ] [cost_model.projections.cli.main:88] Creating initial snapshot from census: data/census_preprocessed.parquet for start year: 2025
+2025-05-10 10:13:00,594 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:18] Creating initial snapshot for start year: 2025 from data/census_preprocessed.parquet
+2025-05-10 10:13:00,617 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:28] Loaded census data with 150 records. Columns: ['employee_id', 'employee_role', 'employee_birth_date', 'employee_hire_date', 'employee_termination_date', 'employee_gross_compensation', 'employee_plan_year_compensation', 'employee_capped_compensation', 'employee_deferral_rate', 'employee_contribution', 'employer_core_contribution', 'employer_match_contribution']
+2025-05-10 10:13:00,617 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:38] Setting active status based on termination dates: 100 active out of 150
+2025-05-10 10:13:00,620 [INFO    ] [cost_model.projections.snapshot.create_initial_snapshot:119] Initial snapshot created with 150 records. Columns: ['employee_id', 'employee_hire_date', 'employee_birth_date', 'employee_role', 'employee_gross_compensation', 'employee_termination_date', 'active', 'employee_deferral_rate', 'tenure_band']
+2025-05-10 10:13:00,620 [INFO    ] [cost_model.projections.cli.main:92] Creating initial event log for start year: 2025
+2025-05-10 10:13:00,620 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:15] Creating initial event log for events up to start of year: 2025
+2025-05-10 10:13:00,621 [INFO    ] [cost_model.projections.event_log.create_initial_event_log:52] Initial event log created with 2 records. Dtypes:
+event_id       string[python]
+event_time     datetime64[ns]
+employee_id    string[python]
+event_type     string[python]
+value_num             Float64
+value_json     string[python]
+meta           string[python]
+dtype: object
+2025-05-10 10:13:00,621 [INFO    ] [cost_model.projections.cli.main:96] Starting projection engine...
+2025-05-10 10:13:00,621 [INFO    ] [cost_model.projections.runner.run_projection_engine:88] Running 5-year projection starting from 2025.
+2025-05-10 10:13:00,621 [INFO    ] [cost_model.projections.runner.run_projection_engine:89] Random seed: 42
+2025-05-10 10:13:00,622 [INFO    ] [cost_model.projections.runner.run_projection_engine:113] Runner: Initial active headcount from snapshot's 'active' column: 100
+2025-05-10 10:13:00,622 [WARNING ] [cost_model.projections.runner.run_projection_engine:119] Initial Snapshot: Mismatch between active count from 'employee_termination_date'.isna() (150) and 'active' column (100). Proceeding with 'active' column as definitive.
+2025-05-10 10:13:00,622 [INFO    ] [cost_model.projections.runner._generate_hazard_table:34] Generating hazard table...
+2025-05-10 10:13:00,623 [INFO    ] [cost_model.projections.runner._generate_hazard_table:48] Using global rates for hazard table: Term Rate=0.15, Growth Rate=0.05, Comp Raise Pct=0.05
+2025-05-10 10:13:00,623 [INFO    ] [cost_model.projections.runner._generate_hazard_table:65] Hazard table constructed for 12 role/tenure combinations across 5 years.
+2025-05-10 10:13:00,624 [INFO    ] [cost_model.projections.runner.run_projection_engine:159] --- Simulating Year 2025 (Index 0) ---
+2025-05-10 10:13:00,624 [INFO    ] [cost_model.engines.run_one_year.run_one_year:69] [RUN_ONE_YEAR YR=2025] Hazard Slice Rates: Term=0.14999999999999997, Growth=0.05000000000000001, CompRaise=0.05000000000000001, NewHireTerm=N/A
+2025-05-10 10:13:00,633 [INFO    ] [cost_model.engines.run_one_year.run_one_year:145] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:13:00,638 [INFO    ] [cost_model.engines.run_one_year.run_one_year:157] [RUN_ONE_YEAR YR=2025] Applying terminations based on configured rates in hazard_slice.
+2025-05-10 10:13:00,639 [INFO    ] [cost_model.engines.run_one_year.run_one_year:162] [RUN_ONE_YEAR YR=2025] Generated 15 termination events for existing employees.
+2025-05-10 10:13:00,640 [INFO    ] [cost_model.engines.run_one_year.run_one_year:171] [RUN_ONE_YEAR YR=2025] Combined 165 comp and existing term events.
+2025-05-10 10:13:00,640 [INFO    ] [cost_model.state.snapshot.update:273] Updating snapshot ((150, 9)) with 165 new events...
+2025-05-10 10:13:00,643 [INFO    ] [cost_model.state.snapshot.update:428] Snapshot update complete. New shape: (150, 11)
+2025-05-10 10:13:00,643 [INFO    ] [cost_model.engines.run_one_year.run_one_year:185] [RUN_ONE_YEAR YR=2025] After comp and term events (existing employees), n_survivors = 150
+2025-05-10 10:13:00,644 [INFO    ] [cost_model.engines.run_one_year.run_one_year:196] [RUN_ONE_YEAR YR=2025] Starting count: 100, Terminated: -50, Survivors: 150
+2025-05-10 10:13:00,644 [INFO    ] [cost_model.engines.run_one_year.run_one_year:212] [RUN_ONE_YEAR YR=2025] Using 'active' column for headcount: 100 active employees
+2025-05-10 10:13:00,644 [INFO    ] [cost_model.engines.run_one_year.run_one_year:228] [RUN_ONE_YEAR YR=2025] Hires needed (net before new hire term adjustment): 0
+2025-05-10 10:13:00,644 [INFO    ] [cost_model.engines.run_one_year.run_one_year:237] [RUN_ONE_YEAR YR=2025] No adjustment for new hire termination rate (Rate: 0.0000, Hires Needed: 0)
+2025-05-10 10:13:00,644 [INFO    ] [cost_model.engines.hire.run:39] [HIRE.RUN YR=2025] Initial survivors (curr): 150, Target EOY: 0, Needed before gross-up: 0
+2025-05-10 10:13:00,644 [INFO    ] [cost_model.engines.hire.run:42] [HIRE.RUN YR=2025] No hires needed as target is met or exceeded by current survivors.
+2025-05-10 10:13:00,645 [INFO    ] [cost_model.engines.run_one_year.run_one_year:257] [RUN_ONE_YEAR YR=2025] Generated 0 hire events (aimed for 0).
+2025-05-10 10:13:00,645 [INFO    ] [cost_model.engines.run_one_year.run_one_year:269] [RUN_ONE_YEAR YR=2025] Combined 165 events before new hire terminations.
+2025-05-10 10:13:00,645 [INFO    ] [cost_model.state.snapshot.update:273] Updating snapshot ((150, 11)) with 165 new events...
+2025-05-10 10:13:00,648 [INFO    ] [cost_model.state.snapshot.update:428] Snapshot update complete. New shape: (150, 11)
+2025-05-10 10:13:00,648 [INFO    ] [cost_model.engines.run_one_year.run_one_year:276] [RUN_ONE_YEAR YR=2025] Snapshot updated with hires, active before NH term: 91
+2025-05-10 10:13:00,648 [ERROR   ] [cost_model.projections.cli.main:124] An unexpected error occurred during the projection run: module 'cost_model.engines.term' has no attribute 'run_new_hires'
+Traceback (most recent call last):
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/cli.py", line 98, in main
+    run_projection_engine(config_ns, initial_snapshot, initial_event_log)
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/projections/runner.py", line 165, in run_projection_engine
+    event_log_for_year, _ = run_one_year(
+  File "/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/cost_model/engines/run_one_year.py", line 280, in run_one_year
+    new_hire_term_events_list = term.run_new_hires(snapshot_with_hires, hazard_slice, year_specific_rng, year, deterministic_term)
+AttributeError: module 'cost_model.engines.term' has no attribute 'run_new_hires'

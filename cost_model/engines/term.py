@@ -75,3 +75,54 @@ def run(
     } for idx, (emp, dt) in enumerate(zip(losers, dates))]
 
     return [pd.DataFrame(events, columns=EVENT_COLS)]
+
+def run_new_hires(
+    snapshot: pd.DataFrame,
+    hazard_slice: pd.DataFrame,
+    rng: np.random.Generator,
+    year: int,
+    deterministic: bool
+) -> List[pd.DataFrame]:
+    """
+    Terminate only those employees whose hire date is in `year`,
+    using the `new_hire_termination_rate` from hazard_slice.
+    """
+    as_of = pd.Timestamp(f"{year}-01-01")
+    # Identify new hires in this year
+    from cost_model.utils.columns import EMP_HIRE_DATE
+    df_nh = snapshot[
+        (snapshot[EMP_HIRE_DATE] >= as_of) &
+        ((snapshot[EMP_TERM_DATE].isna()) | (snapshot[EMP_TERM_DATE] > as_of))
+    ].copy()
+    if df_nh.empty:
+        return [pd.DataFrame(columns=EVENT_COLS)]
+    # Use the pre-filtered hazard_slice for this year
+    rate = hazard_slice['new_hire_termination_rate'].iloc[0] if 'new_hire_termination_rate' in hazard_slice.columns else 0.0
+    df_nh['new_hire_termination_rate'] = rate
+    # Now proceed with deterministic/probabilistic logic as before
+    n = len(df_nh)
+    if n == 0 or rate == 0.0:
+        return [pd.DataFrame(columns=EVENT_COLS)]
+    if deterministic:
+        k = int(np.ceil(n * rate))
+        if k == 0:
+            return [pd.DataFrame(columns=EVENT_COLS)]
+        losers = np.random.choice(df_nh[EMP_ID], size=k, replace=False)
+        losers = rng.choice(df_rate[EMP_ID], size=k, replace=False) if k > 0 else []
+    else:
+        draw = rng.random(n)
+        losers = df_rate.loc[draw < rates, EMP_ID].tolist()
+    if not losers:
+        return [pd.DataFrame(columns=EVENT_COLS)]
+    dates = _random_dates_in_year(year, len(losers), rng)
+    events = [{
+        'event_id':   f"evt_nh_term_{year}_{i:04d}",
+        EMP_ID:       emp,
+        'event_type': EVT_TERM,
+        'event_date': dt,
+        'year':       year,
+        'value_num':  np.nan,
+        'value_json': None,
+        'notes':      f"New-hire termination for {emp} in {year}"
+    } for i, (emp, dt) in enumerate(zip(losers, dates))]
+    return [pd.DataFrame(events, columns=EVENT_COLS)]

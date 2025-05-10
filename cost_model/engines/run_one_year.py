@@ -38,39 +38,48 @@ def run_one_year(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     1. extract Jan 1 snapshot (prev_snapshot)
-    2. hazard_slice = hazard_table[hazard_table.year == year]
+    2. hazard_slice = hazard_table[hazard_table.simulation_year == year]
     3. comp_events  = comp.bump(prev_snapshot, hazard_slice, as_of=Jan1)
     4. term_events  = term.run(prev_snapshot, hazard_slice, rng, deterministic_term)
     5. temporary_snapshot = snapshot.update(prev_snapshot, comp_events+term_events)
     6. survivors = count active in temporary_snapshot
-    7. target = ceil(active * (1+growth_rate_from_cfg))
-    8. hire_events, hire_comp_events = hire.run(temporary_snapshot, target, hazard_slice, rng)
+    7. target = ceil(active * (1+growth_rate))
+    8. hire_events, hire_comp_events = hire.run(temporary_snapshot, target, hazard_slice, rng, census_template_path)
     9. all_new_events = comp_events + term_events + hire_events + hire_comp_events
     10. updated_snapshot = snapshot.update(temporary_snapshot, all_new_events)
     11. return updated_snapshot, event_log.append(all_new_events)
     """
     # 1. prev_snapshot is already Jan 1
-    # 2. hazard_slice for this year
-    hazard_slice = hazard_table
+    # 2. only keep the rows for THIS simulation_year
+    hazard_slice = hazard_table[hazard_table['simulation_year'] == year]
     if hazard_slice.empty:
         logger.warning(f"[RUN_ONE_YEAR YR={year}] No hazard rates found for year {year}. Using default zero rates.")
         # Create a default slice with all expected columns to prevent downstream errors
         default_rates = {
-            'simulation_year': year, 'term_rate': 0.0, 'growth_rate': 0.0,
-            'comp_increase_rate': 0.0, 'new_hire_termination_rate': 0.0
+            'simulation_year': year,
+            'term_rate': 0.0,
+            'growth_rate': 0.0,
+            'comp_raise_pct': 0.0,
+            'new_hire_termination_rate': 0.0
         }
         hazard_slice = pd.DataFrame([default_rates])
 
     # Log the key rates being used for the year from hazard_slice
     log_term_rate = hazard_slice['term_rate'].mean() if 'term_rate' in hazard_slice.columns and not hazard_slice.empty else "N/A"
     log_growth_rate = hazard_slice['growth_rate'].mean() if 'growth_rate' in hazard_slice.columns and not hazard_slice.empty else "N/A"
+    log_comp_rate = hazard_slice['comp_raise_pct'].mean() if 'comp_raise_pct' in hazard_slice.columns and not hazard_slice.empty else "N/A"
     log_new_hire_term_rate = hazard_slice['new_hire_termination_rate'].mean() if 'new_hire_termination_rate' in hazard_slice.columns and not hazard_slice.empty else "N/A"
-    logger.info(f"[RUN_ONE_YEAR YR={year}] Hazard Slice Rates: Term={log_term_rate}, Growth={log_growth_rate}, NewHireTerm={log_new_hire_term_rate}")
+    logger.info(f"[RUN_ONE_YEAR YR={year}] Hazard Slice Rates: Term={log_term_rate}, Growth={log_growth_rate}, CompRaise={log_comp_rate}, NewHireTerm={log_new_hire_term_rate}")
+    
+    # Use rng_seed_offset for reproducibility if provided
+    if rng_seed_offset:
+        year_specific_rng = np.random.default_rng(rng_seed_offset)
+    else:
+        year_specific_rng = rng
 
     as_of = pd.Timestamp(f"{year}-01-01")
 
     # --- PHASE 4 PLAN RULE ENGINES ---
-    events = event_log.copy()
     all_event_dfs_for_year = []
     prev_as_of = pd.Timestamp(f"{year-1}-01-01")
     new_events = pd.DataFrame([], columns=EVENT_COLS)
@@ -116,16 +125,16 @@ def run_one_year(
 
     # Proactive Decrease
     evs = proactive_decrease_run(prev_snapshot, new_events, as_of, getattr(cfg, 'proactive_decrease', None))
-    print("[DEBUG] Raw proactive decrease return:", evs)
+    logger.debug("Raw proactive decrease return: %s", evs)
     if evs and isinstance(evs[0], pd.DataFrame):
-        print("[DEBUG] proactive decrease DataFrame head:\n", evs[0].head())
-        print("[DEBUG] event_type values in proactive decrease DataFrame:", evs[0]['event_type'].unique())
+        logger.debug("Proactive decrease DataFrame head:\n%s", evs[0].head())
+        logger.debug("Event_type values in proactive decrease DataFrame: %s", evs[0]['event_type'].unique())
     if evs:
         evs_nonempty = [df for df in evs if isinstance(df, pd.DataFrame) and not df.empty]
         if evs_nonempty:
             new_events = pd.concat([new_events, *evs_nonempty], ignore_index=True)
-    # DEBUG: Check for proactive decrease events after concat
-    print("[DEBUG] Events after proactive decrease:", new_events[new_events['event_type'] == 'EVT_PROACTIVE_DECREASE'])
+    # Check for proactive decrease events after concat
+    logger.debug("Events after proactive decrease: %s", new_events[new_events['event_type'] == 'EVT_PROACTIVE_DECREASE'])
 
     # --- CORE DYNAMICS ---
     # Capture starting headcount (pre-termination) from the previous snapshot
@@ -137,8 +146,7 @@ def run_one_year(
         logger.info(f"[RUN_ONE_YEAR YR={year}] Using 'active' column for headcount: {start_count} active employees")
     else:
         # Fall back to using termination dates if 'active' column doesn't exist
-        start_count = prev_snapshot[prev_snapshot[EMP_TERM_DATE].isna() | 
-                                   (prev_snapshot[EMP_TERM_DATE] > as_of)].shape[0]
+        start_count = ((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum()
         logger.info(f"[RUN_ONE_YEAR YR={year}] Using termination dates for headcount: {start_count} active employees")
     
     # 3. Compensation bumps
@@ -148,7 +156,7 @@ def run_one_year(
     # Terminations are determined by the 'term_rate' in hazard_slice, processed by term.run.
     # The configured rates from hazard_slice will be used directly by the term.run engine.
     logger.info(f"[RUN_ONE_YEAR YR={year}] Applying terminations based on configured rates in hazard_slice.")
-    term_events = term.run(prev_snapshot, hazard_slice, rng, deterministic_term)
+    term_events = term.run(prev_snapshot, hazard_slice, year_specific_rng, deterministic_term)
     # Filter for actual DataFrame events for logging count
     term_events_dfs = [e for e in term_events if isinstance(e, pd.DataFrame) and not e.empty]
     num_term_events_existing = sum(len(df) for df in term_events_dfs)
@@ -231,7 +239,7 @@ def run_one_year(
 
     # 8. Generate Hires
     # The hire.run function should aim to generate 'hires_needed' (which is gross_hires_needed if adjusted)
-    hire_events_tuple = hire.run(updated_snapshot_for_survivors, hires_needed, hazard_slice, rng, census_template_path) # Ensure hire.run uses the (potentially grossed-up) hires_needed
+    hire_events_tuple = hire.run(updated_snapshot_for_survivors, hires_needed, hazard_slice, year_specific_rng, census_template_path) # Ensure hire.run uses the (potentially grossed-up) hires_needed
     
     # Unpack hire_events and hire_comp_events if hire.run returns a tuple
     if isinstance(hire_events_tuple, tuple) and len(hire_events_tuple) == 2:
@@ -269,8 +277,13 @@ def run_one_year(
     logger.info(f"[RUN_ONE_YEAR YR={year}] Snapshot updated with hires, active before NH term: {snapshot_with_hires['active'].sum()}")
 
     # 9. Terminate New Hires
-    # Pass snapshot_with_hires to term.run_new_hires
-    new_hire_term_events_list = term.run_new_hires(snapshot_with_hires, hazard_slice, rng, year, deterministic_term)
+    new_hire_term_events_list = term.run_new_hires(
+        snapshot_with_hires,
+        hazard_slice,
+        year_specific_rng,
+        year,
+        deterministic_term
+    )
     
     # Filter for actual DataFrame events and log count
     new_hire_term_events_dfs = [e for e in new_hire_term_events_list if isinstance(e, pd.DataFrame) and not e.empty]
@@ -298,4 +311,6 @@ def run_one_year(
     else:
         logger.info(f"[RUN_ONE_YEAR YR={year}] No events recorded for the entire year.")
 
-    return full_event_log_for_year, prev_snapshot # Return original prev_snapshot, runner will update it
+    # 11. return the events and the **new** snapshot with all events applied
+    final_snapshot, _ = snapshot.update(snapshot_with_hires, new_hire_term_events_df)
+    return full_event_log_for_year, final_snapshot
