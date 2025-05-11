@@ -3,6 +3,16 @@
 import pandas as pd
 import numpy as np
 import json
+import logging
+from typing import List
+
+from cost_model.state.event_log import EVENT_COLS, EVT_COMP
+from cost_model.utils.columns import (
+    EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
+)
+from cost_model.dynamics.sampling.salary import DefaultSalarySampler
+
+logger = logging.getLogger(__name__)
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP
 from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP
@@ -13,7 +23,8 @@ logger = logging.getLogger(__name__)
 def bump(
     snapshot: pd.DataFrame,
     hazard_slice: pd.DataFrame,
-    as_of: pd.Timestamp
+    as_of: pd.Timestamp,
+    rng: np.random.Generator
 ) -> List[pd.DataFrame]:
     """
     Apply the comp_raise_pct from hazard_slice for each active employee,
@@ -45,18 +56,35 @@ def bump(
     if df.empty:
         return [pd.DataFrame(columns=EVENT_COLS)]
 
-    # 5) Build event columns
-    df = df.reset_index(drop=True)
+    # --- 3. compute old + new comp ---
+    df["old_comp"] = df[EMP_GROSS_COMP].astype(float).fillna(0.0)
+    df["new_comp"] = (df["old_comp"] * (1 + df["comp_raise_pct"])).round(2)
+
+    # tenure in years as of Jan1
+    jan1 = pd.Timestamp(f"{year}-01-01")
+    hire_dates = pd.to_datetime(df[EMP_HIRE_DATE], errors="coerce")
+    tenure = ((jan1 - hire_dates).dt.days / 365.25).astype(int)
+    df["tenure"] = tenure  # REQUIRED for sampler's mask
+    mask_second = tenure == 1
+    if mask_second.any():
+        sampler = DefaultSalarySampler(rng=rng)
+        # Use normal distribution for second-year bumps
+        mean = df.loc[mask_second, "comp_raise_pct"].mean()
+        df.loc[mask_second, "new_comp"] = sampler.sample_second_year(
+            df.loc[mask_second],
+            comp_col="old_comp",
+            dist={"type": "normal", "mean": mean, "std": 0.01},
+            rng=rng
+        )
+
     df["event_id"]    = df.index.map(lambda i: f"evt_comp_{year}_{i:04d}")
     df["event_time"]  = as_of
     df["event_type"]  = EVT_COMP
-    df["value_num"]   = df["comp_raise_pct"]
-    df["value_json"]  = None
-    df["meta"]        = df.apply(lambda row: json.dumps({
-        "old_comp": row.get(EMP_GROSS_COMP, np.nan),
-        "new_comp": row.get(EMP_GROSS_COMP, np.nan) * (1 + row["comp_raise_pct"]),
-        "pct":      row["comp_raise_pct"]
-    }), axis=1)
+    # **this** is what snapshot.update will write into EMP_GROSS_COMP
+    df["value_num"]   = df["new_comp"]
+    # keep pct / audit in JSON
+    df["value_json"] = df["comp_raise_pct"].map(lambda p: json.dumps({"pct": p}))
+    df["meta"]        = None
     df["notes"]       = None
 
     # 6) Slice to exactly the EVENT_COLS schema

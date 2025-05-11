@@ -15,7 +15,7 @@ try:
     from .event_log import EVT_HIRE, EVT_TERM, EVT_COMP, EVENT_COLS
 except ImportError:
     # Define fallbacks if run standalone or structure changes
-    EVT_HIRE, EVT_TERM, EVT_COMP = "hire", "term", "comp"
+    EVT_HIRE, EVT_TERM, EVT_COMP = "EVT_HIRE", "EVT_TERM", "EVT_COMP"
     EVENT_COLS = [
         "event_id",
         "event_time",
@@ -91,7 +91,7 @@ def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
     details = []
     if hire_events.empty:
         return pd.DataFrame(
-            columns=["role", "birth_date"], index=pd.Index([], name=EMP_ID)
+            columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID)
         )
 
     for index, event in hire_events.iterrows():
@@ -126,19 +126,19 @@ def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
                 f"Could not extract valid 'birth_date' for emp {employee_id} from hire event."
             )
 
-        details.append({EMP_ID: employee_id, "role": role, "birth_date": birth_date})
+        details.append({EMP_ID: employee_id, EMP_ROLE: role, EMP_BIRTH_DATE: birth_date})
 
     if not details:  # Should not happen if hire_events was not empty, but safeguard
         return pd.DataFrame(
-            columns=["role", "birth_date"], index=pd.Index([], name=EMP_ID)
+            columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID)
         )
 
     details_df = pd.DataFrame(details).set_index(EMP_ID)
 
     # Ensure correct dtypes before returning
-    details_df["role"] = details_df["role"].astype(pd.StringDtype())
-    details_df["birth_date"] = pd.to_datetime(
-        details_df["birth_date"]
+    details_df[EMP_ROLE] = details_df[EMP_ROLE].astype(pd.StringDtype())
+    details_df[EMP_BIRTH_DATE] = pd.to_datetime(
+        details_df[EMP_BIRTH_DATE]
     )  # Already datetime, but ensures consistency
     return details_df
 
@@ -186,21 +186,21 @@ def build_full(events: pd.DataFrame) -> pd.DataFrame:
     hire_details = _extract_hire_details(hires)  # Indexed by EMP_ID
 
     # Get hire dates
-    hire_dates = hires.set_index(EMP_ID)["event_time"].rename("hire_date")
+    hire_dates = hires.set_index(EMP_ID)["event_time"].rename(EMP_HIRE_DATE)
 
     # 2. Get Last Compensation event for each employee
     comps = events[events["event_type"] == EVT_COMP].drop_duplicates(
         subset=EMP_ID, keep="last"
     )
     last_comp = comps.set_index(EMP_ID)["value_num"].rename(
-        "current_comp"
+        EMP_GROSS_COMP
     )  # Assumes comp is in value_num
 
     # 3. Get Last Termination event for each employee
     terms = events[events["event_type"] == EVT_TERM].drop_duplicates(
         subset=EMP_ID, keep="last"
     )
-    last_term = terms.set_index(EMP_ID)["event_time"].rename("term_date")
+    last_term = terms.set_index(EMP_ID)["event_time"].rename(EMP_TERM_DATE)
 
     # 4. Assemble the snapshot - start with essential hire info (hire date)
     snapshot_df = pd.DataFrame(hire_dates)  # Index = EMP_ID, Col = hire_date
@@ -217,7 +217,7 @@ def build_full(events: pd.DataFrame) -> pd.DataFrame:
 
     # 5. Calculate 'active' status
     # Active if term_date is NaT (Not a Time / Null)
-    snapshot_df["active"] = snapshot_df["term_date"].isna()
+    snapshot_df["active"] = snapshot_df[EMP_TERM_DATE].isna()
 
     # 6. Ensure all snapshot columns exist and have correct types
     for col, dtype in SNAPSHOT_DTYPES.items():
@@ -235,6 +235,27 @@ def build_full(events: pd.DataFrame) -> pd.DataFrame:
             else:  # StringDtype or other objects
                 snapshot_df[col] = pd.NA
 
+    # Calculate tenure_band based on tenure at end of latest event year
+    if not snapshot_df.empty:
+        reference_date = pd.to_datetime(snapshot_df[EMP_HIRE_DATE]).max()
+        if pd.notnull(reference_date):
+            # Use Dec 31 of the latest event year as reference
+            year = reference_date.year
+            as_of = pd.Timestamp(f"{year}-12-31")
+            tenure_years = (as_of - pd.to_datetime(snapshot_df[EMP_HIRE_DATE])).dt.days / 365.25
+            def band(tenure):
+                if pd.isna(tenure): return pd.NA
+                if tenure < 1: return '<1'
+                elif tenure < 3: return '1-3'
+                elif tenure < 5: return '3-5'
+                else: return '5+'
+            snapshot_df['tenure_band'] = tenure_years.map(band).astype(pd.StringDtype())
+        else:
+            snapshot_df['tenure_band'] = pd.NA
+    else:
+        snapshot_df['tenure_band'] = pd.NA
+    # Ensure EMP_ID is a column for output/export
+    snapshot_df[EMP_ID] = snapshot_df.index.astype(str)
     # Select final columns in desired order and enforce final dtypes
     snapshot_df = snapshot_df[SNAPSHOT_COLS]  # Select and order columns
     snapshot_df = snapshot_df.astype(SNAPSHOT_DTYPES)  # Enforce dtypes
@@ -319,31 +340,31 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFram
         # Merge hire date from the filtered first hire events
         new_hire_base = new_hire_base.merge(
             first_hire_events_for_new_filtered.set_index(EMP_ID)["event_time"].rename(
-                "hire_date"
+                EMP_HIRE_DATE
             ),
             left_index=True,
             right_index=True,
             how="left",
         )
         new_hire_base = new_hire_base.merge(
-            new_hire_details[["role", "birth_date"]],
+            new_hire_details[[EMP_ROLE, EMP_BIRTH_DATE]],
             left_index=True,
             right_index=True,
             how="left",
         )  # Details already indexed
         new_hire_base = new_hire_base.merge(
-            last_comp_for_new.rename("current_comp"),
+            last_comp_for_new.rename(EMP_GROSS_COMP),
             left_index=True,
             right_index=True,
             how="left",
         )
         new_hire_base = new_hire_base.merge(
-            last_term_for_new.rename("term_date"),
+            last_term_for_new.rename(EMP_TERM_DATE),
             left_index=True,
             right_index=True,
             how="left",
         )
-        new_hire_base["active"] = new_hire_base["term_date"].isna()
+        new_hire_base["active"] = new_hire_base[EMP_TERM_DATE].isna()
 
         # Ensure all columns and dtypes match the main snapshot schema
         for col, dtype in SNAPSHOT_DTYPES.items():
@@ -357,6 +378,26 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFram
                 else:
                     new_hire_base[col] = pd.NA  # Use pd.NA for StringDtype
 
+        # Calculate tenure_band for new hires
+        if not new_hire_base.empty:
+            reference_date = pd.to_datetime(new_hire_base[EMP_HIRE_DATE]).max()
+            if pd.notnull(reference_date):
+                year = reference_date.year
+                as_of = pd.Timestamp(f"{year}-12-31")
+                tenure_years = (as_of - pd.to_datetime(new_hire_base[EMP_HIRE_DATE])).dt.days / 365.25
+                def band(tenure):
+                    if pd.isna(tenure): return pd.NA
+                    if tenure < 1: return '<1'
+                    elif tenure < 3: return '1-3'
+                    elif tenure < 5: return '3-5'
+                    else: return '5+'
+                new_hire_base['tenure_band'] = tenure_years.map(band).astype(pd.StringDtype())
+            else:
+                new_hire_base['tenure_band'] = pd.NA
+        else:
+            new_hire_base['tenure_band'] = pd.NA
+        # Ensure EMP_ID is a column for output/export
+        new_hire_base[EMP_ID] = new_hire_base.index.astype(str)
         new_hire_rows_df = new_hire_base[SNAPSHOT_COLS].astype(SNAPSHOT_DTYPES)
 
         # Append new hires to the main snapshot
@@ -395,7 +436,7 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFram
                 comp_update_map.index.isin(active_employees)
             ]
             if not valid_updates.empty:
-                current_snapshot.loc[valid_updates.index, "current_comp"] = (
+                current_snapshot.loc[valid_updates.index, EMP_GROSS_COMP] = (
                     valid_updates
                 )
                 logger.debug(
@@ -415,7 +456,7 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFram
             )
             term_update_map = last_term_updates.set_index(EMP_ID)["event_time"]
             # Update termination date and active status
-            current_snapshot.loc[term_update_map.index, "term_date"] = term_update_map
+            current_snapshot.loc[term_update_map.index, EMP_TERM_DATE] = term_update_map
             current_snapshot.loc[term_update_map.index, "active"] = False
             logger.debug(
                 f"Applied {len(term_update_map)} termination updates to existing employees."

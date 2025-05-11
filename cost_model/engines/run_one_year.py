@@ -40,7 +40,8 @@ def run_one_year(
     event_log: pd.DataFrame,
     prev_snapshot: pd.DataFrame,
     year: int,
-    config: SimpleNamespace,
+    global_params: SimpleNamespace,
+    plan_rules: SimpleNamespace,
     hazard_table: pd.DataFrame,
     rng: np.random.Generator,
     census_template_path: str,
@@ -124,7 +125,7 @@ def run_one_year(
     logger.info(f"[RUN_ONE_YEAR YR={year}] SOY active headcount: {start_count}")
 
     # 3a. comp bump
-    comp_events = comp.bump(prev_snapshot, hazard_slice, as_of)
+    comp_events = comp.bump(prev_snapshot, hazard_slice, as_of, year_rng)
     # 3b. term events
     term_events = term.run(prev_snapshot, hazard_slice, year_rng, deterministic_term)
 
@@ -156,8 +157,8 @@ def run_one_year(
     else:
         start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
 
-    nh_rate = getattr(config, 'new_hire_rate', 0.0)
-    nh_term_rate = getattr(config, 'new_hire_termination_rate', 0.0)
+    nh_rate = getattr(global_params, 'new_hire_rate', 0.0)
+    nh_term_rate = getattr(global_params, 'new_hire_termination_rate', 0.0)
     net_hires = int(math.ceil(start_count * nh_rate))
     gross_hires = int(math.ceil(net_hires / (1 - nh_term_rate))) if nh_term_rate < 1.0 else 0
 

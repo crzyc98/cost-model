@@ -1,13 +1,14 @@
 # cost_model/engines/hire.py
 
+import json
+import logging
 from typing import List
 import pandas as pd
 import numpy as np
-from cost_model.state.event_log import EVENT_COLS, EVT_HIRE, EVT_COMP
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE
-import math
-import json
-import logging
+
+from cost_model.state.event_log import EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
+from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP
+from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 
 logger = logging.getLogger(__name__)
 
@@ -66,40 +67,22 @@ def run(
         start + pd.Timedelta(days=int(d))
         for d in rng.integers(0, days, size=hires_to_make)
     ]
-    # Assign starting comp using config-driven logic
-    plan_rules_config = hazard_slice.iloc[0]['cfg'] if 'cfg' in hazard_slice.columns and not hazard_slice.empty else None
-    
-    # Add safety checks for missing configuration parameters
-    role_comp_params = None
-    global_comp_params = None
-    
-    if plan_rules_config is not None:
-        role_comp_params = getattr(plan_rules_config, 'role_compensation_params', None)
-        global_comp_params = getattr(plan_rules_config, 'new_hire_compensation_params', None)
-    
-    starting_comps = []
-    for r in role_choices:
-        comp = None
-        if role_comp_params and r in role_comp_params:
-            role_cfg = role_comp_params[r]
-            comp = role_cfg.get('comp_base_salary')
-        if comp is None and global_comp_params:
-            comp = global_comp_params.get('comp_base_salary')
-        if comp is None:
-            comp = 50000
-        starting_comps.append(comp)
+    # Sample starting comp from historical salaries in snapshot
+    from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
+    prev_salaries = snapshot[EMP_GROSS_COMP].dropna().values
+    # Build a DataFrame with one row per new hire for sampling
+    hires_df = pd.DataFrame({EMP_ID: new_ids, EMP_ROLE: role_choices})
+    hires_df = sample_new_hire_compensation(hires_df, comp_col="sampled_comp", prev_salaries=prev_salaries, rng=rng)
+    starting_comps = hires_df["sampled_comp"].values
+    logger.info(
+        f"[HIRE.RUN YR={simulation_year}] Sampled new hire salaries: mean=${np.mean(starting_comps):,.0f}, min=${np.min(starting_comps):,.0f}, max=${np.max(starting_comps):,.0f}"
+    )
 
     # 1. Derive year from hazard_slice['simulation_year']
     simulation_year = int(hazard_slice['simulation_year'].iloc[0])
     # Again, use EOY to filter terminations for placeholder logic
     as_of = pd.Timestamp(f"{simulation_year}-12-31")
 
-    # 2. Filter active survivors
-    survivors = snapshot[
-        snapshot[EMP_TERM_DATE].isna() | (snapshot[EMP_TERM_DATE] > as_of)
-    ]
-    # We don't need to recalculate needed - hires_to_make is already passed in
-    # and has been calculated by the caller
 
     # 3. (Optional) Gross up by new-hire term rate (not implemented here)
     # 4. (Optional) Read census template for realistic new hire sampling (scaffold only)
@@ -115,32 +98,36 @@ def run(
     # Placeholder logic (existing):
     placeholder_birth_date = "1990-01-01"
     hire_events = [
-        {
-            "event_id": f"evt_hire_{simulation_year}_{idx:04d}",
-            EMP_ID: eid,
-            "event_type": EVT_HIRE,
-            "event_time": dt,
-            "year": simulation_year,
-            "value_num": np.nan,
-            "value_json": json.dumps({"role": r, "birth_date": placeholder_birth_date}),
-            "notes": f"Hire event for {eid} in {simulation_year}",
-        }
-        for idx, (eid, r, dt) in enumerate(zip(new_ids, role_choices, hire_dates))
+        create_event(
+            event_time=dt,
+            employee_id=eid,
+            event_type=EVT_HIRE,
+            value_num=None,
+            value_json=json.dumps({"role": r, "birth_date": placeholder_birth_date}),
+            meta=f"Hire event for {eid} in {simulation_year}"
+        )
+        for eid, r, dt in zip(new_ids, role_choices, hire_dates)
     ]
-    comp_events = [
-        {
-            "event_id": f"evt_comp_{simulation_year}_{idx:04d}",
-            EMP_ID: eid,
-            "event_type": EVT_COMP,
-            "event_time": dt,
-            "year": simulation_year,
-            "value_num": comp,
-            "value_json": json.dumps({"reason": "starting_salary"}),
-            "notes": f"Starting salary for new hire {eid} in {simulation_year}",
-        }
-        for idx, (eid, dt, comp) in enumerate(zip(new_ids, hire_dates, starting_comps))
-    ]
-    return [
-        pd.DataFrame(hire_events, columns=EVENT_COLS),
-        pd.DataFrame(comp_events, columns=EVENT_COLS),
-    ]
+    comp_events = []
+    end_of_year = pd.Timestamp(f"{simulation_year}-12-31")
+    for eid, dt, comp in zip(new_ids, hire_dates, starting_comps):
+        days_worked = (end_of_year - dt).days + 1
+        prorated = comp * (days_worked / 365.25)
+        value_json = json.dumps({
+            "reason": "starting_salary",
+            "full_year": comp,
+            "days_worked": days_worked
+        })
+        comp_events.append(
+            create_event(
+                event_time=dt,
+                employee_id=eid,
+                event_type=EVT_COMP,
+                value_num=prorated,
+                value_json=value_json,
+                meta=f"Prorated comp for {eid}"
+            )
+        )
+    hire_df = pd.DataFrame(hire_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+    comp_df = pd.DataFrame(comp_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+    return [hire_df, comp_df]

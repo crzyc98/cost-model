@@ -136,7 +136,8 @@ def run_projection_engine(
             current_cumulative_event_log,                    # event_log
             current_snapshot.copy(),                         # prev_snapshot
             current_sim_year,                                # year
-            plan_rules_config,                               # config (SimpleNamespace)
+            global_params,                                   # global parameters (SimpleNamespace)
+            plan_rules_config,                               # plan rules (SimpleNamespace)
             hazard_table,                                    # hazard_table DataFrame
             rng,                                             # random number generator
             census_template_path,                            # census file path (str)
