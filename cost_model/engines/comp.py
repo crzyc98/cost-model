@@ -83,9 +83,16 @@ def bump(
     # **this** is what snapshot.update will write into EMP_GROSS_COMP
     df["value_num"]   = df["new_comp"]
     # keep pct / audit in JSON
-    df["value_json"] = df["comp_raise_pct"].map(lambda p: json.dumps({"pct": p}))
-    df["meta"]        = None
-    df["notes"]       = None
+    df["value_json"] = df.apply(lambda row: json.dumps({
+        "reason": "cola_bump",
+        "pct": row["comp_raise_pct"],
+        "old_comp": row["old_comp"],
+        "new_comp": row["new_comp"]
+    }), axis=1)
+    df["meta"] = df.apply(lambda row: f"COLA bump for {row[EMP_ID]}: {row['old_comp']} -> {row['new_comp']} (+{row['comp_raise_pct']*100:.2f}%)", axis=1)
+    # Remove notes column if present
+    if "notes" in df.columns:
+        df = df.drop(columns=["notes"])
 
     # 6) Slice to exactly the EVENT_COLS schema
     events = df[EVENT_COLS]

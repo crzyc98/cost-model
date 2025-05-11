@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import math
 from typing import List
-from cost_model.state.event_log import EVENT_COLS, EVT_TERM
+from cost_model.state.event_log import EVENT_COLS, EVT_TERM, create_event
 from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE
 import logging
 
@@ -64,18 +64,49 @@ def run(
 
     # Assign random dates and build events
     dates = _random_dates_in_year(year, len(losers), rng)
-    events = [{
-        'event_id':   f"evt_term_{year}_{idx:04d}",
-        EMP_ID:       emp,
-        'event_type': EVT_TERM,
-        'event_time': dt,
-        'year':       year,
-        'value_num':  float('nan'),
-        'value_json': None,
-        'notes':      f"Termination for {emp} in {year}"
-    } for idx, (emp, dt) in enumerate(zip(losers, dates))]
-
-    return [pd.DataFrame(events, columns=EVENT_COLS)]
+    term_events = []
+    comp_events = []
+    for emp, dt in zip(losers, dates):
+        # Termination event
+        hire_date = snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].iloc[0] if EMP_HIRE_DATE in snapshot.columns and not snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].isna().iloc[0] else None
+        tenure_days = int((dt - hire_date).days) if hire_date is not None else None
+        # Prorate comp for days worked in year
+        if EMP_GROSS_COMP in snapshot.columns:
+            comp = snapshot.loc[snapshot[EMP_ID] == emp, EMP_GROSS_COMP].iloc[0]
+        else:
+            comp = None
+        start_of_year = pd.Timestamp(f"{year}-01-01")
+        days_worked = (dt - start_of_year).days + 1 if dt >= start_of_year else None
+        prorated = comp * (days_worked / 365.25) if comp is not None and days_worked is not None else None
+        # Termination event
+        term_events.append(create_event(
+            event_time=dt,
+            employee_id=emp,
+            event_type=EVT_TERM,
+            value_num=None,
+            value_json=json.dumps({
+                "reason": "termination",
+                "tenure_days": tenure_days
+            }),
+            meta=f"Termination for {emp} in {year}"
+        ))
+        # Prorated comp event
+        if prorated is not None:
+            comp_events.append(create_event(
+                event_time=dt,
+                employee_id=emp,
+                event_type=EVT_COMP,
+                value_num=prorated,
+                value_json=json.dumps({
+                    "reason": "final_year_prorated_comp",
+                    "full_year": comp,
+                    "days_worked": days_worked
+                }),
+                meta=f"Prorated final-year comp for {emp} ({days_worked} days)"
+            ))
+    df_term = pd.DataFrame(term_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+    df_comp = pd.DataFrame(comp_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+    return [df_term, df_comp]
 
 def run_new_hires(
     snapshot: pd.DataFrame,
@@ -117,14 +148,46 @@ def run_new_hires(
     if not losers:
         return [pd.DataFrame(columns=EVENT_COLS)]
     dates = _random_dates_in_year(year, len(losers), rng)
-    events = [{
-        'event_id':   f"evt_nh_term_{year}_{i:04d}",
-        EMP_ID:       emp,
-        'event_type': EVT_TERM,
-        'event_time': dt,
-        'year':       year,
-        'value_num':  np.nan,
-        'value_json': None,
-        'notes':      f"New-hire termination for {emp} in {year}"
-    } for i, (emp, dt) in enumerate(zip(losers, dates))]
-    return [pd.DataFrame(events, columns=EVENT_COLS)]
+    term_events = []
+    comp_events = []
+    for emp, dt in zip(losers, dates):
+        # Termination event
+        hire_date = snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].iloc[0] if EMP_HIRE_DATE in snapshot.columns and not snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].isna().iloc[0] else None
+        tenure_days = int((dt - hire_date).days) if hire_date is not None else None
+        # Prorate comp for days worked in year
+        if EMP_GROSS_COMP in snapshot.columns:
+            comp = snapshot.loc[snapshot[EMP_ID] == emp, EMP_GROSS_COMP].iloc[0]
+        else:
+            comp = None
+        start_of_year = pd.Timestamp(f"{year}-01-01")
+        days_worked = (dt - start_of_year).days + 1 if dt >= start_of_year else None
+        prorated = comp * (days_worked / 365.25) if comp is not None and days_worked is not None else None
+        # Termination event
+        term_events.append(create_event(
+            event_time=dt,
+            employee_id=emp,
+            event_type=EVT_TERM,
+            value_num=None,
+            value_json=json.dumps({
+                "reason": "new_hire_termination",
+                "tenure_days": tenure_days
+            }),
+            meta=f"New-hire termination for {emp} in {year}"
+        ))
+        # Prorated comp event
+        if prorated is not None:
+            comp_events.append(create_event(
+                event_time=dt,
+                employee_id=emp,
+                event_type=EVT_COMP,
+                value_num=prorated,
+                value_json=json.dumps({
+                    "reason": "final_year_prorated_comp",
+                    "full_year": comp,
+                    "days_worked": days_worked
+                }),
+                meta=f"Prorated final-year comp for {emp} ({days_worked} days)"
+            ))
+    df_term = pd.DataFrame(term_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+    df_comp = pd.DataFrame(comp_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+    return [df_term, df_comp]
