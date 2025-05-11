@@ -4,8 +4,9 @@ global_parameters:
   projection_years: 5
   random_seed: 42
   annual_compensation_increase_rate: 0.05
-  annual_termination_rate: 0.03
-  new_hire_termination_rate: .2
+  annual_termination_rate: 0.15
+  new_hire_termination_rate: .25
+  new_hire_rate: 0.17
   use_expected_attrition: false
   new_hire_start_salary: 55000
   new_hire_average_age: 30

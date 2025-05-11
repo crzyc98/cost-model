@@ -148,19 +148,27 @@ def run_one_year(
     n_terminated = start_count - n_active_survivors
     logger.info(f"[RUN_ONE_YEAR YR={year}] Terminations: {n_terminated}, survivors active: {n_active_survivors}")
 
-    # --- 4. Growth math & hires_needed ---
-    growth_rate = float(hazard_slice['growth_rate'].iloc[0])
-    target = int(ceil(start_count * (1 + growth_rate)))
-    hires_needed = max(0, target - n_active_survivors)
-    logger.info(f"[RUN_ONE_YEAR YR={year}] Target EOY headcount: {target}, hires_needed (net): {hires_needed}")
+    # --- 4. Gross-up new-hire rate logic ---
+    import math
+    # Capture start-of-year headcount
+    if 'active' in prev_snapshot.columns:
+        start_count = int(prev_snapshot['active'].sum())
+    else:
+        start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
 
-    nh_term_rate = float(hazard_slice['new_hire_termination_rate'].iloc[0])
-    if nh_term_rate > 0 and hires_needed > 0:
-        hires_needed = int(ceil(hires_needed / (1 - nh_term_rate)))
-        logger.info(f"[RUN_ONE_YEAR YR={year}] Gross hires (adj for NH term_rate={nh_term_rate}): {hires_needed}")
+    nh_rate = getattr(config.global_parameters, 'new_hire_rate', 0.0)
+    nh_term_rate = getattr(config.global_parameters, 'new_hire_termination_rate', 0.0)
+    net_hires = int(math.ceil(start_count * nh_rate))
+    gross_hires = int(math.ceil(net_hires / (1 - nh_term_rate))) if nh_term_rate < 1.0 else 0
 
-    # --- 5. Generate hires + starting comp ---
-    hire_tuple = hire.run(temp_snap, hires_needed, hazard_slice, year_rng, census_template_path)
+    logger.info(
+        f"[RUN_ONE_YEAR YR={year}] start={start_count}, "
+        f"net_hires={net_hires} ({nh_rate*100:.1f}%), "
+        f"gross_hires={gross_hires} (to allow for {nh_term_rate*100:.1f}% NH term)"
+    )
+
+    # --- 5. Generate gross_hires new-hire events + starting comp ---
+    hire_tuple = hire.run(temp_snap, gross_hires, hazard_slice, year_rng, census_template_path)
     if isinstance(hire_tuple, tuple) and len(hire_tuple) == 2:
         hire_events, hire_comp_events = hire_tuple
     else:
