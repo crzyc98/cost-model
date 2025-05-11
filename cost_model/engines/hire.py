@@ -6,20 +6,25 @@ from typing import List
 import pandas as pd
 import numpy as np
 
-from cost_model.state.event_log import EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP
+from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
+from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 
 logger = logging.getLogger(__name__)
 
 from cost_model.utils.columns import EMP_TENURE
 
+from types import SimpleNamespace
+from cost_model.utils.columns import EMP_BIRTH_DATE
+
 def run(
     snapshot: pd.DataFrame,
     hires_to_make: int,
     hazard_slice: pd.DataFrame, 
     rng: np.random.Generator,
-    census_template_path: str,  # New parameter for census template
+    census_template_path: str,
+    global_params: SimpleNamespace,
+    terminated_events: pd.DataFrame = None,
 ) -> List[pd.DataFrame]:
     """
     Determine how many hires to generate so that the *expected* active headcount at
@@ -69,13 +74,53 @@ def run(
         start + pd.Timedelta(days=int(d))
         for d in rng.integers(0, days, size=hires_to_make)
     ]
-    # Sample starting comp from historical salaries in snapshot
-    from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
-    prev_salaries = snapshot[EMP_GROSS_COMP].dropna().values
-    # Build a DataFrame with one row per new hire for sampling
-    hires_df = pd.DataFrame({EMP_ID: new_ids, EMP_ROLE: role_choices})
-    hires_df = sample_new_hire_compensation(hires_df, comp_col="sampled_comp", prev_salaries=prev_salaries, rng=rng)
-    starting_comps = hires_df["sampled_comp"].values
+    # ----- Termination-based sampling with parameterized premium and age jitter -----
+    ext_prem = getattr(global_params, 'replacement_hire_premium', 0.02)
+    age_sd = getattr(global_params, 'replacement_hire_age_sd', 2)
+    pool = None
+    if terminated_events is not None and not terminated_events.empty:
+        terms = terminated_events[terminated_events.event_type == EVT_TERM]
+        # Ensure EMP_ID is only a column, not both index and column
+        if EMP_ID in snapshot.index.names and EMP_ID in snapshot.columns:
+            snap = snapshot.reset_index(drop=True)
+        elif EMP_ID in snapshot.index.names:
+            snap = snapshot.reset_index()
+        else:
+            snap = snapshot
+        terms = terms.merge(
+            snap[[EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP]],
+            on=EMP_ID, how='left'
+        ).drop_duplicates(subset=EMP_ID)
+        pool = terms[[EMP_ID, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_BIRTH_DATE]]
+    if pool is not None and len(pool) >= hires_to_make:
+        choice_idx = rng.choice(pool.index, size=hires_to_make, replace=True)
+        clones = pool.loc[choice_idx].copy().reset_index(drop=True)
+        # bump salary by premium
+        clones[EMP_GROSS_COMP] *= (1 + ext_prem)
+        clones['clone_of'] = pool.loc[choice_idx, EMP_ID].values
+        # jitter birth_date ± age_sd years
+        bd = pd.to_datetime(clones[EMP_BIRTH_DATE])
+        jitter_days = rng.normal(0, age_sd * 365.25, size=len(bd)).astype(int)
+        clones[EMP_BIRTH_DATE] = bd + pd.to_timedelta(jitter_days, unit='D')
+        # keep hire_date same or optionally reset to uniform in year
+        clones[EMP_HIRE_DATE] = clones[EMP_HIRE_DATE]
+        starting_comps = clones[EMP_GROSS_COMP].values
+        birth_dates = pd.to_datetime(clones[EMP_BIRTH_DATE]).dt.strftime('%Y-%m-%d').values
+        clone_of = clones['clone_of'].tolist()
+    else:
+        prev_salaries = snapshot[EMP_GROSS_COMP].dropna().values
+        hires_df = pd.DataFrame({EMP_ID: new_ids, EMP_ROLE: role_choices})
+        hires_df = sample_new_hire_compensation(hires_df, comp_col='sampled_comp', prev_salaries=prev_salaries, rng=rng)
+        starting_comps = hires_df['sampled_comp'].tolist()
+        birth_dates = ['1990-01-01'] * hires_to_make
+        clone_of = [''] * hires_to_make
+    # Build a DataFrame with one row per new hire for output
+    hires_df = pd.DataFrame({EMP_ID: new_ids, EMP_ROLE: role_choices,
+                            'sampled_comp': starting_comps,
+                            EMP_HIRE_DATE: hire_dates,
+                            EMP_BIRTH_DATE: birth_dates,
+                            'clone_of': clone_of})
+
     logger.info(
         f"[HIRE.RUN YR={simulation_year}] Sampled new hire salaries: mean=${np.mean(starting_comps):,.0f}, min=${np.min(starting_comps):,.0f}, max=${np.max(starting_comps):,.0f}"
     )
@@ -97,19 +142,18 @@ def run(
     # comp_std = plan_rules_config.new_hire_compensation_params.comp_std
     # ...
 
-    # Placeholder logic (existing):
-    placeholder_birth_date = "1990-01-01"
-    hire_events = [
-        create_event(
+    # Placeholder logic    # Generate hire events
+    hire_events = []
+    for idx, (eid, role, dt) in enumerate(zip(new_ids, role_choices, hire_dates)):
+        bd = birth_dates[idx]
+        co = clone_of[idx]
+        hire_events.append(create_event(
             event_time=dt,
             employee_id=eid,
             event_type=EVT_HIRE,
-            value_num=None,
-            value_json=json.dumps({"role": r, "birth_date": placeholder_birth_date}),
+            value_json=json.dumps({'role': role, 'birth_date': bd, 'clone_of': co}),
             meta=f"Hire event for {eid} in {simulation_year}"
-        )
-        for eid, r, dt in zip(new_ids, role_choices, hire_dates)
-    ]
+        ))
     comp_events = []
     end_of_year = pd.Timestamp(f"{simulation_year}-12-31")
     for eid, dt, comp in zip(new_ids, hire_dates, starting_comps):

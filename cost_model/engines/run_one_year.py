@@ -193,7 +193,17 @@ def run_one_year(
     )
 
     # --- 5. Generate gross_hires new-hire events + starting comp ---
-    hire_tuple = hire.run(temp_snap, gross_hires, hazard_slice, year_rng, census_template_path)
+    # pass the termination pool into hire.run
+    terminated_events = pd.concat(term_events, ignore_index=True) if term_events is not None and len(term_events) > 0 else pd.DataFrame()
+    hire_tuple = hire.run(
+        temp_snap,
+        gross_hires,
+        hazard_slice,
+        year_rng,
+        census_template_path,
+        global_params,
+        terminated_events=terminated_events,
+    )
     if isinstance(hire_tuple, tuple) and len(hire_tuple) == 2:
         hire_events, hire_comp_events = hire_tuple
     else:
