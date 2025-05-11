@@ -89,7 +89,7 @@ def make_tiny_hazard():
 
 def test_one_year_cycle():
     events = make_tiny_events()
-    snap = snapshot.build_full(events)
+    snap = snapshot.build_full(events, 2025)
     # Patch in role and tenure_band for all employees from events
     for col in ["role", "tenure_band"]:
         if col in events.columns:

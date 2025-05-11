@@ -11,6 +11,8 @@ from cost_model.rules.formula_parsers import parse_match_formula
 logger = logging.getLogger(__name__)
 
 
+from cost_model.utils.columns import EMP_TENURE
+
 def apply(
     df, current_scenario_config, baseline_scenario_config, simulation_year, start_year
 ):

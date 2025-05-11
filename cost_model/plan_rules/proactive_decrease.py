@@ -50,6 +50,8 @@ except ImportError:
 import logging
 # logger = logging.getLogger(__name__) # Using print for direct visibility in pytest -s
 
+from cost_model.utils.columns import EMP_TENURE
+
 def run(
     snapshot: pd.DataFrame,
     events: pd.DataFrame,

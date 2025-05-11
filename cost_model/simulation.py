@@ -136,7 +136,7 @@ def run_simulation(
     events = pd.DataFrame()
     # Build snapshot
     from cost_model.state import snapshot as snapmod
-    snap = snapmod.build_full(census_df)
+    snap = snapmod.build_full(census_df, year)
     # Patch in role and tenure_band if present
     for col in ['role', 'tenure_band']:
         if col in census_df.columns:

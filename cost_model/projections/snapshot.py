@@ -138,7 +138,7 @@ def update_snapshot_with_events(
     # Apply update from state snapshot
     from cost_model.state.snapshot import update as _update_snapshot
 
-    updated_snapshot = _update_snapshot(prev_snapshot, filtered)
+    updated_snapshot = _update_snapshot(prev_snapshot, filtered, as_of.year)
     # Determine active employees at year-end
     if 'active' in updated_snapshot.columns:
         year_end_employee_ids = updated_snapshot[updated_snapshot['active']].index.tolist()

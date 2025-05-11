@@ -3,9 +3,10 @@
 import pandas as pd
 import numpy as np
 import math
+import json
 from typing import List
-from cost_model.state.event_log import EVENT_COLS, EVT_TERM, create_event
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE
+from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
+from cost_model.utils.columns import EMP_ID, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,8 @@ def _random_dates_in_year(year: int, n: int, rng: np.random.Generator):
     days  = (end - start).days + 1
     offsets = rng.integers(0, days, size=n)
     return [start + pd.Timedelta(days=int(o)) for o in offsets]
+
+from cost_model.utils.columns import EMP_TENURE
 
 def run(
     snapshot: pd.DataFrame,
@@ -97,11 +100,7 @@ def run(
                 employee_id=emp,
                 event_type=EVT_COMP,
                 value_num=prorated,
-                value_json=json.dumps({
-                    "reason": "final_year_prorated_comp",
-                    "full_year": comp,
-                    "days_worked": days_worked
-                }),
+                value_json=None,
                 meta=f"Prorated final-year comp for {emp} ({days_worked} days)"
             ))
     df_term = pd.DataFrame(term_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
@@ -181,11 +180,7 @@ def run_new_hires(
                 employee_id=emp,
                 event_type=EVT_COMP,
                 value_num=prorated,
-                value_json=json.dumps({
-                    "reason": "final_year_prorated_comp",
-                    "full_year": comp,
-                    "days_worked": days_worked
-                }),
+                value_json=None,
                 meta=f"Prorated final-year comp for {emp} ({days_worked} days)"
             ))
     df_term = pd.DataFrame(term_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)

@@ -45,7 +45,7 @@ def bootstrap_events_df() -> pd.DataFrame:
 
 def test_build_full_structure(bootstrap_events_df):
     """Verify the structure, columns, dtypes, and index of the full snapshot."""
-    snap = snapshot.build_full(bootstrap_events_df)
+    snap = snapshot.build_full(bootstrap_events_df, 2025)
 
     assert isinstance(snap, pd.DataFrame), "Result should be a DataFrame."
     assert snap.index.name == EMP_ID, f"Index name should be '{EMP_ID}'."
@@ -66,7 +66,7 @@ def test_build_full_structure(bootstrap_events_df):
 
 def test_build_full_active_count(bootstrap_events_df):
     """Verify the count of active employees matches expectations (e.g., 100)."""
-    snap = snapshot.build_full(bootstrap_events_df)
+    snap = snapshot.build_full(bootstrap_events_df, 2025)
     # Assuming your bootstrap events accurately reflect the initial 100 active
     expected_active_count = 100  # Based on your census description
     assert (
@@ -76,7 +76,7 @@ def test_build_full_active_count(bootstrap_events_df):
 
 def test_build_full_known_employee(bootstrap_events_df):
     """Verify details for a specific employee known from the census."""
-    snap = snapshot.build_full(bootstrap_events_df)
+    snap = snapshot.build_full(bootstrap_events_df, 2025)
 
     # Use a real employee ID from our bootstrap events
     known_active_emp_id = "DUMMY_EX_716045_000063"
@@ -152,7 +152,7 @@ def initial_snapshot(bootstrap_events_df) -> pd.DataFrame:
     """Fixture providing the snapshot as of the start of the first simulation year."""
     # Depending on how bootstrap events are dated, you might need an as_of date here
     # For now, assume build_full gives the state after initial events.
-    return snapshot.build_full(bootstrap_events_df)
+    return snapshot.build_full(bootstrap_events_df, 2025)
 
 
 def test_update_new_hire(initial_snapshot):
@@ -178,7 +178,7 @@ def test_update_new_hire(initial_snapshot):
         event_log.EVENT_PANDAS_DTYPES
     )
 
-    updated_snap = snapshot.update(prev_snap, new_events_df)
+    updated_snap = snapshot.update(prev_snap, new_events_df, 2025)
 
     assert len(updated_snap) == len(prev_snap) + 1, "Snapshot should have one more row."
     assert new_emp_id in updated_snap.index, "New hire ID should be in the index."
@@ -206,7 +206,7 @@ def test_update_termination(initial_snapshot):
         event_log.EVENT_PANDAS_DTYPES
     )
 
-    updated_snap = snapshot.update(prev_snap, new_events_df)
+    updated_snap = snapshot.update(prev_snap, new_events_df, 2025)
 
     assert len(updated_snap) == len(prev_snap), "Snapshot row count should not change."
     assert emp_to_term in updated_snap.index, "Terminated employee should still exist."
@@ -236,7 +236,7 @@ def test_update_comp_change(initial_snapshot):
         event_log.EVENT_PANDAS_DTYPES
     )
 
-    updated_snap = snapshot.update(prev_snap, new_events_df)
+    updated_snap = snapshot.update(prev_snap, new_events_df, 2025)
 
     assert len(updated_snap) == len(prev_snap)
     assert emp_to_update in updated_snap.index
@@ -270,7 +270,7 @@ def test_update_multiple_events_same_employee(initial_snapshot):
         event_log.EVENT_PANDAS_DTYPES
     )
 
-    updated_snap = snapshot.update(prev_snap, new_events_df)
+    updated_snap = snapshot.update(prev_snap, new_events_df, 2025)
 
     assert len(updated_snap) == len(prev_snap)
     assert emp_to_update in updated_snap.index
@@ -313,7 +313,7 @@ def test_update_terminated_employee_again(initial_snapshot):
     first_term_df = first_term_df.astype(event_log.EVENT_PANDAS_DTYPES)
 
     # Apply first termination
-    snap_after_first_term = snapshot.update(prev_snap, first_term_df)
+    snap_after_first_term = snapshot.update(prev_snap, first_term_df, 2025)
 
     # Try to terminate them again
     second_term_event = _create_test_event(
@@ -322,7 +322,7 @@ def test_update_terminated_employee_again(initial_snapshot):
     second_term_df = pd.DataFrame([second_term_event], columns=event_log.EVENT_COLS)
     second_term_df = second_term_df.astype(event_log.EVENT_PANDAS_DTYPES)
 
-    final_snap = snapshot.update(snap_after_first_term, second_term_df)
+    final_snap = snapshot.update(snap_after_first_term, second_term_df, 2025)
 
     assert len(final_snap) == len(prev_snap)
     assert emp_to_term in final_snap.index
@@ -347,7 +347,7 @@ def test_update_compensation_for_terminated_employee(initial_snapshot):
     term_df = term_df.astype(event_log.EVENT_PANDAS_DTYPES)
 
     # Apply termination
-    snap_after_term = snapshot.update(prev_snap, term_df)
+    snap_after_term = snapshot.update(prev_snap, term_df, 2025)
 
     # Try to update compensation
     comp_event = _create_test_event(
@@ -356,7 +356,7 @@ def test_update_compensation_for_terminated_employee(initial_snapshot):
     comp_df = pd.DataFrame([comp_event], columns=event_log.EVENT_COLS)
     comp_df = comp_df.astype(event_log.EVENT_PANDAS_DTYPES)
 
-    final_snap = snapshot.update(snap_after_term, comp_df)
+    final_snap = snapshot.update(snap_after_term, comp_df, 2025)
 
     assert len(final_snap) == len(prev_snap)
     assert emp_to_update in final_snap.index
@@ -467,7 +467,7 @@ def test_update_invalid_event_data(initial_snapshot):
         events_df = events_df.astype(event_log.EVENT_PANDAS_DTYPES)
 
         # Should not raise exceptions but log warnings
-        updated_snap = snapshot.update(prev_snap, events_df)
+        updated_snap = snapshot.update(prev_snap, events_df, 2025)
 
         assert len(updated_snap) == len(prev_snap)
         # No new employees should be added

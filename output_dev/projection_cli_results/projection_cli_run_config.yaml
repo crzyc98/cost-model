@@ -1,9 +1,10 @@
 global_parameters: !!python/object/apply:types.SimpleNamespace
   state:
     annual_compensation_increase_rate: 0.05
-    annual_growth_rate: 0.05
     annual_termination_rate: 0.15
     census_template_path: data/census_template.parquet
+    days_into_year_for_cola: 182
+    days_into_year_for_promotion: 182
     deterministic_termination: false
     log_level: DEBUG
     maintain_headcount: false
@@ -19,9 +20,7 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         comp_spread_sigma: 0.3
         comp_std: 10000
     new_hire_rate: 0.17
-    new_hire_start_salary: 55000
     new_hire_termination_rate: 0.25
-    new_hire_termination_rate_safety_margin: 0.01
     onboarding: !!python/object/apply:types.SimpleNamespace
       state:
         early_tenure_months: 6
@@ -51,7 +50,7 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
       state:
         Staff: 1.0
     start_year: 2025
-    use_expected_attrition: true
+    use_expected_attrition: false
 plan_rules: !!python/object/apply:types.SimpleNamespace
   state:
     auto_enrollment: !!python/object/apply:types.SimpleNamespace

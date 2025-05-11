@@ -30,6 +30,7 @@ def bump(
     Apply the comp_raise_pct from hazard_slice for each active employee,
     and emit one DataFrame of compensation bump events adhering to EVENT_COLS.
     """
+    from cost_model.utils.columns import EMP_TENURE
     # 1) Derive year and filter active
     year = int(hazard_slice["simulation_year"].iloc[0])
     as_of = pd.Timestamp(as_of)

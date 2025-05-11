@@ -12,6 +12,8 @@ from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 
 logger = logging.getLogger(__name__)
 
+from cost_model.utils.columns import EMP_TENURE
+
 def run(
     snapshot: pd.DataFrame,
     hires_to_make: int,
@@ -124,7 +126,7 @@ def run(
                 employee_id=eid,
                 event_type=EVT_COMP,
                 value_num=prorated,
-                value_json=value_json,
+                value_json=None,
                 meta=f"Prorated comp for {eid}"
             )
         )

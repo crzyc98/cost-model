@@ -56,6 +56,8 @@ EVENT_DTYPES = {
 DEFAULT_DEFERRAL_EVENT_TYPES = {"EVT_ENROLL", "EVT_AUTO_INCREASE"}
 
 
+from cost_model.utils.columns import EMP_TENURE
+
 def run(
     snapshot: pd.DataFrame,
     events: pd.DataFrame,

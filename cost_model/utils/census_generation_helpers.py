@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 
 
 # --- Generate single employee record ---
+from cost_model.utils.columns import EMP_TENURE
+
 def generate_employee_record(
     year: int,
     plan_end_date: datetime,
@@ -233,6 +235,8 @@ def generate_employee_record(
 
 
 # --- Calculate derived fields ---
+from cost_model.utils.columns import EMP_TENURE
+
 def calculate_derived_fields(
     df: pd.DataFrame,
     year: int,

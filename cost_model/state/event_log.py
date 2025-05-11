@@ -27,10 +27,13 @@ logger = logging.getLogger(__name__)
 # --- Event Schema Definition ---
 
 # Define standard event types as constants
-EVT_HIRE = "EVT_HIRE"
-EVT_TERM = "EVT_TERM"
-EVT_COMP = "EVT_COMP"
-EVT_CONTRIB = "EVT_CONTRIB"  # Contribution event type for plan rules/engines
+EVT_HIRE      = "EVT_HIRE"
+EVT_TERM      = "EVT_TERM"
+EVT_COMP      = "EVT_COMP"
+EVT_CONTRIB   = "EVT_CONTRIB"  # Contribution event type for plan rules/engines
+EVT_COLA      = "EVT_COLA"      # cost-of-living adjustment
+EVT_PROMOTION = "EVT_PROMOTION" # title or grade change
+EVT_RAISE     = "EVT_RAISE"     # ad-hoc merit increase
 # Add future retirement event types here, e.g.:
 # EVT_ELIG_ACHIEVED = 'elig_achieved'
 # EVT_ENROLL_AUTO = 'enroll_auto'

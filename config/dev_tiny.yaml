@@ -8,15 +8,13 @@ global_parameters:
   new_hire_termination_rate: .25
   new_hire_rate: 0.17
   use_expected_attrition: false
-  new_hire_start_salary: 55000
+  days_into_year_for_cola: 182
+  days_into_year_for_promotion: 182
   new_hire_average_age: 30
-  annual_growth_rate: 0.05
   census_template_path: "data/census_template.parquet"
   deterministic_termination: False
   monthly_transition: false
   maintain_headcount: false
-  use_expected_attrition: true
-  new_hire_termination_rate_safety_margin: 0.01
   role_distribution:
     Staff: 1.0
   new_hire_compensation_params:

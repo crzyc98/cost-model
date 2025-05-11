@@ -33,6 +33,8 @@ def calculate_age(
     ).years
 
 
+# NOTE: Standard column for tenure is EMP_TENURE from cost_model.utils.columns
+
 def calculate_tenure(
     hire_date: Union[pd.Series, pd.Timestamp, None], current_date: pd.Timestamp
 ) -> Union[pd.Series, float]:

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from . import comp, term, hire
+from .cola import cola
 from cost_model.state.event_log import EVENT_COLS
 from cost_model.state import snapshot
 from cost_model.utils.columns import (
@@ -31,6 +32,9 @@ from cost_model.plan_rules.proactive_decrease import run as proactive_decrease_r
 logger = logging.getLogger(__name__)
 
 def _dbg(label: str, df: pd.DataFrame, year: int):
+    if df is None:
+        logger.error(f"[DBG YR={year}] {label:<25} DataFrame is None!")
+        return
     uniq = df[EMP_ID].nunique() if EMP_ID in df.columns else df.index.nunique()
     rows = len(df)
     act = df['active'].sum() if 'active' in df.columns else 'N/A'
@@ -61,7 +65,6 @@ def run_one_year(
         hazard_slice = pd.DataFrame([{
             'simulation_year': year,
             'term_rate': 0.0,
-            'growth_rate': 0.0,
             'comp_raise_pct': 0.0,
             'new_hire_termination_rate': 0.0,
             'cfg': config
@@ -69,10 +72,9 @@ def run_one_year(
 
     # Log rates
     log_term_rate = hazard_slice['term_rate'].mean()
-    log_growth_rate = hazard_slice['growth_rate'].mean()
     log_comp_rate = hazard_slice['comp_raise_pct'].mean()
     log_nh_term_rate = hazard_slice['new_hire_termination_rate'].mean()
-    logger.info(f"[RUN_ONE_YEAR YR={year}] Rates → term={log_term_rate:.3f}, growth={log_growth_rate:.3f}, comp={log_comp_rate:.3f}, nh_term={log_nh_term_rate:.3f}")
+    logger.info(f"[RUN_ONE_YEAR YR={year}] Rates → term={log_term_rate:.3f}, comp={log_comp_rate:.3f}, nh_term={log_nh_term_rate:.3f}")
 
     # reproducible RNG per year
     year_rng = np.random.default_rng(rng_seed_offset or rng.bit_generator._seed_seq.entropy)
@@ -80,8 +82,30 @@ def run_one_year(
     as_of = pd.Timestamp(f"{year}-01-01")
     prev_as_of = pd.Timestamp(f"{year-1}-01-01")
 
-    # --- 2. Plan rules engines (eligibility → etc) ---
+    # --- 1b. Initialize event accumulator ---
     all_new_events: List[pd.DataFrame] = []
+
+    # --- 1c. COLA: Cost-of-Living Adjustment events ---
+    days_into_year_for_cola = getattr(global_params, 'days_into_year_for_cola', 0)
+    cola_jitter_days = getattr(global_params, 'cola_jitter_days', 0)
+    cola_df, = cola(prev_snapshot, hazard_slice, as_of, days_into_year=days_into_year_for_cola, jitter_days=cola_jitter_days, rng=year_rng)
+    if not cola_df.empty:
+        all_new_events.append(cola_df)
+
+    # --- 1d. Promotion and Raise Events ---
+    from .promotion import promote
+    days_into_year_for_promotion = getattr(global_params, 'days_into_year_for_promotion', 0)
+    promo_time = as_of + pd.Timedelta(days=days_into_year_for_promotion)
+    # Optionally, you could stagger raise_time (e.g., 30 days after promotion)
+    raise_time = promo_time  # or promo_time + pd.Timedelta(days=30)
+    promotion_rules = getattr(global_params, 'promotion_rules', {}) if hasattr(global_params, 'promotion_rules') else {}
+    promotions_df, raises_df = promote(prev_snapshot, promotion_rules, promo_time, raise_time=raise_time)
+    if not promotions_df.empty:
+        all_new_events.append(promotions_df)
+    if not raises_df.empty:
+        all_new_events.append(raises_df)
+
+    # --- 2. Plan rules engines (eligibility → etc) ---
     cfg = hazard_slice.iloc[0]['cfg']
 
     # Eligibility
@@ -138,7 +162,7 @@ def run_one_year(
     core_df = pd.concat(core_events, ignore_index=True) if core_events else pd.DataFrame(columns=EVENT_COLS)
 
     # 3c. update snapshot with comp+term
-    temp_snap = snapshot.update(prev_snapshot.set_index(EMP_ID, drop=False), core_df)
+    temp_snap = snapshot.update(prev_snapshot.set_index(EMP_ID, drop=False), core_df, year)
     _dbg("post-term snapshot", temp_snap, year)
 
     # count survivors
@@ -182,7 +206,7 @@ def run_one_year(
 
     # --- 6. Apply hires to snapshot (pre NH-term) ---
     before_nh_df = pd.concat([core_df, hires_df], ignore_index=True) if not hires_df.empty else core_df
-    snap_with_hires = snapshot.update(temp_snap, before_nh_df)
+    snap_with_hires = snapshot.update(temp_snap, before_nh_df, year)
     _dbg("with hires snapshot", snap_with_hires, year)
 
     # --- 7. New-hire terminations ---
@@ -199,6 +223,6 @@ def run_one_year(
     full_event_log_for_year = all_events.sort_values(['event_time', 'event_type'], ignore_index=True)
 
     # --- 9. Final snapshot update (apply NH terminations) ---
-    final_snapshot = snapshot.update(snap_with_hires, nh_term_df)
+    final_snapshot = snapshot.update(snap_with_hires, nh_term_df, year)
 
     return full_event_log_for_year, final_snapshot

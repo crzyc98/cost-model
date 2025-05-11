@@ -162,8 +162,12 @@ def prepare_features_for_prediction(
     if "age_start" in feature_names:
         feats["age_start"] = calculate_age(df[EMP_BIRTH_DATE], reference_date)
 
+    from cost_model.utils.columns import EMP_TENURE
     if "tenure_start" in feature_names:
-        feats["tenure_start"] = calculate_tenure(df[EMP_HIRE_DATE], reference_date)
+        if EMP_TENURE in df.columns:
+            feats["tenure_start"] = df[EMP_TENURE]
+        else:
+            feats["tenure_start"] = calculate_tenure(df[EMP_HIRE_DATE], reference_date)
 
     if "comp_start" in feature_names and GROSS_COMP in df.columns:
         feats["comp_start"] = df[GROSS_COMP]

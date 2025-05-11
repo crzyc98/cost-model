@@ -9,6 +9,7 @@ EMP_BIRTH_DATE = "employee_birth_date"
 EMP_HIRE_DATE = "employee_hire_date"
 EMP_TERM_DATE = "employee_termination_date"
 EMP_GROSS_COMP = "employee_gross_compensation"
+EMP_TENURE = "employee_tenure"  # Standard column for years of service
 EMP_PLAN_YEAR_COMP = "employee_plan_year_compensation"
 EMP_CAPPED_COMP = "employee_capped_compensation"
 EMP_DEFERRAL_RATE = "employee_deferral_rate"

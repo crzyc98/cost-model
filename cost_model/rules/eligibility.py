@@ -20,6 +20,8 @@ from cost_model.rules.validators import EligibilityRule
 logger = logging.getLogger(__name__)
 
 
+from cost_model.utils.columns import EMP_TENURE
+
 def apply(
     df: pd.DataFrame,
     eligibility_cfg: EligibilityRule,
