@@ -2,7 +2,7 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
   state:
     annual_compensation_increase_rate: 0.05
     annual_growth_rate: 0.05
-    annual_termination_rate: 0.03
+    annual_termination_rate: 0.15
     census_template_path: data/census_template.parquet
     deterministic_termination: false
     log_level: DEBUG
@@ -18,8 +18,9 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         comp_min_salary: 40000
         comp_spread_sigma: 0.3
         comp_std: 10000
+    new_hire_rate: 0.17
     new_hire_start_salary: 55000
-    new_hire_termination_rate: 0.2
+    new_hire_termination_rate: 0.25
     new_hire_termination_rate_safety_margin: 0.01
     onboarding: !!python/object/apply:types.SimpleNamespace
       state:

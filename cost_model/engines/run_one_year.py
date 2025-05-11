@@ -156,8 +156,8 @@ def run_one_year(
     else:
         start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
 
-    nh_rate = getattr(config.global_parameters, 'new_hire_rate', 0.0)
-    nh_term_rate = getattr(config.global_parameters, 'new_hire_termination_rate', 0.0)
+    nh_rate = getattr(config, 'new_hire_rate', 0.0)
+    nh_term_rate = getattr(config, 'new_hire_termination_rate', 0.0)
     net_hires = int(math.ceil(start_count * nh_rate))
     gross_hires = int(math.ceil(net_hires / (1 - nh_term_rate))) if nh_term_rate < 1.0 else 0
 
