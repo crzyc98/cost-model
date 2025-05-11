@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import logging
 from pathlib import Path # Though not used directly in func, good for path handling if extended
-from typing import Union
+from typing import Union, Dict, Tuple, List
 
 from cost_model.state.snapshot import SNAPSHOT_COLS as SNAPSHOT_COL_NAMES, SNAPSHOT_DTYPES
 from cost_model.utils.columns import (
@@ -119,3 +119,29 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
     logger.info(f"Initial snapshot created with {len(snapshot_df)} records. Columns: {snapshot_df.columns.tolist()}")
     logger.debug(f"Initial snapshot dtypes:\n{snapshot_df.dtypes}")
     return snapshot_df
+
+def update_snapshot_with_events(
+    prev_snapshot: pd.DataFrame,
+    events_df: pd.DataFrame,
+    as_of: pd.Timestamp,
+    event_priority: Dict[str, int]
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Apply events up to 'as_of' date to the previous snapshot.
+    Returns the updated snapshot and list of active employee IDs as of 'as_of'.
+    """
+    # Filter events by timestamp
+    if 'event_time' in events_df.columns:
+        filtered = events_df[events_df['event_time'] <= as_of]
+    else:
+        filtered = events_df.copy()
+    # Apply update from state snapshot
+    from cost_model.state.snapshot import update as _update_snapshot
+
+    updated_snapshot = _update_snapshot(prev_snapshot, filtered)
+    # Determine active employees at year-end
+    if 'active' in updated_snapshot.columns:
+        year_end_employee_ids = updated_snapshot[updated_snapshot['active']].index.tolist()
+    else:
+        year_end_employee_ids = []
+    return updated_snapshot, year_end_employee_ids

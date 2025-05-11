@@ -95,9 +95,20 @@ def save_detailed_results(
     full_event_log.to_parquet(event_log_path, index=False)
     logger.info(f"Final cumulative event log saved to {event_log_path}")
     
-    # Save summary statistics
+    # Save summary statistics merging core summary with full employment status counts
+    summary_to_save = summary_statistics.copy()
+    if employment_status_summary_df is not None and not employment_status_summary_df.empty:
+        emp_df = employment_status_summary_df.rename(columns={'Year': 'Projection Year'})
+        summary_to_save = summary_to_save.merge(
+            emp_df,
+            on='Projection Year',
+            how='left'
+        )
+    # Rename 'Projection Year' to 'year' if present
+    if 'Projection Year' in summary_to_save.columns:
+        summary_to_save = summary_to_save.rename(columns={'Projection Year': 'year'})
     summary_path = output_path / f"{scenario_name}_summary_statistics.parquet"
-    summary_statistics.to_parquet(summary_path, index=False)
+    summary_to_save.to_parquet(summary_path, index=False)
     logger.info(f"Summary statistics saved to {summary_path}")
     
     # Save employment status summary

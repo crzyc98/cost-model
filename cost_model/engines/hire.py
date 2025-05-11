@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def run(
     snapshot: pd.DataFrame,
-    target_eoy: int,
+    hires_to_make: int,
     hazard_slice: pd.DataFrame, 
     rng: np.random.Generator,
     census_template_path: str,  # New parameter for census template
@@ -30,43 +30,20 @@ def run(
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
     
     simulation_year = hazard_slice['simulation_year'].iloc[0] # Derive simulation_year from hazard_slice
-    as_of = pd.Timestamp(f"{simulation_year}-01-01")
-    survivors = snapshot[
-        (snapshot[EMP_TERM_DATE].isna()) | (snapshot[EMP_TERM_DATE] > as_of)
-    ].copy()
-    curr = len(survivors)
-    needed = max(0, target_eoy - curr)
-    logger.info(f"[HIRE.RUN YR={simulation_year}] Initial survivors (curr): {curr}, Target EOY: {target_eoy}, Needed before gross-up: {needed}")
-
-    if needed == 0:
-        logger.info(f"[HIRE.RUN YR={simulation_year}] No hires needed as target is met or exceeded by current survivors.")
-        return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
-    # New-hire term rates for tenure_band == '0-1'
-    nh_slice = hazard_slice[hazard_slice["tenure_band"] == "0-1"]
-    nh_rates = nh_slice.set_index(EMP_ROLE)["term_rate"].to_dict()
-    # Role proportions among survivors
-    role_counts = survivors[EMP_ROLE].value_counts(normalize=True).to_dict()
-    # If there are no survivors, assign all to a random role in nh_rates
-    if not role_counts and nh_rates:
-        role_counts = {list(nh_rates.keys())[0]: 1.0}
-    # Average new-hire term rate (weighted)
-    avg_nh = sum(role_counts.get(r, 0) * nh_rates.get(r, 0) for r in role_counts)
-    # Ensure (1 - avg_nh) is not zero or extremely small to prevent division issues or huge numbers
-    denominator = 1 - avg_nh
-    if denominator <= 0.001: # If rate is 100% or very close, gross-up isn't meaningful or safe
-        hires_to_make = needed if avg_nh < 1 else 0 # If 100% term rate, effectively 0 net hires unless needed is already 0
-        logger.warning(f"[HIRE.RUN YR={simulation_year}] Avg NH Term Rate ({avg_nh:.4f}) is >= 99.9%. Gross-up is not applied or hires_to_make set to 0.")
-    else:
-        hires_to_make = int(math.ceil(needed / denominator))
-
-    logger.info(f"[HIRE.RUN YR={simulation_year}] Avg NH Term Rate: {avg_nh:.4f}, Hires to make (grossed-up): {hires_to_make}")
-
-    if hires_to_make == 0:
-        logger.info(f"[HIRE.RUN YR={simulation_year}] Zero hires to make after gross-up calculation (or needed was zero).")
+    logger.info(f"[HIRE.RUN YR={simulation_year}] Hires to make (passed-in): {hires_to_make}")
+    
+    # No need to recalculate hires_to_make - the caller has already done this math
+    # including the gross-up for new hire termination rate if needed
+    if hires_to_make <= 0:
+        logger.info(f"[HIRE.RUN YR={simulation_year}] No hires to make as passed-in value is zero or negative.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
     # Assign hires to roles according to proportions
-    roles = list(role_counts.keys()) 
-    role_choices = rng.choice(roles, size=hires_to_make, p=list(role_counts.values()))
+    # Choose roles based on current distribution in snapshot
+    # Fall back to a default role if snapshot is empty
+    role_counts = snapshot[EMP_ROLE].value_counts(normalize=True)
+    roles = role_counts.index.tolist() or ['Staff']
+    probs = role_counts.values.tolist() if not role_counts.empty else [1.0]
+    role_choices = rng.choice(roles, size=hires_to_make, p=probs)
     # Generate unique employee_ids (assume string IDs)
     existing_ids = (
         set(snapshot[EMP_ID])
@@ -90,32 +67,39 @@ def run(
         for d in rng.integers(0, days, size=hires_to_make)
     ]
     # Assign starting comp using config-driven logic
-    plan_rules_config = hazard_slice.iloc[0]['cfg']
-    role_comp_params = plan_rules_config.role_compensation_params
-    global_comp_params = plan_rules_config.new_hire_compensation_params
+    plan_rules_config = hazard_slice.iloc[0]['cfg'] if 'cfg' in hazard_slice.columns and not hazard_slice.empty else None
+    
+    # Add safety checks for missing configuration parameters
+    role_comp_params = None
+    global_comp_params = None
+    
+    if plan_rules_config is not None:
+        role_comp_params = getattr(plan_rules_config, 'role_compensation_params', None)
+        global_comp_params = getattr(plan_rules_config, 'new_hire_compensation_params', None)
     
     starting_comps = []
     for r in role_choices:
         comp = None
         if role_comp_params and r in role_comp_params:
             role_cfg = role_comp_params[r]
-            comp = getattr(role_cfg, 'comp_base_salary', None)
+            comp = role_cfg.get('comp_base_salary')
         if comp is None and global_comp_params:
-            comp = getattr(global_comp_params, 'comp_base_salary', None)
+            comp = global_comp_params.get('comp_base_salary')
         if comp is None:
             comp = 50000
         starting_comps.append(comp)
 
     # 1. Derive year from hazard_slice['simulation_year']
     simulation_year = int(hazard_slice['simulation_year'].iloc[0])
-    as_of = pd.Timestamp(f"{simulation_year}-01-01")
+    # Again, use EOY to filter terminations for placeholder logic
+    as_of = pd.Timestamp(f"{simulation_year}-12-31")
 
     # 2. Filter active survivors
     survivors = snapshot[
         snapshot[EMP_TERM_DATE].isna() | (snapshot[EMP_TERM_DATE] > as_of)
     ]
-    curr = len(survivors)
-    needed = max(0, target_eoy - curr)
+    # We don't need to recalculate needed - hires_to_make is already passed in
+    # and has been calculated by the caller
 
     # 3. (Optional) Gross up by new-hire term rate (not implemented here)
     # 4. (Optional) Read census template for realistic new hire sampling (scaffold only)
@@ -135,7 +119,7 @@ def run(
             "event_id": f"evt_hire_{simulation_year}_{idx:04d}",
             EMP_ID: eid,
             "event_type": EVT_HIRE,
-            "event_date": dt,
+            "event_time": dt,
             "year": simulation_year,
             "value_num": np.nan,
             "value_json": json.dumps({"role": r, "birth_date": placeholder_birth_date}),
@@ -148,7 +132,7 @@ def run(
             "event_id": f"evt_comp_{simulation_year}_{idx:04d}",
             EMP_ID: eid,
             "event_type": EVT_COMP,
-            "event_date": dt,
+            "event_time": dt,
             "year": simulation_year,
             "value_num": comp,
             "value_json": json.dumps({"reason": "starting_salary"}),

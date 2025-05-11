@@ -46,25 +46,19 @@ def bump(
         return [pd.DataFrame(columns=EVENT_COLS)]
 
     # 5) Build event columns
-    df.reset_index(drop=True, inplace=True)
+    df = df.reset_index(drop=True)
     df["event_id"]    = df.index.map(lambda i: f"evt_comp_{year}_{i:04d}")
+    df["event_time"]  = as_of
     df["event_type"]  = EVT_COMP
-    df["event_date"]  = as_of
-    df["year"]        = year
     df["value_num"]   = df["comp_raise_pct"]
-    df["old_comp"]    = df.get(EMP_GROSS_COMP, np.nan)
-    df["new_comp"]    = df["old_comp"] * (1 + df["comp_raise_pct"])
-    df["pct"]         = df["comp_raise_pct"]
-    df["value_json"]  = df.apply(
-        lambda row: json.dumps({
-            "old_comp": row["old_comp"],
-            "new_comp": row["new_comp"],
-            "pct":      row["pct"]
-        }),
-        axis=1
-    )
-    df["notes"]       = None  # or fill in a descriptive string
+    df["value_json"]  = None
+    df["meta"]        = df.apply(lambda row: json.dumps({
+        "old_comp": row.get(EMP_GROSS_COMP, np.nan),
+        "new_comp": row.get(EMP_GROSS_COMP, np.nan) * (1 + row["comp_raise_pct"]),
+        "pct":      row["comp_raise_pct"]
+    }), axis=1)
+    df["notes"]       = None
 
-    # 6) Select and return
+    # 6) Slice to exactly the EVENT_COLS schema
     events = df[EVENT_COLS]
     return [events]

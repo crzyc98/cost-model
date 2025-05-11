@@ -2,7 +2,10 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
   state:
     annual_compensation_increase_rate: 0.05
     annual_growth_rate: 0.05
-    annual_termination_rate: 0.15
+    annual_termination_rate: 0.03
+    census_template_path: data/census_template.parquet
+    deterministic_termination: false
+    log_level: DEBUG
     maintain_headcount: false
     monthly_transition: false
     new_hire_average_age: 30

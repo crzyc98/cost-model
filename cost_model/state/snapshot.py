@@ -425,5 +425,11 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFram
     # Although using nullable dtypes should prevent most unwanted casts.
     current_snapshot = current_snapshot.astype(SNAPSHOT_DTYPES)
 
+    # Sanity check: ensure no duplicate indices after update
+    dupes = current_snapshot.index.duplicated().sum()
+    if dupes:
+        logger.warning(f"Snapshot.update: found {dupes} duplicate indices, dropping extras.")
+        current_snapshot = current_snapshot[~current_snapshot.index.duplicated(keep='first')]
+
     logger.info(f"Snapshot update complete. New shape: {current_snapshot.shape}")
     return current_snapshot

@@ -2,6 +2,7 @@
 
 import pandas as pd
 import numpy as np
+import math
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM
 from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE
@@ -50,7 +51,7 @@ def run(
     # Decide terminations
     if deterministic:
         rate = df['term_rate'].fillna(0).mean()
-        k    = int(np.ceil(n * rate))
+        k    = int(math.ceil(n * rate))
         if k == 0:
             return [pd.DataFrame(columns=EVENT_COLS)]
         losers = rng.choice(df[EMP_ID], size=k, replace=False)
@@ -67,9 +68,9 @@ def run(
         'event_id':   f"evt_term_{year}_{idx:04d}",
         EMP_ID:       emp,
         'event_type': EVT_TERM,
-        'event_date': dt,
+        'event_time': dt,
         'year':       year,
-        'value_num':  np.nan,
+        'value_num':  float('nan'),
         'value_json': None,
         'notes':      f"Termination for {emp} in {year}"
     } for idx, (emp, dt) in enumerate(zip(losers, dates))]
@@ -107,11 +108,12 @@ def run_new_hires(
         k = int(np.ceil(n * rate))
         if k == 0:
             return [pd.DataFrame(columns=EVENT_COLS)]
-        losers = np.random.choice(df_nh[EMP_ID], size=k, replace=False)
-        losers = rng.choice(df_rate[EMP_ID], size=k, replace=False) if k > 0 else []
+        # Use df_nh consistently instead of df_rate
+        losers = rng.choice(df_nh[EMP_ID], size=k, replace=False) if k > 0 else []
     else:
         draw = rng.random(n)
-        losers = df_rate.loc[draw < rates, EMP_ID].tolist()
+        rates = df_nh['new_hire_termination_rate']
+        losers = df_nh.loc[draw < rates, EMP_ID].tolist()
     if not losers:
         return [pd.DataFrame(columns=EVENT_COLS)]
     dates = _random_dates_in_year(year, len(losers), rng)
@@ -119,7 +121,7 @@ def run_new_hires(
         'event_id':   f"evt_nh_term_{year}_{i:04d}",
         EMP_ID:       emp,
         'event_type': EVT_TERM,
-        'event_date': dt,
+        'event_time': dt,
         'year':       year,
         'value_num':  np.nan,
         'value_json': None,

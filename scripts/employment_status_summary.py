@@ -7,7 +7,8 @@ import numpy as np
 
 
 def main():
-    files = sorted(glob.glob("output_dev/TinyDev/TinyDev_year*.parquet"))
+    # Read per-year snapshots with employment_status from the projection output
+    files = sorted(glob.glob("output_dev/*/yearly_snapshots/*.parquet"))
     dfs = [pd.read_parquet(f) for f in files]
     summary = []
     for i, df in enumerate(dfs):
