@@ -164,6 +164,9 @@ def bump(
     ).fillna({'comp_raise_pct': 0})
 
     # 4) Only rows with a positive raise
+    excluded = active[~active[EMP_ID].isin(df[EMP_ID])]
+    if not excluded.empty:
+        logger.warning(f"[COMP.BUMP] {len(excluded)} active employees excluded from comp bump due to missing hazard table match. EMP_IDs: {excluded[EMP_ID].tolist()}")
     df = df[df["comp_raise_pct"] > 0].copy()
     if df.empty:
         return [pd.DataFrame(columns=EVENT_COLS)]
@@ -208,4 +211,12 @@ def bump(
 
     # 6) Slice to exactly the EVENT_COLS schema
     events = df[EVENT_COLS]
+
+    # Assert/Log uniqueness of EMP_IDs
+    if events[EMP_ID].duplicated().any():
+        logger.error(f"[COMP.BUMP] Duplicate EMP_IDs found in comp bump events: {events[EMP_ID][events[EMP_ID].duplicated()].tolist()}")
+        raise ValueError("Duplicate EMP_IDs in comp bump events!")
+
+    # Debug log: summary of bumps
+    logger.debug(f"[COMP.BUMP] Applied {len(events)} comp bumps for year {year}. Pct range: {events['value_json'].apply(lambda x: json.loads(x)['pct']).min():.2%} to {events['value_json'].apply(lambda x: json.loads(x)['pct']).max():.2%}")
     return [events]

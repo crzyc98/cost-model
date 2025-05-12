@@ -20,6 +20,9 @@ LOG_DIR_ROOT.mkdir(parents=True, exist_ok=True)
 # log_file_name = f"projection_cli_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 log_file_name = "projection_cli_run.log"
 
+# Ensure the log file is truncated (emptied) at the start of every run
+with open(LOG_DIR_ROOT / log_file_name, "w"):  # Open in write mode to truncate
+    pass
 logging.basicConfig(
     level=logging.INFO, # Default to INFO, can be changed by config or CLI arg later
     format="%(asctime)s [%(levelname)-8s] [%(name)s.%(funcName)s:%(lineno)d] %(message)s",

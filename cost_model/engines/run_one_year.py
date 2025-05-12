@@ -343,7 +343,8 @@ def run_one_year(
         start_count = int(prev_snapshot['active'].sum())
     else:
         start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
-    logger.info(f"[RUN_ONE_YEAR YR={year}] SOY active headcount: {start_count}")
+    # 1) At start of year
+    logger.info(f"[YR={year}] SOY Active      = {start_count}")
 
     # 3a. comp bump
     comp_events = comp.bump(prev_snapshot, hazard_slice, as_of, year_rng)
@@ -361,6 +362,9 @@ def run_one_year(
     # 3c. update snapshot with comp+term
     temp_snap = snapshot.update(prev_snapshot.set_index(EMP_ID, drop=False), core_df, year)
     _dbg("post-term snapshot", temp_snap, year)
+    # 2) After comp+term but BEFORE hires
+    n_active_survivors = int(temp_snap['active'].sum()) if 'active' in temp_snap.columns else len(temp_snap)
+    logger.info(f"[YR={year}] Post-term Active= {n_active_survivors}")
 
     # count survivors
     survivors = temp_snap.loc[
@@ -415,6 +419,9 @@ def run_one_year(
     before_nh_df = pd.concat([core_df, hires_df], ignore_index=True) if not hires_df.empty else core_df
     snap_with_hires = snapshot.update(temp_snap, before_nh_df, year)
     _dbg("with hires snapshot", snap_with_hires, year)
+    # 3) After applying new hires (but BEFORE NH-termination)
+    hires_added = len(hires_df) if not hires_df.empty else 0
+    logger.info(f"[YR={year}] After Hires     = {snap_with_hires['active'].sum()}  (added {hires_added} hires)")
 
     # --- 7. New-hire terminations ---
     nh_term_list = term.run_new_hires(snap_with_hires, hazard_slice, year_rng, year, deterministic_term)
@@ -424,6 +431,8 @@ def run_one_year(
     else:
         nh_term_df = pd.DataFrame(columns=EVENT_COLS)
     logger.info(f"[RUN_ONE_YEAR YR={year}] New-hire terminations: {len(nh_term_df)}")
+    # 4) After new-hire terminations
+    nh_terms_removed = len(nh_term_df) if not nh_term_df.empty else 0
 
     # --- 8. Final event log for the year ---
     all_events = pd.concat([plan_rule_df, core_df, hires_df, nh_term_df], ignore_index=True)
@@ -431,5 +440,6 @@ def run_one_year(
 
     # --- 9. Final snapshot update (apply NH terminations) ---
     final_snapshot = snapshot.update(snap_with_hires, nh_term_df, year)
+    logger.info(f"[YR={year}] Post-NH-term    = {final_snapshot['active'].sum()}  (removed {nh_terms_removed} NH terms)")
 
     return full_event_log_for_year, final_snapshot

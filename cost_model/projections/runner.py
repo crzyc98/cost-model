@@ -290,18 +290,35 @@ def run_projection_engine(
         full_snapshot = build_employment_status_snapshot(
             current_snapshot, event_log_for_year, current_sim_year
         )
-        # Include active, terminations during year, and anyone with compensation events
+        # Patch: Guarantee retention of all employees who were active at any point during the year,
+        # or who had a compensation or termination event in the current year, for EOY snapshot.
         snap = full_snapshot.copy()
         snap[EMP_TERM_DATE] = pd.to_datetime(snap.get(EMP_TERM_DATE, pd.NaT), errors='coerce')
         snap['term_year'] = snap[EMP_TERM_DATE].dt.year
-        # IDs of employees with compensation events this year
+        # Employees with compensation or termination events this year
         comp_ids = []
+        term_ids = []
         if event_log_for_year is not None and 'event_type' in event_log_for_year.columns:
             comp_ids = event_log_for_year.loc[
                 event_log_for_year['event_type'] == EVT_COMP,
                 EVENT_EMP_ID
             ].unique().tolist()
-        mask = snap['active'] | (snap['term_year'] == current_sim_year) | snap[EMP_ID].isin(comp_ids)
+            term_ids = event_log_for_year.loc[
+                event_log_for_year['event_type'] == EVT_TERM,
+                EVENT_EMP_ID
+            ].unique().tolist()
+        # Employees who were active at any point during the year
+        active_ids_soy = set(current_snapshot[current_snapshot['active']].index.tolist())
+        # Employees who terminated this year
+        terminated_this_year = snap['term_year'] == current_sim_year
+        # Build mask: active EOY, or terminated this year, or had comp/term event this year, or were active SOY
+        mask = (
+            snap['active'] |
+            terminated_this_year |
+            snap[EMP_ID].isin(comp_ids) |
+            snap[EMP_ID].isin(term_ids) |
+            snap[EMP_ID].isin(active_ids_soy)
+        )
         yearly_eoy_snapshots[current_sim_year] = snap.loc[mask].drop(columns=['term_year'])
 
         last_year_active_headcount = active_headcount_eoy

@@ -449,37 +449,28 @@ def run_dynamics_for_year(
         f"Year {sim_year}: Target EOY headcount (based on active start {year_start_headcount_for_calc} and growth {growth_rate:.2%}) = {target_eoy_headcount}"
     )
 
-    needed_active_new_hires_eoy = max(
-        0, target_eoy_headcount - num_survivors_initial_cohort
-    )
+    # Calculate expected terminations
+    expected_terminations = math.ceil(n0_exp * termination_rate)
     log.info(
-        f"Year {sim_year}: Needed active new hires at EOY = {needed_active_new_hires_eoy} (Target: {target_eoy_headcount}, Survivors: {num_survivors_initial_cohort})"
+        f"Year {sim_year}: Expected terminations: {expected_terminations} ({termination_rate:.2%} of {n0_exp} active employees)"
     )
 
-    hires_to_make = 0
-    if needed_active_new_hires_eoy > 0:
-        current_nh_term_rate_for_calc = new_hire_termination_rate
-        log_msg_suffix = "deterministic NH term assumption"
-        if not use_expected_attrition:
-            current_nh_term_rate_for_calc = min(
-                new_hire_termination_rate + new_hire_term_rate_safety_margin, 0.99
-            )
-            log_msg_suffix = "stochastic NH term assumption w/ safety margin"
+    # Calculate net growth needed
+    net_growth_needed = target_eoy_headcount - n0_exp + expected_terminations
+    log.info(
+        f"Year {sim_year}: Net growth needed: {net_growth_needed} (Target: {target_eoy_headcount}, Start: {n0_exp}, Expected Terminations: {expected_terminations})"
+    )
 
-        if current_nh_term_rate_for_calc >= 1.0:
-            log.warning(
-                f"Year {sim_year}: NH term rate for calculation ({current_nh_term_rate_for_calc:.2%}) is >= 100%. Cannot achieve {needed_active_new_hires_eoy} active new hires by hiring."
-            )
-        else:
-            hires_to_make = math.ceil(
-                needed_active_new_hires_eoy / (1 - current_nh_term_rate_for_calc)
-            )
+    # Calculate hires needed, accounting for new hire termination rate
+    if net_growth_needed > 0:
+        hires_to_make = math.ceil(net_growth_needed * (1 + new_hire_termination_rate))
         log.info(
-            f"Year {sim_year}: Calculated {hires_to_make} hires needed ({log_msg_suffix} using rate {current_nh_term_rate_for_calc:.2%}) to get {needed_active_new_hires_eoy} active new hires at EOY."
+            f"Year {sim_year}: Calculated {hires_to_make} hires needed to achieve net growth of {net_growth_needed} (including {new_hire_termination_rate:.2%} new hire terminations)"
         )
     else:
+        hires_to_make = 0
         log.info(
-            f"Year {sim_year}: No new hires needed as survivors ({num_survivors_initial_cohort}) meet/exceed EOY target ({target_eoy_headcount})."
+            f"Year {sim_year}: No new hires needed as net growth is not required ({net_growth_needed} <= 0)"
         )
 
     hires_to_make = max(0, int(hires_to_make))

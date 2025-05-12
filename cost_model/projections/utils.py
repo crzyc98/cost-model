@@ -18,12 +18,18 @@ def assign_employment_status(row, sim_year):
 def filter_prior_terminated(snapshot_df: pd.DataFrame, sim_year: int, for_summary: bool = False) -> pd.DataFrame:
     """
     Excludes employees terminated before the given simulation year.
+    Always includes terminated employees for employment status calculations.
     """
     df = snapshot_df.copy()
     df[EMP_TERM_DATE] = pd.to_datetime(df.get(EMP_TERM_DATE, pd.NaT), errors='coerce')
     df['term_year'] = df[EMP_TERM_DATE].dt.year
+    
+    # Always include active employees and those who terminated in the current year
     mask = df['active'] | (df['term_year'] == sim_year)
-    if for_summary:
+    
+    # For normal processing, also include prior terminations
+    if not for_summary:
         mask = mask | (df['term_year'] < sim_year)
+        
     out = df.loc[mask].drop(columns=['term_year'])
     return out
