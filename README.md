@@ -1,7 +1,26 @@
 # Retirement Plan Cost Model (Projection Tool)
 
 **What is this tool?**  
-This engine enables organizations, consultants, and plan sponsors to simulate and project the financial and demographic outcomes of retirement plans under customizable rules and assumptions. It supports scenario analysis for plan design, regulatory compliance, and cost forecasting—generating both high-level summaries and detailed agent-level (employee-level) outputs over multiple years.
+Imagine a system that captures every single action in your workforce—from the moment someone's hired, to every pay bump, every enrollment in benefits, every voluntary or automatic plan increase—and stores it all in an immutable "event log." Now picture being able to replay those events, at any point in time, to see exactly how your headcount, payroll costs, and retirement‐plan participation evolved year by year.
+
+That's what we've built: an event-driven simulation engine that enables organizations, consultants, and plan sponsors to simulate and project the financial and demographic outcomes of retirement plans under customizable rules and assumptions. It supports scenario analysis for plan design, regulatory compliance, and cost forecasting—generating both high-level summaries and detailed agent-level (employee-level) outputs over multiple years.
+
+## Key Features
+
+### 1. Enterprise‐Grade Audit Trail
+Every hire, termination, compensation change, plan‐eligibility update, and enrollment decision gets stamped with a UUID and timestamp. You get a complete, tamper-proof history of your entire population.
+
+### 2. Highly Modular "Engines"
+Each business rule—compensation increases, voluntary enrollment, auto-escalation of deferrals, proactive contribution changes, you name it—is its own self-contained engine. Want to tweak your auto-enroll parameters? Swap in a new YAML file, rerun, and instantly see the impact—no code changes required.
+
+### 3. On-Demand Snapshots & What-If Scenarios
+Need to know your active headcount as of June 30, 2027? Rebuild the state in seconds from the event log. Want to model a more aggressive match policy? Flip a number in the config, rerun a five-year forecast, and compare scenarios in under two seconds.
+
+### 4. Analyst-Friendly Configuration
+All your core assumptions—turnover rates, raise percentages, enrollment windows, match tiers—live in human-readable CSVs and YAML files. Finance and HR partners can tune parameters without ever touching Python.
+
+### 5. End-to-End Transparency
+From raw events to final summary metrics (headcount, participation rates, contribution dollars), every step is fully tested, documented, and reproducible. Your auditors, regulators, or board members will love the clarity.
 
 ## Key Use Cases
 
@@ -14,7 +33,7 @@ This engine enables organizations, consultants, and plan sponsors to simulate an
 
 ### Production Simulation (Full Dataset)
 ```bash
-python scripts/run_simulation.py \
+python -m cost_model.projections.cli \
   --config config/config.yaml \
   --scenario baseline \
   --census data/census_data.csv \
@@ -23,11 +42,20 @@ python scripts/run_simulation.py \
 
 ### Development Simulation (Small Test Dataset)
 ```bash
-python scripts/run_simulation.py \
+python -m cost_model.projections.cli \
   --config config/dev_tiny.yaml \
   --scenario baseline \
   --census data/dev_tiny/census_2024.csv \
   --output output_dev/
+```
+
+### Agent-Based Model Simulation
+```bash
+python -m cost_model.abm.run_abm_simulation \
+  --config config/dev_tiny.yaml \
+  --scenario baseline \
+  --census data/dev_tiny/census_2024.csv \
+  --output output_dev/abm_results/
 ```
 
 ---
@@ -36,16 +64,27 @@ python scripts/run_simulation.py \
 
 ```
 cost-model/
-├── configs/         # Scenario/config YAML files
-├── data/            # Input census & reference data
-├── docs/            # Documentation & design notes
-├── scripts/         # CLI entry points & batch scripts
-├── utils/           # Helpers, rule facades, ML utilities
-│   ├── rules/         # Rule implementations
-│   └── plan_rules.py  # Facade to rule modules
-├── agents/          # ABM agents (Mesa-based EmployeeAgent)
-├── model/           # Core projection & business logic
-├── output/          # Generated output files & logs
+├── config/                # Scenario/config YAML files
+├── data/                 # Input census & reference data
+├── docs/                 # Documentation & design notes
+├── cost_model/           # Core package
+│   ├── abm/              # Agent-Based Model implementation
+│   │   ├── agent.py      # EmployeeAgent implementation
+│   │   └── model.py      # RetirementPlanModel implementation
+│   ├── dynamics/         # Population dynamics (hires, terms)
+│   ├── engines/          # Core business logic engines
+│   ├── plan_rules/       # Plan rule implementations
+│   ├── projections/      # Multi-year projection framework
+│   │   └── cli.py        # CLI entry point
+│   ├── rules/            # Business rule implementations
+│   ├── state/            # State management (event log, snapshots)
+│   │   ├── event_log.py  # Event logging system
+│   │   └── snapshot.py   # Point-in-time snapshots
+│   └── utils/            # Utilities and helpers
+├── scripts/              # Helper scripts
+├── tests/                # Test suite
+├── output/               # Generated output files & logs
+│   └── output_dev/       # Development output
 ├── requirements.txt
 └── README.md
 ```
@@ -54,40 +93,51 @@ cost-model/
 
 ## How It Works
 
-### Phase I: HR Snapshots  
-Generate or load "raw" census files (one per plan year) that capture headcount and compensation at year-end.
-- **Scripts:**  
-  - `scripts/generate_census.py` (dummy/historical census generator)  
-  - `scripts/run_hr_snapshots.py` (reads CSVs, writes Parquet "snapshots/")  
-- **Output:**  
-  - Per-scenario folder under `hr_snapshots/`  
-  - One Parquet file per year, with all employees (active & terminated) at year-end  
-- **Purpose:** Feed stable data into Phase II; sanity-check headcount & total compensation.
+In short, we've moved from a brittle, hard-to-change monolith to a nimble, auditable, and extensible event-driven simulation engine. It's like upgrading from a black-box spreadsheet to a flight-recorder-driven "time machine" for your workforce—and everyone from analysts to executives can explore "what happened," "why it happened," and "what could happen" with confidence and speed.
 
-### Phase II: Plan Rules & Projection  
-Take Phase I snapshots (active population) and apply plan design rules + population dynamics to project future years.
-- **Scripts:**  
-  - `scripts/run_plan_rules.py` (applies eligibility, AE, AI, contributions)  
-  - `scripts/run_projection.py` (config-driven multi-scenario projection)  
-- **Core Logic:**  
-  1. Eligibility: age & service entry rules  
-  2. Auto-Enrollment (AE) & Auto-Increase (AI)  
-  3. Contributions: employee deferral, employer match/core  
-  4. Population Dynamics: hires, terminations (rule- or ML-based)  
-  5. Cost Proration: prorate comp for mid-year hires/terms  
-- **Output:**  
-  - Per-scenario summary CSV/Excel: yearly headcount, contributions, plan cost metrics  
-  - Optional raw agent-level Excel: one sheet per year + combined sheet  
+### Event-Driven Architecture
+The system is built around an immutable event log that records every significant change in the employee population:
+
+1. **Event Generation**: Events are generated for hires, terminations, compensation changes, eligibility changes, enrollment decisions, etc.
+2. **Event Processing**: Events are processed in chronological order to build the state of the system at any point in time.
+3. **State Reconstruction**: The system can rebuild the state from the event log for any point in time, enabling precise historical analysis.
+
+### Two Simulation Approaches
+
+#### 1. Traditional Projection Framework
+The projection framework processes employees in cohorts, applying rules and generating events for each year in the projection:
+
+- **Engines**: Modular components handle specific business logic (compensation, termination, eligibility, etc.)
+- **Rules**: Business rules determine eligibility, auto-enrollment, contributions, etc.
+- **Dynamics**: Population dynamics handle hiring and termination patterns
+- **Snapshots**: Point-in-time views of the employee population are generated for analysis
+
+#### 2. Agent-Based Model (ABM)
+The ABM approach models each employee as an autonomous agent making decisions based on their characteristics and the environment:
+
+- **EmployeeAgent**: Individual employees with state and decision-making logic
+- **RetirementPlanModel**: Environment that manages agents and applies global rules
+- **Behavioral Modeling**: Probabilistic decision-making based on employee characteristics
+- **Emergent Patterns**: System-level patterns emerge from individual agent behaviors
+
+### Output and Analysis
+- **Yearly Snapshots**: Complete population state at the end of each projection year
+- **Summary Metrics**: Aggregated metrics on participation, contributions, and costs
+- **Scenario Comparison**: Side-by-side comparison of different plan design scenarios
+- **Detailed Agent Data**: Individual-level data for deeper analysis  
 
 ---
 
-## Features
+## Technical Features
 
-- Configurable scenarios via `configs/config.yaml` (start year, projection length, comp increases, hire/term rates)
-- Modular plan rules: eligibility, auto-enrollment (AE), auto-increase (AI), employer match/core formulas
-- Population dynamics: hires and terminations (rule-based or ML-based)
-- Precise financials with `Decimal`, pandas, and NumPy
-- Output: summary Excel per scenario, combined summaries, and raw agent-level Excel
+- **Event-Driven Architecture**: Immutable event log for complete audit trail and state reconstruction
+- **Dual Simulation Approaches**: Traditional projection framework and agent-based modeling
+- **Configurable Scenarios**: Via YAML files (start year, projection length, comp increases, hire/term rates)
+- **Modular Plan Rules**: Eligibility, auto-enrollment (AE), auto-increase (AI), employer match/NEC formulas
+- **Population Dynamics**: Sophisticated models for hires and terminations (rule-based or ML-based)
+- **Financial Precision**: Accurate calculations with `Decimal`, pandas, and NumPy
+- **Comprehensive Output**: Summary Excel per scenario, combined summaries, and raw agent-level Excel
+- **Extensive Testing**: Comprehensive test suite ensures reliability and correctness
 
 ## Requirements
 
@@ -107,6 +157,7 @@ Take Phase I snapshots (active population) and apply plan design rules + populat
   PyYAML>=6.0.1
   pydantic>=1.10.2
   mesa>=2.2.0
+  typing_extensions>=4.7.1
   ```
 - Development dependencies:
   ```
@@ -131,15 +182,22 @@ pip install -r requirements-dev.txt
 
 ## Configuration
 
-Edit `configs/config.yaml` to define scenarios. Key fields:
+Edit `config/config.yaml` to define scenarios. The configuration is structured into three main sections:
+
+1. **global_parameters**: General simulation settings
+2. **plan_rules**: Retirement plan specific rules and parameters
+3. **scenarios**: Defined scenarios for running simulations
+
+Key fields:
 ```yaml
 global_parameters:
   start_year: 2025
   projection_years: 5
-  random_seed: 12345
+  random_seed: 42
   annual_compensation_increase_rate: 0.03
-  annual_termination_rate: 0.13
-  new_hire_termination_rate: 0.20
+  annual_termination_rate: 0.15
+  new_hire_termination_rate: 0.25
+  new_hire_rate: 0.17
   maintain_headcount: false
   role_distribution:
     Staff: 0.8
@@ -151,44 +209,79 @@ global_parameters:
     comp_increase_per_age_year: 500
     comp_increase_per_tenure_year: 1000
     comp_min_salary: 40000
-  role_compensation_params:
-    Staff:
-      comp_base_salary: 55000
-      comp_std: 10000
-    Manager:
-      comp_base_salary: 85000
-      comp_std: 15000
-    Executive:
-      comp_base_salary: 150000
-      comp_std: 20000
+
+plan_rules:
+  eligibility:
+    min_age: 21
+    min_service_months: 0
+  auto_enrollment:
+    enabled: true
+    window_days: 90
+    default_rate: 0.03
+    outcome_distribution:
+      prob_opt_out: 0.10
+      prob_stay_default: 0.70
+      prob_opt_down: 0.05
+      prob_increase_to_match: 0.10
+      prob_increase_high: 0.05
+  auto_increase:
+    enabled: true
+    increase_rate: 0.01
+    cap_rate: 0.10
+  employer_match:
+    tiers:
+      - match_rate: 1.0
+        cap_deferral_pct: 0.03
+      - match_rate: 0.5
+        cap_deferral_pct: 0.02
+    dollar_cap: 5000
+  employer_nec:
+    rate: 0.03
+  irs_limits:
+    2025:
+      compensation_limit: 345000
+      deferral_limit: 23000
+      catchup_limit: 7500
+      catchup_eligibility_age: 50
 
 scenarios:
   Baseline:
+    name: "Current Plan Design"
+  Enhanced_Match:
+    name: "Enhanced Employer Match"
     plan_rules:
-      eligibility:
-        min_age: 21
-        min_service_months: 0
-      auto_enrollment:
-        enabled: true
-        default_rate: 0.02
-      employer_match_formula: "50% up to 6%"
-      employer_core_formula: "0%"
+      employer_match:
+        tiers:
+          - match_rate: 1.0
+            cap_deferral_pct: 0.04
+          - match_rate: 0.5
+            cap_deferral_pct: 0.02
 ```
+
+See `docs/config_documentation.md` for a complete reference of all configuration options.
 
 ---
 
 ## Data
 
-Provide initial census CSV (e.g., `census_data.csv`) with columns:
-- `employee_id`
-- `role`
-- `birth_date`
-- `hire_date`
-- `termination_date` (optional)
-- `gross_compensation`
-- `plan_year_compensation`
-- `capped_compensation`
-- `deferral_percentage`
-- `employee_contribution`
-- `employer_match`
-- `employer_core_contribution`
+Provide initial census CSV (e.g., `census_data.csv`) with the following columns:
+
+### Required Columns
+- `employee_id`: Unique identifier for each employee
+- `birth_date`: Employee date of birth (YYYY-MM-DD)
+- `hire_date`: Employee hire date (YYYY-MM-DD)
+- `termination_date`: Employee termination date if applicable (YYYY-MM-DD)
+- `gross_compensation`: Annual gross compensation
+
+### Optional Columns (will be calculated if not provided)
+- `role`: Employee role/job title
+- `plan_year_compensation`: Compensation for the plan year
+- `capped_compensation`: Compensation capped at IRS limit
+- `deferral_percentage`: Current employee deferral percentage
+- `employee_contribution`: Employee contribution amount
+- `employer_match`: Employer match amount
+- `employer_nec`: Employer non-elective contribution amount
+- `tenure_band`: Tenure category (e.g., "0-1 years", "1-3 years")
+- `age_band`: Age category (e.g., "21-30", "31-40")
+
+The system will calculate missing values based on the configuration and business rules.

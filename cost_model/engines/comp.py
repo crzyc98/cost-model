@@ -46,11 +46,13 @@ def bump(
             raise ValueError(f"{EMP_ID} not found in active snapshot")
 
     # 3) Merge in the raise pct
+    # ensure 'role' from hazard_slice is mapped to EMP_ROLE for merge
+    hz = hazard_slice[['role', 'tenure_band', 'comp_raise_pct']].rename(columns={'role': EMP_ROLE})
     df = active.merge(
-        hazard_slice[[EMP_ROLE, "tenure_band", "comp_raise_pct"]],
-        on=[EMP_ROLE, "tenure_band"],
-        how="left"
-    ).fillna({"comp_raise_pct": 0})
+        hz,
+        on=[EMP_ROLE, 'tenure_band'],
+        how='left'
+    ).fillna({'comp_raise_pct': 0})
 
     # 4) Only rows with a positive raise
     df = df[df["comp_raise_pct"] > 0].copy()

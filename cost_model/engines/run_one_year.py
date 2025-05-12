@@ -58,10 +58,53 @@ def run_one_year(
     Returns (full_event_log_for_year, final_snapshot).
     """
 
+    # —————————————————————————————————————————————
+    # Ensure hazard_table is loaded with all required columns
+    logger.debug(f"Hazard‐table columns before rename: {hazard_table.columns.tolist()}")
+    if 'simulation_year' not in hazard_table.columns:
+        if 'year' in hazard_table.columns:
+            hazard_table = hazard_table.rename(columns={'year': 'simulation_year'})
+            logger.debug("Renamed hazard_table.year → hazard_table.simulation_year")
+        else:
+            raise KeyError(
+                "Your hazard_table is missing both 'simulation_year' and 'year' columns; "
+                "cannot project term/comp rates. Columns present: "
+                f"{hazard_table.columns.tolist()}"
+            )
+    logger.debug(f"Hazard‐table columns after  rename: {hazard_table.columns.tolist()}")
+
+    # Standardize the role column using EMP_ROLE from columns.py
+    from cost_model.utils.columns import EMP_ROLE
+    if 'role' not in hazard_table.columns:
+        if EMP_ROLE in hazard_table.columns:
+            hazard_table = hazard_table.rename(columns={EMP_ROLE: 'role'})
+            logger.debug(f"Renamed hazard_table.{EMP_ROLE} → hazard_table.role")
+        else:
+            raise KeyError(
+                "Your hazard_table is missing both 'role' and EMP_ROLE columns; "
+                f"columns present: {hazard_table.columns.tolist()}"
+            )
+    # Check for all required columns
+    expected = {
+        'simulation_year',
+        'role',
+        'tenure_band',
+        'term_rate',
+        'comp_raise_pct',
+        'new_hire_termination_rate',
+        'cola_pct',
+        'cfg'
+    }
+    missing = expected - set(hazard_table.columns)
+    if missing:
+        raise KeyError(f"Hazard table is missing required columns: {missing}. Columns present: {hazard_table.columns.tolist()}")
+    # —————————————————————————————————————————————
+
     # --- 1. Extract the hazard slice for this year ---
     hazard_slice = hazard_table[hazard_table['simulation_year'] == year]
     if hazard_slice.empty:
-        logger.warning(f"[RUN_ONE_YEAR YR={year}] No hazard rates for {year}, using zeros.")
+        logger.warning(f"[RUN_ONE_YEAR YR={year}] ⚠️ hazard_slice is EMPTY after filtering. "
+                       f"Available years in table: {sorted(hazard_table['simulation_year'].unique())}")
         hazard_slice = pd.DataFrame([{
             'simulation_year': year,
             'term_rate': 0.0,

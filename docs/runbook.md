@@ -1,141 +1,163 @@
-Below is a “soup-to-nuts” run-sheet you (and any teammate) can follow every time you pull a new branch, change a rule, or tweak an assumption.  It is opinionated but turnkey: copy it to docs/runbook.md, tweak paths once, and you’ll never be stuck wondering “what do I do next?”
+# Retirement Plan Cost Model Runbook
 
-⸻
+This runbook provides a step-by-step guide for working with the cost-model codebase. Follow these steps when setting up a new environment, making changes to rules, or testing new scenarios.
 
-0  Bootstrap (one-time per laptop / CI runner)
+## 1. Environment Setup
 
-step	command	goal
-0-a	python -m venv .venv && source .venv/bin/activate	isolated Python
-0-b	pip install -r requirements.txt -r requirements-dev.txt	all deps
-0-c	pre-commit install	auto-format & lint before every commit
-0-d	export PYTHONPATH=$PWD (add to shell profile)	repo modules resolvable everywhere
+### Initial Setup (one-time per laptop / CI runner)
 
+| Step | Command | Purpose |
+|------|---------|--------|
+| 1.1 | `python -m venv .venv && source .venv/bin/activate` | Create isolated Python environment |
+| 1.2 | `pip install -r requirements.txt -r requirements-dev.txt` | Install all dependencies |
+| 1.3 | `pre-commit install` | Set up auto-formatting & linting for commits |
+| 1.4 | `export PYTHONPATH=$PWD` (add to shell profile) | Make repo modules resolvable everywhere |
 
+## 2. Quick Sanity Checks
 
-⸻
+### 2.1 Fast-fail tests (< 30 seconds)
 
-1  Fast-fail sanity check (<< 30 s)
-
+```bash
+# Run quick tests to verify basic functionality
 pytest -q tests/quick
-python scripts/smoke_run.py         # 1-yr, tiny census, DEBUG logging
+```
 
-What it tells you: code still imports, key rules run, output folders created.
+What it tells you: Code imports correctly, key rules run, output folders are created.
 
-⸻
+### 2.2 Event Log Verification
 
-2  Full Phase 1 HR-snapshot generation
-	1.	Edit/Tee configs/dev_local.yaml
-Use the real census but only 2–3 projection years for speed.
-	2.	Run
+```bash
+# Verify event log is being generated correctly
+python scripts/extract_event_log.py \
+  --input output_dev/smoke_test/baseline/event_log.parquet \
+  --output output_dev/smoke_test/event_analysis/ \
+  --format csv
+```
 
-python scripts/run_hr_snapshots.py \
-  --config configs/dev_local.yaml \
-  --census data/census_preprocessed.parquet \
-  --output output/hr_snapshots \
-  --seed 42
+Check that events are being properly recorded with timestamps and UUIDs.
 
+## 3. Full Simulation Run
 
-	3.	Quick smoke-metrics
+### 3.1 Run Multi-Year Projection
 
-python utils/qa/check_headcount.py output/hr_snapshots \
-       --expected-growth 0.03 --tolerance 0.5
+```bash
+# Run a full projection with a realistic dataset
+python -m cost_model.projections.cli \
+  --config config/config.yaml \
+  --scenario baseline \
+  --census data/census_data.csv \
+  --output output/projection_results/ \
+  | tee output/projection_logs/projection_cli_run.log
+```
 
+Pro-tip: Control logging verbosity with environment variables:
+```bash
+LOG_LEVEL=INFO python -m cost_model.projections.cli ...
+```
 
+### 3.2 Run Agent-Based Model Simulation
 
-⸻
+```bash
+python -m cost_model.abm.run_abm_simulation \
+  --config config/config.yaml \
+  --scenario baseline \
+  --census data/census_data.csv \
+  --output output/abm_results/
+```
 
-3  Full Phase 2 plan-rule pass
+### 3.3 Automated Quality Checks
 
-python -m scripts.run_plan_rules \
-       --config configs/dev_local.yaml \
-       --snapshots-dir output/hr_snapshots \
-       --output-dir    output/plan_outputs \
-       | tee logs/plan_rules_run.log
+Run the quality check script to verify key metrics:
 
-Pro-tip: Until you’re happy with the log noise, run with
-LOG_LEVEL=INFO python -m ….
+```bash
+python scripts/sanity_check.py \
+  --snapshots output/snapshots \
+  --outputs output/projection_results \
+  --tolerance 0.01
+```
 
-⸻
+Key metrics to verify (✅/❌):
 
-4  Automated “red-flag” scoreboard  (1 min)
+| Metric | Test |
+|--------|------|
+| Headcount | Matches growth assumptions ±0.25% |
+| Eligible % | Stays within 2pp of prior census |
+| Participation % | Same logic |
+| Avg deferral % | Non-zero when AE on; monotonic if AI on |
+| Total plan cost | Not NaN/inf; monotonic with match increases |
+| Comp growth | Row-level median ≈ configured comp increase |
 
-Create a single notebook notebooks/00_scoreboard.ipynb or a CLI utility:
+## 4. Analysis and Visualization
 
-python utils/qa/scoreboard.py output/plan_outputs/*_metrics.csv
+### 4.1 Interactive Notebooks
 
-Key checks (they print ✅ / ❌):
+Spin up JupyterLab for interactive analysis:
 
-metric	test
-headcount	matches growth assumptions ±0.25 %
-eligible %	stays within 2 pp of prior census
-participation %	same logic
-avg_deferral %	non-zero when AE on; monotonic if AI on
-total_plan_cost	not NaN / inf; monotonic w/ match increases
-comp growth	row-level median ≈ configured comp Δ
-
-
-
-⸻
-
-5  Deep-dive interactive workbook  (≈ 5 min once)
-
-Spin up JupyterLab:
-
+```bash
 jupyter lab --notebook-dir notebooks
+```
 
-Two canonical notebooks:
-	1.	01_population_walkthrough.ipynb – loads the yearly Parquet snapshots; scatter of age vs. tenure; churn waterfall.
-	2.	02_financials_walkthrough.ipynb – loads plan-rule output and produces:
-	•	side-by-side scenario tables
-	•	heat-maps of deferral vs. comp quantile
-	•	cohort traces (new-hire cohort participation over time)
+Key notebooks to explore:
 
-⸻
+1. **Population Analysis** (`notebooks/01_population_analysis.ipynb`)
+   - Loads yearly snapshots from the event log
+   - Visualizes demographics (age vs. tenure scatter plots)
+   - Shows churn waterfall diagrams
+   - Displays headcount growth over time
 
-6  Log summariser (look for behavioural bugs fast)
+2. **Financial Analysis** (`notebooks/02_financial_analysis.ipynb`)
+   - Loads projection results
+   - Creates side-by-side scenario comparison tables
+   - Generates heat maps of deferral rates vs. compensation quantiles
+   - Tracks new-hire cohort participation over time
 
-Add one helper:
+3. **Event Analysis** (`notebooks/03_event_analysis.ipynb`)
+   - Analyzes the event log to track key events
+   - Visualizes event timelines
+   - Identifies patterns in enrollment and contribution changes
 
-# utils/qa/log_summary.py
-import re, pathlib, collections, pandas as pd
+### 4.2 Log Analysis
 
-PAT = re.compile(
-    r'INFO (Applying Auto Enrollment|AE Applied|Eligibility determined): (.*)'
-)
+Use the log analysis script to quickly identify behavioral patterns and potential issues:
 
-def summarise(log_path):
-    rows = []
-    for line in pathlib.Path(log_path).read_text().splitlines():
-        m = PAT.search(line)
-        if m:
-            rows.append(m.groups())
-    return pd.DataFrame(rows, columns=['event', 'payload'])
+```bash
+python scripts/analyze_logs.py \
+  --log output/projection_logs/projection_cli_run.log \
+  --events "auto_enrollment,eligibility,contribution_change" \
+  --output output/log_analysis/
+```
 
-Usage:
+This will extract key events from the logs and generate summary statistics and visualizations.
 
-python - <<'PY'
-from utils.qa.log_summary import summarise
-print(summarise("logs/plan_rules_run.log").head(20))
-PY
+## 5. Debug and Iteration Workflow
 
+### 5.1 Debugging Process
 
+When you encounter issues, follow this debugging workflow:
 
-⸻
+1. **Population Dynamics Issues** (e.g., headcount growth too low)
+   - Extract and analyze the event log to identify patterns
+   - Adjust termination rate or hiring parameters in the config
+   - Re-run the simulation with modified parameters
 
-7  Debug / iterate loop
-	•	☑ Something looks off (e.g. headcount growth too low)
-→ open snapshot parquet → query hires & terms → adjust termination-rate formula or hire calc → re-run Phase 1 only.
-	•	☑ Participation crazy
-→ grep AE Applied: lines → mismatch? → tweak apply_plan_rules.auto_enroll().
+2. **Plan Rule Issues** (e.g., unexpected participation rates)
+   - Check logs for auto-enrollment or eligibility events
+   - Verify rule application in `cost_model/plan_rules/` modules
+   - Modify rule implementation and re-run
 
-Each cycle is Phase 1 + Phase 2 only, not a full reinstall, so iteration is < 2 minutes.
+3. **Financial Calculation Issues** (e.g., contribution errors)
+   - Review `cost_model/rules/contributions.py` implementation
+   - Check for FutureWarnings related to DataFrame concatenation with empty entries
+   - Ensure IRS limits are being correctly applied from config
 
-⸻
+Each iteration cycle should take less than 2 minutes since you only need to re-run the simulation, not reinstall dependencies.
 
-8  CI / PR gate
+### 5.2 CI/PR Gate
 
-Add .github/workflows/regression.yml:
+Add a GitHub Actions workflow for continuous integration:
 
+```yaml
+# .github/workflows/regression.yml
 name: regression
 on: [pull_request]
 jobs:
@@ -145,42 +167,46 @@ jobs:
       - uses: actions/checkout@v4
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: pytest -q tests/quick
-      - run: python scripts/run_hr_snapshots.py \
-              --config configs/ci.yaml \
-              --census data/sample_census.parquet \
-              --output output/hr_snapshots --seed 7
-      - run: python -m scripts.run_plan_rules \
-              --config configs/ci.yaml \
-              --snapshots-dir output/hr_snapshots \
-              --output-dir output/plan_outputs
-      - run: python utils/qa/scoreboard.py output/plan_outputs/*_metrics.csv
+      - run: python -m cost_model.projections.cli \
+              --config config/ci.yaml \
+              --scenario baseline \
+              --census data/sample_census.csv \
+              --output output/ci_results
+      - run: python scripts/sanity_check.py \
+              --snapshots output/ci_results/snapshots \
+              --outputs output/ci_results/baseline \
+              --tolerance 0.01
+```
 
-Fail the workflow if any red-flag check returns ❌.
+The workflow should fail if any quality check returns ❌.
 
-⸻
+## 6. Documentation and Collaboration
 
-9  Documentation for the next human
+### 6.1 Documentation Best Practices
 
-Put the above in docs/runbook.md and link it from README.md#quick-start.
-Add a short Loom or GIF showing Notebook 01 & 02 in action.
+- Keep this runbook updated with any workflow changes
+- Link to this runbook from README.md#quick-start
+- Add visual documentation (screenshots or GIFs) showing notebooks in action
+- Document any new constants or configuration parameters
 
-⸻
+### 6.2 Collaboration Workflow
 
-10  Where you come in (“coach” feedback loop)
-	1.	You run the pipeline (make run_dev if you wrap the commands).
-	2.	You glance at scoreboard.py output – if any ❌, click the generated HTML diff (store it in output/qa/).
-	3.	You open the notebooks, filter by employee_role == "Staff" & year == 2028, see participation 2 pp low.
-	4.	File a GitHub issue, attach the slice as CSV + screenshot, label bug:AE.
-	5.	Dev fixes logic, pushes; CI turns ✅.
+1. **Run the pipeline** (use `make run_dev` if you've wrapped the commands in a Makefile)
+2. **Review quality checks** - if any ❌ appears, examine the generated reports
+3. **Analyze with notebooks** - filter data (e.g., `employee_role == "Staff" & year == 2027`) to identify specific issues
+4. **File GitHub issues** - attach relevant data slices as CSV + screenshots, use appropriate labels (e.g., `bug:auto_enrollment`)
+5. **Track fixes** - verify that CI passes after fixes are implemented
 
-⸻
+## 7. Checklist for Quality Assurance
 
-Summary checklist
+| Status | Item |
+|--------|------|
+| ☐ | Constants from `utils/columns.py` used consistently throughout codebase |
+| ☐ | Quality checks return all ✅ on baseline scenario |
+| ☐ | Notebooks render without manual path edits |
+| ☐ | CI workflow passes on pull requests |
+| ☐ | Event log properly records all employee actions |
+| ☐ | FutureWarnings for DataFrame concatenation with empty entries addressed |
+| ☐ | IRS limits correctly applied from configuration |
 
-done?	item
-☐ constants imported & used in run_plan_rules.py	
-☐ scoreboard.py returns all ✅ on baseline	
-☐ notebooks render without manual path edits	
-☐ CI workflow green on pull-request	
-
-Follow these steps and you’ll have a repeatable, sub-5-minute loop to prove (or disprove) that the model is behaving—as well as a paper-trail you can hand to any engineer for fast fixes.
+By following this runbook, you'll have a repeatable, efficient workflow to validate the model's behavior and provide clear documentation for other team members.

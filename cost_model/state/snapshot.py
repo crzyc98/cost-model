@@ -492,6 +492,30 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
         # Although using nullable dtypes should prevent most unwanted casts.
         current_snapshot = current_snapshot.astype(SNAPSHOT_DTYPES)
 
+        # ----------------------------
+        # Recompute tenure_band for _all_ employees at year-end
+        # ----------------------------
+        as_of = pd.Timestamp(f"{snapshot_year}-12-31")
+        tenure_years = (
+            (as_of - pd.to_datetime(current_snapshot[EMP_HIRE_DATE]))
+            .dt.days
+            / 365.25
+        )
+        def _band(t):
+            if pd.isna(t):
+                return pd.NA
+            if t < 1:
+                return '<1'
+            elif t < 3:
+                return '1-3'
+            elif t < 5:
+                return '3-5'
+            elif t < 10:
+                return '5-10'
+            else:
+                return '10+'
+        current_snapshot['tenure_band'] = tenure_years.map(_band).astype(pd.StringDtype())
+
         # Sanity check: ensure no duplicate indices after update
         dupes = current_snapshot.index.duplicated().sum()
         if dupes:

@@ -1,44 +1,92 @@
-# Python
+# =============================
+# Python bytecode and caches
+# =============================
 __pycache__/
 *.py[cod]
+*$py.class
+
+# C extensions
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# Virtual environment
-.venv/
-venv/
+# =============================
+# Virtual environments
+# =============================
 env/
+venv/
+.venv/
+ENV/
+.Python
 
-# IDE
+# =============================
+# Dependency management
+# =============================
+# Pipenv lockfile
+Pipfile.lock
+# Poetry virtual env
+.poetry/
+
+# =============================
+# IDEs and editors
+# =============================
 .vscode/
 .idea/
-*.swp
-*.swo
+*.sublime-project
+*.sublime-workspace
+
+# =============================
+# Jupyter notebooks
+# =============================
+.ipynb_checkpoints
+
+# =============================
+# Test & coverage reports
+# =============================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =============================
+# Logs and runtime files
+# =============================
+*.log
+
+# =============================
+# Build / packaging
+# =============================
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# =============================
+# OS files
+# =============================
 .DS_Store
+Thumbs.db
 
-# Ignore Excel files
-*.xlsx
-*.xls
-
-# ignore pytest cache
-.pytest_cache
-
-# ignore output
+# =============================
+# Data and output directories
+# =============================
+# (keep raw input data under version control)
 output/
+output_dev/
+
+# =============================
+# Local configuration overrides
+# =============================
+# e.g. config/local.yaml or .env files
+config/*.local.yaml
+*.local.yaml
+.env
+
+# =============================
+# Docker
+# =============================
+docker-compose.override.yml
+
+# =============================
+# Misc caches
+# =============================
+.mypy_cache/
+.pylint.d/

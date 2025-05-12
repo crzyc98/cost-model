@@ -44,9 +44,10 @@ def run(
     if n == 0:
         return [pd.DataFrame(columns=EVENT_COLS)]
 
-    # Merge in just this year’s term_rate
+    # ensure 'role' from hazard_slice is mapped to EMP_ROLE for merge
+    hz = hazard_slice[['role', 'tenure_band', 'term_rate']].rename(columns={'role': EMP_ROLE})
     df = active.merge(
-        hazard_slice[[EMP_ROLE, 'tenure_band', 'term_rate']],
+        hz,
         on=[EMP_ROLE, 'tenure_band'],
         how='left',
     )
