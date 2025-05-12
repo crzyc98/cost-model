@@ -3,6 +3,80 @@
 Handles loading, saving, and appending events to the central event log.
 
 The event log is stored as a Parquet file.
+
+## QuickStart
+
+To work with event logs programmatically:
+
+```python
+import pandas as pd
+from pathlib import Path
+from cost_model.state.event_log import (
+    load_log, append_events, save_log, create_event,
+    EVT_HIRE, EVT_COMP, EVT_TERM, EVENT_COLS
+)
+
+# Create a new event log or load an existing one
+log_path = Path('data/event_log.parquet')
+event_log = load_log(log_path)
+print(f"Loaded event log with {len(event_log)} events")
+
+# Create new events
+new_events = []
+
+# Add a hire event
+hire_event = create_event(
+    event_time=pd.Timestamp('2025-01-15'),
+    employee_id='EMP001',
+    event_type=EVT_HIRE,
+    value_num=75000.0,  # Starting compensation
+    value_json='{"role": "Engineer", "birth_date": "1990-05-12"}',
+    meta='Initial hire'
+)
+new_events.append(hire_event)
+
+# Add a compensation change event
+comp_event = create_event(
+    event_time=pd.Timestamp('2025-06-01'),
+    employee_id='EMP001',
+    event_type=EVT_COMP,
+    value_num=80000.0,  # New compensation
+    meta='Mid-year adjustment'
+)
+new_events.append(comp_event)
+
+# Add a termination event
+term_event = create_event(
+    event_time=pd.Timestamp('2025-09-30'),
+    employee_id='EMP001',
+    event_type=EVT_TERM,
+    meta='Voluntary termination'
+)
+new_events.append(term_event)
+
+# Convert events to DataFrame
+new_events_df = pd.DataFrame(new_events, columns=EVENT_COLS)
+
+# Append to the existing log
+updated_log = append_events(event_log, new_events_df)
+print(f"Updated log now has {len(updated_log)} events")
+
+# Filter events by type or employee
+hire_events = updated_log[updated_log['event_type'] == EVT_HIRE]
+print(f"Found {len(hire_events)} hire events")
+
+employee_events = updated_log[updated_log['employee_id'] == 'EMP001']
+print(f"Employee EMP001 has {len(employee_events)} events")
+
+# Sort events chronologically
+sorted_events = updated_log.sort_values('event_time')
+
+# Save the updated log
+save_log(updated_log, log_path)
+print(f"Saved event log to {log_path}")
+```
+
+This demonstrates how to create, load, filter, and save event logs, which form the foundation of the event-driven simulation system.
 """
 
 import logging

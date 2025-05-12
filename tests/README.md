@@ -11,28 +11,33 @@ tests/
 │   ├── plan_rules/         # Tests for individual plan rules
 │   ├── engines/            # Tests for simulation engines
 │   ├── dynamics/           # Tests for population dynamics
-│   ├── state/              # Tests for state management
-│   └── utils/              # Tests for utilities
-├── integration/            # Tests that span multiple components
-│   ├── test_full_simulation.py  # Full simulation tests
-│   └── test_one_year.py    # Single-year simulation tests
-├── abm/                    # Agent-based model tests
-│   ├── test_agent_eligibility.py  # Tests for agent eligibility
-│   └── test_employee_agent.py     # Tests for employee agent behavior
-├── quick/                  # Fast-running tests for CI
-│   └── test_smoke.py       # Basic smoke tests
-└── conftest.py             # Shared test fixtures and configuration
-```
 
 ## Running Tests
 
-### Running All Tests
+- To run all tests:
+  ```sh
+  pytest
+  ```
+- To run only quick tests:
+  ```sh
+  pytest quick/
+  ```
+- To run only unit tests:
+  ```sh
+  pytest unit/
+  ```
+- To run only integration tests:
+  ```sh
+  pytest integration/
+  ```
 
-```bash
-pytest
-```
+## Notes
 
-### Running Tests by Category
+- Ensure your virtual environment is activated (typically `.venv`).
+- Tests should avoid external dependencies unless necessary for integration testing.
+- For more details, see comments in `conftest.py` and subdirectory READMEs (if present).
+
+## Running Tests by Category
 
 ```bash
 # Run all unit tests
