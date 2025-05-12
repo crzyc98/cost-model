@@ -144,7 +144,6 @@ def run_projection_engine(
     current_cumulative_event_log = pd.DataFrame([], columns=EVENT_COLS)
 
     projection_sim_years = list(range(start_year, start_year + projection_years_count))
-    hazard_table = build_hazard_table(projection_sim_years, current_snapshot, global_params, plan_rules_config)
 
     # 0) grab the census file path for hire.run()
     census_template_path = (
@@ -152,8 +151,7 @@ def run_projection_engine(
         or getattr(config_ns, 'census', None)
     )
     if not census_template_path:
-        logger.error("Missing 'census_template_path' in global_parameters or --census flag")
-        raise ValueError("census_template_path must be provided in the configuration")
+        logger.warning("'census_template_path' not provided in global_parameters or --census flag. Proceeding with None. If hiring logic is invoked, this may cause an error.")
 
     yearly_eoy_snapshots: Dict[int, pd.DataFrame] = {}
     summary_results_list = []
@@ -175,10 +173,24 @@ def run_projection_engine(
         last_year_active_headcount = 0
         logger.warning("[RUNNER] Initial snapshot is missing or has no 'active' column. First year growth rate might be off.")
 
+    from cost_model.utils.columns import EMP_ROLE
     for yr_idx, current_sim_year in enumerate(projection_sim_years):
         logger.info(f"--- Simulating Year {current_sim_year} (Index {yr_idx}) ---")
         logger.debug(f"SOY {current_sim_year} - Snapshot shape: {current_snapshot.shape}, Active: {current_snapshot['active'].sum() if 'active' in current_snapshot else 'N/A'}")
         logger.debug(f"SOY {current_sim_year} - Cumulative Event Log shape: {current_cumulative_event_log.shape}")
+
+        # --- Patch: Regenerate hazard table for the current year using the current snapshot ---
+        hazard_table = build_hazard_table([current_sim_year], current_snapshot, global_params, plan_rules_config)
+        # --- Check for missing (role, tenure_band) combos ---
+        missing_combos = []
+        if EMP_ROLE in current_snapshot.columns and 'tenure_band' in current_snapshot.columns:
+            snapshot_combos = set(tuple(x) for x in current_snapshot[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
+            hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
+            missing_combos = snapshot_combos - hazard_combos
+            if missing_combos:
+                logger.warning(f"[HAZARD TABLE] Year {current_sim_year}: Missing hazard table entries for combinations: {missing_combos}")
+        else:
+            logger.warning(f"[HAZARD TABLE] Year {current_sim_year}: EMP_ROLE or tenure_band not found in current snapshot; cannot check hazard table coverage.")
 
         # run_one_year now returns (full_event_log_for_year, prev_snapshot)
         # We need to explicitly update our current_snapshot using the events from run_one_year.

@@ -168,12 +168,15 @@ def run(
     # Determine “as_of” start of year
     as_of = pd.Timestamp(f"{year}-01-01")
 
+    logger = logging.getLogger(__name__)
     # Select only active employees as of Jan 1
     active = snapshot[
         snapshot[EMP_TERM_DATE].isna() | (snapshot[EMP_TERM_DATE] > as_of)
     ].copy()
     n = len(active)
+    logger.info(f"[TERM] Year {year}: {n} active employees eligible for termination.")
     if n == 0:
+        logger.info(f"[TERM] Year {year}: No active employees for termination.")
         return [pd.DataFrame(columns=EVENT_COLS)]
 
     # ensure 'role' from hazard_slice is mapped to EMP_ROLE for merge
@@ -183,19 +186,27 @@ def run(
         on=[EMP_ROLE, 'tenure_band'],
         how='left',
     )
+    missing_hazard = df['term_rate'].isna().sum()
+    logger.info(f"[TERM] Year {year}: {missing_hazard} employees missing hazard/term_rate after merge.")
+    logger.info(f"[TERM] Year {year}: term_rate stats: min={df['term_rate'].min()}, max={df['term_rate'].max()}, mean={df['term_rate'].mean()}, median={df['term_rate'].median()}.")
 
     # Decide terminations
     if deterministic:
         rate = df['term_rate'].fillna(0).mean()
         k    = int(math.ceil(n * rate))
+        logger.info(f"[TERM] Year {year}: Deterministic mode, using mean rate {rate:.4f}, selecting {k} for termination.")
         if k == 0:
+            logger.info(f"[TERM] Year {year}: No employees selected for termination (k=0).")
             return [pd.DataFrame(columns=EVENT_COLS)]
         losers = rng.choice(df[EMP_ID], size=k, replace=False)
     else:
         probs = df['term_rate'].fillna(0).values
+        logger.info(f"[TERM] Year {year}: Stochastic mode, min prob={probs.min()}, max prob={probs.max()}.")
         draw  = rng.random(n)
         losers = df.loc[draw < probs, EMP_ID].tolist()
+        logger.info(f"[TERM] Year {year}: {len(losers)} employees selected for termination.")
         if not losers:
+            logger.info(f"[TERM] Year {year}: No employees selected for termination (stochastic draw).")
             return [pd.DataFrame(columns=EVENT_COLS)]
 
     # Assign random dates and build events

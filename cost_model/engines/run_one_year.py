@@ -256,6 +256,16 @@ def run_one_year(
 
     # --- 1. Extract the hazard slice for this year ---
     hazard_slice = hazard_table[hazard_table['simulation_year'] == year]
+    # Log unique roles and tenure_bands in hazard_slice and prev_snapshot for this year
+    from cost_model.utils.columns import EMP_ROLE
+    unique_hazard_roles = hazard_slice['role'].unique().tolist() if 'role' in hazard_slice.columns else []
+    unique_hazard_tenure = hazard_slice['tenure_band'].unique().tolist() if 'tenure_band' in hazard_slice.columns else []
+    unique_snap_roles = prev_snapshot[EMP_ROLE].unique().tolist() if EMP_ROLE in prev_snapshot.columns else []
+    unique_snap_tenure = prev_snapshot['tenure_band'].unique().tolist() if 'tenure_band' in prev_snapshot.columns else []
+    logger.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice roles: {unique_hazard_roles}")
+    logger.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice tenure_bands: {unique_hazard_tenure}")
+    logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot roles: {unique_snap_roles}")
+    logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot tenure_bands: {unique_snap_tenure}")
     if hazard_slice.empty:
         logger.warning(f"[RUN_ONE_YEAR YR={year}] ⚠️ hazard_slice is EMPTY after filtering. "
                        f"Available years in table: {sorted(hazard_table['simulation_year'].unique())}")
@@ -350,6 +360,11 @@ def run_one_year(
     comp_events = comp.bump(prev_snapshot, hazard_slice, as_of, year_rng)
     # 3b. term events
     term_events = term.run(prev_snapshot, hazard_slice, year_rng, deterministic_term)
+    # Integrity check: log number and EMP_IDs of term events
+    n_term_events = len(term_events[0]) if term_events and len(term_events) > 0 else 0
+    logger.info(f"[YR={year}] Term events generated: {n_term_events}")
+    if term_events and len(term_events) > 0:
+        logger.info(f"[YR={year}] Term EMP_IDs: {term_events[0][EMP_ID].tolist()}")
 
     # merge comp+term
     core_events = []
@@ -361,6 +376,13 @@ def run_one_year(
 
     # 3c. update snapshot with comp+term
     temp_snap = snapshot.update(prev_snapshot.set_index(EMP_ID, drop=False), core_df, year)
+    # Integrity check: log unique EMP_IDs and assert uniqueness
+    n_unique_empids = temp_snap[EMP_ID].nunique() if EMP_ID in temp_snap.columns else temp_snap.index.nunique()
+    n_rows = len(temp_snap)
+    logger.info(f"[YR={year}] Post-term snapshot: {n_unique_empids} unique EMP_IDs, {n_rows} rows")
+    if n_unique_empids != n_rows:
+        logger.error(f"[YR={year}] Duplicate EMP_IDs detected in post-term snapshot!")
+        raise ValueError("Duplicate EMP_IDs in post-term snapshot!")
     _dbg("post-term snapshot", temp_snap, year)
     # 2) After comp+term but BEFORE hires
     n_active_survivors = int(temp_snap['active'].sum()) if 'active' in temp_snap.columns else len(temp_snap)
@@ -418,6 +440,13 @@ def run_one_year(
     # --- 6. Apply hires to snapshot (pre NH-term) ---
     before_nh_df = pd.concat([core_df, hires_df], ignore_index=True) if not hires_df.empty else core_df
     snap_with_hires = snapshot.update(temp_snap, before_nh_df, year)
+    # Integrity check: log unique EMP_IDs and assert uniqueness
+    n_unique_empids_hires = snap_with_hires[EMP_ID].nunique() if EMP_ID in snap_with_hires.columns else snap_with_hires.index.nunique()
+    n_rows_hires = len(snap_with_hires)
+    logger.info(f"[YR={year}] With hires snapshot: {n_unique_empids_hires} unique EMP_IDs, {n_rows_hires} rows")
+    if n_unique_empids_hires != n_rows_hires:
+        logger.error(f"[YR={year}] Duplicate EMP_IDs detected in with-hires snapshot!")
+        raise ValueError("Duplicate EMP_IDs in with-hires snapshot!")
     _dbg("with hires snapshot", snap_with_hires, year)
     # 3) After applying new hires (but BEFORE NH-termination)
     hires_added = len(hires_df) if not hires_df.empty else 0
@@ -440,6 +469,13 @@ def run_one_year(
 
     # --- 9. Final snapshot update (apply NH terminations) ---
     final_snapshot = snapshot.update(snap_with_hires, nh_term_df, year)
+    # Integrity check: log unique EMP_IDs and assert uniqueness
+    n_unique_empids_final = final_snapshot[EMP_ID].nunique() if EMP_ID in final_snapshot.columns else final_snapshot.index.nunique()
+    n_rows_final = len(final_snapshot)
+    logger.info(f"[YR={year}] Final snapshot: {n_unique_empids_final} unique EMP_IDs, {n_rows_final} rows")
+    if n_unique_empids_final != n_rows_final:
+        logger.error(f"[YR={year}] Duplicate EMP_IDs detected in final snapshot!")
+        raise ValueError("Duplicate EMP_IDs in final snapshot!")
     logger.info(f"[YR={year}] Post-NH-term    = {final_snapshot['active'].sum()}  (removed {nh_terms_removed} NH terms)")
 
     return full_event_log_for_year, final_snapshot
