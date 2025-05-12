@@ -6,7 +6,11 @@ QuickStart: see docs/cost_model/dynamics/sampling/salary.md
 
 from __future__ import annotations
 import pandas as pd
+import numpy as np
 from numpy.random import Generator, default_rng
+import logging
+
+logger = logging.getLogger(__name__)
 from typing import Protocol, runtime_checkable, Optional, Dict
 
 
@@ -100,11 +104,20 @@ class DefaultSalarySampler:
         if size <= 0:
             logger.warning(f"[SALARY.SAMPLE] No new hire salaries to generate (size={size})")
             return pd.Series([], dtype=float, index=[])
-        base_salary = params.get('comp_base_salary', 100000)
-        min_salary = params.get('comp_min_salary', 40000)
-        max_salary = params.get('comp_max_salary', 450000)
-        age_factor = params.get('comp_age_factor', 0.05)
-        std_dev_factor = params.get('comp_stochastic_std_dev', 0.08)
+        # Handle params whether it's a dict or SimpleNamespace
+        if isinstance(params, dict):
+            base_salary = params.get('comp_base_salary', 100000)
+            min_salary = params.get('comp_min_salary', 40000)
+            max_salary = params.get('comp_max_salary', 450000)
+            age_factor = params.get('comp_age_factor', 0.05)
+            std_dev_factor = params.get('comp_stochastic_std_dev', 0.08)
+        else:
+            # Assume SimpleNamespace or similar with attribute access
+            base_salary = getattr(params, 'comp_base_salary', 100000)
+            min_salary = getattr(params, 'comp_min_salary', 40000)
+            max_salary = getattr(params, 'comp_max_salary', 450000)
+            age_factor = getattr(params, 'comp_age_factor', 0.05)
+            std_dev_factor = getattr(params, 'comp_stochastic_std_dev', 0.08)
         std_dev = base_salary * std_dev_factor
         base_salaries = rng.normal(loc=base_salary, scale=std_dev, size=size)
         if ages is not None and len(ages) == size:

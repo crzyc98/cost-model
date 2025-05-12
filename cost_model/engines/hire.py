@@ -14,6 +14,7 @@ import datetime
 from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
 from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
+from cost_model.dynamics.sampling.salary import DefaultSalarySampler
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,17 @@ def run(
     
     # No need to recalculate hires_to_make - the caller has already done this math
     # including the gross-up for new hire termination rate if needed
+    
+    # Get role and default compensation parameters, handling both dict and SimpleNamespace
+    role_comp_params = getattr(global_params, 'role_compensation_params', {})
+    default_params = getattr(global_params, 'new_hire_compensation_params', {})
+    
+    # Convert to dict if they're SimpleNamespace
+    if not isinstance(role_comp_params, dict):
+        role_comp_params = vars(role_comp_params) if hasattr(role_comp_params, '__dict__') else {}
+    if not isinstance(default_params, dict):
+        default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
+
     if hires_to_make <= 0:
         logger.info(f"[HIRE.RUN YR={simulation_year}] No hires to make as passed-in value is zero or negative.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
@@ -115,29 +127,32 @@ def run(
     else:
         # Fix: Generate realistic birth dates based on parameters rather than hardcoding
         # --- Use DefaultSalarySampler for config-driven salary sampling ---
-        new_hire_age_mean = getattr(global_params, 'new_hire_age_mean', 30)
-        new_hire_age_std = getattr(global_params, 'new_hire_age_std', 5)
-        new_hire_age_min = getattr(global_params, 'new_hire_age_min', 22)
-        new_hire_age_max = getattr(global_params, 'new_hire_age_max', 45)
+        # Try to get age parameters from multiple possible locations
+        # 1. From default_params dict
+        new_hire_age_mean = default_params.get("new_hire_age_mean", None)
+        new_hire_age_std = default_params.get("new_hire_age_std", None)
+        new_hire_age_min = default_params.get("new_hire_age_min", None)
+        new_hire_age_max = default_params.get("new_hire_age_max", None)
+        
+        # 2. If not found, try direct attributes on global_params
+        if new_hire_age_mean is None:
+            new_hire_age_mean = getattr(global_params, "new_hire_age_mean", 30)
+        if new_hire_age_std is None:
+            new_hire_age_std = getattr(global_params, "new_hire_age_std", 5)
+        if new_hire_age_min is None:
+            new_hire_age_min = getattr(global_params, "new_hire_age_min", 22)
+        if new_hire_age_max is None:
+            new_hire_age_max = getattr(global_params, "new_hire_age_max", 45)
         # Generate ages using normal distribution with truncation
         ages = rng.normal(new_hire_age_mean, new_hire_age_std, size=hires_to_make)
         ages = np.clip(ages, new_hire_age_min, new_hire_age_max)
 
         # Prepare role-specific compensation parameters
-        # Assume config is accessible via global_params.role_compensation_params (dict)
-        # Fallback to global_params.new_hire_compensation_params if not found
-        try:
-            role_comp_params = getattr(global_params, 'role_compensation_params', {})
-            default_params = getattr(global_params, 'new_hire_compensation_params', {})
-        except Exception:
-            role_comp_params = {}
-            default_params = {}
-
         sampler = DefaultSalarySampler(rng)
         starting_comps = []
         for idx, role in enumerate(role_choices):
-            params = role_comp_params.get(role, default_params)
-            # Sample a single salary for this hire
+            # Use per-role params (guaranteed complete by loader)
+            params = role_comp_params[role]
             comp = sampler.sample_new_hires(
                 size=1,
                 params=params,
