@@ -169,9 +169,12 @@ def run(
     as_of = pd.Timestamp(f"{year}-01-01")
 
     logger = logging.getLogger(__name__)
-    # Select only active employees as of Jan 1
+    # Ensure EMP_HIRE_DATE is datetime
+    snapshot[EMP_HIRE_DATE] = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors='coerce')
+    # Select only experienced actives as of Jan 1 (hire-date BEFORE Jan 1)
     active = snapshot[
-        snapshot[EMP_TERM_DATE].isna() | (snapshot[EMP_TERM_DATE] > as_of)
+        ((snapshot[EMP_TERM_DATE].isna()) | (snapshot[EMP_TERM_DATE] > as_of))
+        & (snapshot[EMP_HIRE_DATE] < as_of)
     ].copy()
     n = len(active)
     logger.info(f"[TERM] Year {year}: {n} active employees eligible for termination.")

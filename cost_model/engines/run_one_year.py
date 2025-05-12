@@ -348,18 +348,31 @@ def run_one_year(
     plan_rule_df = pd.concat(plan_rule_events, ignore_index=True) if plan_rule_events else pd.DataFrame(columns=EVENT_COLS)
 
     # --- 3. Compensation bump & terminations for existing employees ---
-    # Count START-of-year active
+    # Ensure EMP_HIRE_DATE is datetime
+    prev_snapshot[EMP_HIRE_DATE] = pd.to_datetime(prev_snapshot[EMP_HIRE_DATE], errors='coerce')
+    # Count START-of-year experienced active (exclude any hire this year)
+    # Experienced = hired before Jan 1 of this year
+    as_of = pd.Timestamp(f"{year}-01-01")
+    mask_exp = (
+        ((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of))
+        & (prev_snapshot[EMP_HIRE_DATE] < as_of)
+    )
+    mask_new_hire = (
+        ((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of))
+        & (prev_snapshot[EMP_HIRE_DATE] >= as_of)
+    )
+    logger.info(f"[YR={year}] SOY experienced mask: {mask_exp.sum()} | new hire mask: {mask_new_hire.sum()} | total: {len(prev_snapshot)}")
     if 'active' in prev_snapshot.columns:
-        start_count = int(prev_snapshot['active'].sum())
+        start_count = int(prev_snapshot['active'].loc[mask_exp].sum())
     else:
-        start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
-    # 1) At start of year
-    logger.info(f"[YR={year}] SOY Active      = {start_count}")
+        start_count = int(mask_exp.sum())
+    n0_exp = int(mask_exp.sum())  # For net-growth calculation
+    logger.info(f"[YR={year}] SOY Experienced Active = {start_count}")
 
     # 3a. comp bump
     comp_events = comp.bump(prev_snapshot, hazard_slice, as_of, year_rng)
-    # 3b. term events
-    term_events = term.run(prev_snapshot, hazard_slice, year_rng, deterministic_term)
+    # 3b. term events (EXPERIENCED ONLY: exclude new hires)
+    term_events = term.run(prev_snapshot.loc[mask_exp], hazard_slice, year_rng, deterministic_term)
     # Integrity check: log number and EMP_IDs of term events
     n_term_events = len(term_events[0]) if term_events and len(term_events) > 0 else 0
     logger.info(f"[YR={year}] Term events generated: {n_term_events}")
