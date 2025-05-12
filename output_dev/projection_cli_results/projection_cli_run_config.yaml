@@ -15,13 +15,11 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
     new_hire_average_age: 30
     new_hire_compensation_params: !!python/object/apply:types.SimpleNamespace
       state:
-        comp_base_salary: 55000
-        comp_increase_per_age_year: 500
-        comp_increase_per_tenure_year: 1000
-        comp_log_mean_factor: 1.0
+        comp_age_factor: 0.05
+        comp_base_salary: 100000
+        comp_max_salary: 450000
         comp_min_salary: 40000
-        comp_spread_sigma: 0.3
-        comp_std: 10000
+        comp_stochastic_std_dev: 0.08
     new_hire_rate: 0.17
     new_hire_termination_rate: 0.25
     onboarding: !!python/object/apply:types.SimpleNamespace
@@ -40,15 +38,27 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
     random_seed: 42
     role_compensation_params: !!python/object/apply:types.SimpleNamespace
       state:
+        Executive: !!python/object/apply:types.SimpleNamespace
+          state:
+            comp_age_factor: 0.05
+            comp_base_salary: 200000
+            comp_max_salary: 450000
+            comp_min_salary: 40000
+            comp_stochastic_std_dev: 0.08
+        Manager: !!python/object/apply:types.SimpleNamespace
+          state:
+            comp_age_factor: 0.05
+            comp_base_salary: 150000
+            comp_max_salary: 450000
+            comp_min_salary: 40000
+            comp_stochastic_std_dev: 0.08
         Staff: !!python/object/apply:types.SimpleNamespace
           state:
-            comp_base_salary: 55000
-            comp_increase_per_age_year: 500
-            comp_increase_per_tenure_year: 1000
-            comp_log_mean_factor: 1.0
+            comp_age_factor: 0.05
+            comp_base_salary: 100000
+            comp_max_salary: 450000
             comp_min_salary: 40000
-            comp_spread_sigma: 0.3
-            comp_std: 10000
+            comp_stochastic_std_dev: 0.08
     role_distribution: !!python/object/apply:types.SimpleNamespace
       state:
         Staff: 1.0

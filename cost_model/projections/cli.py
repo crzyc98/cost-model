@@ -10,6 +10,7 @@ from .snapshot import create_initial_snapshot
 from .event_log import create_initial_event_log
 from .runner import run_projection_engine
 from .reporting import save_detailed_results, plot_projection_results # Assuming plot_projection_results will be implemented
+from .snapshot import consolidate_snapshots_to_parquet
 
 # Setup basic logging
 # More sophisticated logging configuration can be added later if needed
@@ -114,6 +115,19 @@ def main():
             config_to_save=config_ns
         )
         logger.info(f"Detailed results for '{args.scenario_name}' saved to {output_path}")
+        
+        # Detailed directory listing to diagnose snapshot location
+        logger.info(f"After save_detailed_results, full directory structure under {output_path!r}:")
+        for p in output_path.rglob("*"):
+            logger.info(f"  {p.relative_to(output_path)}")
+        
+        # Consolidate all yearly snapshots into a single file
+        logger.info("Consolidating yearly snapshots into a single file...")
+        consolidate_snapshots_to_parquet(
+            snapshots_dir=output_path / "yearly_snapshots",
+            output_path=output_path / "consolidated_snapshots.parquet"
+        )
+        logger.info("Consolidated snapshots created successfully")
 
         logger.info("Generating and saving plots...")
         plot_projection_results(summary_results_df, output_path) # Assuming plot_projection_results takes summary_df

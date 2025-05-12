@@ -1,6 +1,7 @@
 # cost_model/data/readers.py
 """
 Functions for reading input data files (census, reference data).
+QuickStart: see docs/cost_model/data/readers.md
 """
 
 import logging

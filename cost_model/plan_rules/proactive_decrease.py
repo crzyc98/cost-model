@@ -1,11 +1,7 @@
 # cost_model/plan_rules/proactive_decrease.py
-
 """
 Proactive Decrease Engine:
-
-Scans recent contribution history to detect if an employee's deferral rate has fallen by more than
- a configured threshold relative to their peak contribution rate in the lookback window.  If so,
- emits a "proactive decrease" event for plan adjustment.
+QuickStart: see docs/cost_model/plan_rules/proactive_decrease.md
 """
 import json
 import uuid

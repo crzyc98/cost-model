@@ -1,4 +1,8 @@
-# utils/sampling/new_hires.py
+# cost_model/dynamics/sampling/new_hires.py
+"""
+Functions related to sampling new hires during workforce simulations.
+QuickStart: see docs/cost_model/dynamics/sampling/new_hires.md
+"""
 
 import pandas as pd
 import numpy as np

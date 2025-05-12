@@ -1,3 +1,8 @@
+# cost_model/plan_rules/eligibility_events.py
+"""
+Eligibility Events Engine:Emits milestone eligibility events for employees who cross a configured milestone between prev_as_of and as_of.
+QuickStart: see docs/cost_model/plan_rules/eligibility_events.md
+"""
 import uuid
 import json
 from datetime import timedelta

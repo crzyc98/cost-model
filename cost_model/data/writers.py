@@ -1,6 +1,7 @@
 # cost_model/data/writers.py
 """
 Functions for writing simulation outputs (snapshots, summaries).
+QuickStart: see docs/cost_model/data/writers.md
 """
 
 import logging

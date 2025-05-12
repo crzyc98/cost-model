@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from datetime import datetime
-from cost_model.projections.snapshot import create_initial_snapshot, update_snapshot_with_events
+from cost_model.projections.snapshot import create_initial_snapshot, update_snapshot_with_events, consolidate_snapshots_to_parquet
 
 # Create an initial snapshot from a census file
 start_year = 2025
@@ -270,3 +270,60 @@ def update_snapshot_with_events(
     else:
         year_end_employee_ids = []
     return updated_snapshot, year_end_employee_ids
+
+
+def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_path: Union[str, Path]) -> None:
+    """
+    Combine all yearly snapshots into a single parquet file with a 'year' column.
+    
+    Args:
+        snapshots_dir: Directory containing yearly snapshot parquet files
+        output_path: Path where to save the consolidated parquet file
+    """
+    import pandas as pd
+    from pathlib import Path
+    import re
+    
+    snapshots_dir = Path(snapshots_dir)
+    output_path = Path(output_path)
+    
+    # Find all parquet files in the directory
+    parquet_files = list(snapshots_dir.glob('*.parquet'))
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files found in {snapshots_dir}")
+    
+    # Read and concatenate snapshots
+    all_snapshots = []
+    for file in parquet_files:
+        # Extract year from filename using regex (looking for 4 digits)
+        match = re.search(r'\d{4}', file.stem)
+        if match:
+            year = int(match.group(0))
+        else:
+            logger.warning(f"Could not extract year from filename {file.name}, defaulting to 0")
+            year = 0
+        
+        # Read snapshot
+        df = pd.read_parquet(file)
+        
+        # Add year column
+        df['year'] = year
+        
+        # Reset index to make employee_id a column
+        df = df.reset_index()
+        
+        all_snapshots.append(df)
+    
+    # Concatenate all snapshots
+    combined = pd.concat(all_snapshots, ignore_index=True)
+    
+    # Sort by year and employee_id
+    combined = combined.sort_values(['year', 'employee_id'])
+    
+    # Save to parquet
+    combined.to_parquet(output_path, index=False)
+    
+    logger.info(f"Consolidated {len(all_snapshots)} yearly snapshots into {output_path}")
+    logger.info(f"Final combined snapshot has {len(combined)} records")
+    logger.info(f"Years covered: {sorted(combined['year'].unique())}")
+    logger.info(f"Columns: {combined.columns.tolist()}")

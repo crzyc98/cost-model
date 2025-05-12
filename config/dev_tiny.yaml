@@ -3,7 +3,7 @@ global_parameters:
   log_level: DEBUG
   projection_years: 5
   random_seed: 42
-  annual_compensation_increase_rate: 0.05
+  annual_compensation_increase_rate: 0.05 # Note: Seems unused by hiring/comp code shown
   annual_termination_rate: 0.15
   new_hire_termination_rate: .25
   new_hire_rate: 0.17
@@ -20,28 +20,47 @@ global_parameters:
   maintain_headcount: false
   role_distribution:
     Staff: 1.0
+
+  # Default new hire compensation parameters (used if role-specific not found)
+  # Corrected to match keys expected by hiring.py _calculate_compensation
   new_hire_compensation_params:
-    comp_base_salary: 55000
-    comp_std: 10000
-    comp_increase_per_age_year: 500
-    comp_increase_per_tenure_year: 1000
-    comp_log_mean_factor: 1.0
-    comp_spread_sigma: 0.3
+    comp_base_salary: 100000
     comp_min_salary: 40000
+    comp_age_factor: 0.05  
+    comp_stochastic_std_dev: 0.08 # Assumed mapping from comp_spread_sigma
+    comp_max_salary: 450000  # Maximum salary is 1.5x base salary
+
+  # Role-specific compensation parameters
+  # Corrected to match keys expected by hiring.py _calculate_compensation
   role_compensation_params:
     Staff:
-      comp_base_salary: 55000
-      comp_std: 10000
-      comp_increase_per_age_year: 500
-      comp_increase_per_tenure_year: 1000
-      comp_log_mean_factor: 1.0
-      comp_spread_sigma: 0.3
+      comp_base_salary: 100000
       comp_min_salary: 40000
+      comp_age_factor: 0.05  
+      comp_stochastic_std_dev: 0.08 # Assumed mapping from comp_spread_sigma
+      comp_max_salary: 450000  # Maximum salary is 1.5x base salary
+      # comp_std, comp_increase_per_age_year, comp_increase_per_tenure_year,
+      # comp_log_mean_factor, comp_spread_sigma removed as they don't match expected keys or logic
+    Manager:
+      comp_base_salary: 150000
+      comp_min_salary: 40000
+      comp_age_factor: 0.05  
+      comp_stochastic_std_dev: 0.08 # Assumed mapping from comp_spread_sigma
+      comp_max_salary: 450000  # Maximum salary is 1.5x base salary
+    Executive:
+      comp_base_salary: 200000
+      comp_min_salary: 40000
+      comp_age_factor: 0.05  
+      comp_stochastic_std_dev: 0.08 # Assumed mapping from comp_spread_sigma
+      comp_max_salary: 450000  # Maximum salary is 1.5x base salary
+
   onboarding:
     enabled: true
     early_tenure_months: 6
     hazard_multiplier: 1.5
     productivity_curve: [0.80, 0.85, 0.90, 0.95, 1.00, 1.00]
+
+# --- Plan Rules and Scenarios sections remain unchanged ---
 
 plan_rules:
   eligibility:

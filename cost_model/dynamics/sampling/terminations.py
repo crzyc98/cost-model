@@ -1,4 +1,8 @@
-# utils/sampling/terminations.py
+# cost_model/dynamics/sampling/terminations.py
+"""
+Functions related to sampling terminations during workforce simulations.
+QuickStart: see docs/cost_model/dynamics/sampling/terminations.md
+"""
 
 import pandas as pd
 import numpy as np
