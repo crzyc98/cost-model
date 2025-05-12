@@ -74,7 +74,13 @@ def build_employment_status_summary(snapshot_df: pd.DataFrame, event_log_df: pd.
     """
     Returns a summary dict with counts for each employment status.
     """
-    snap = build_employment_status_snapshot(snapshot_df, event_log_df, sim_year)
+    # Use the unfiltered snapshot, but include prior terminations for summary purposes
+    from cost_model.projections.utils import filter_prior_terminated
+    snap = build_employment_status_snapshot(
+        filter_prior_terminated(snapshot_df, sim_year, for_summary=True),
+        event_log_df,
+        sim_year
+    )
     counts = snap['employment_status'].value_counts().to_dict()
     return {
         'Year': sim_year,
