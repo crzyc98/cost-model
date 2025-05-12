@@ -181,11 +181,34 @@ def run(
 
     # ensure 'role' from hazard_slice is mapped to EMP_ROLE for merge
     hz = hazard_slice[['role', 'tenure_band', 'term_rate']].rename(columns={'role': EMP_ROLE})
+    
+    # Log hazard table and active employees before merge for debugging
+    logger.debug(f"[TERM] Year {year}: Active employee roles: {active[EMP_ROLE].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Active employee tenure bands: {active['tenure_band'].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Hazard table roles: {hz[EMP_ROLE].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Hazard table tenure bands: {hz['tenure_band'].unique().tolist()}")
+    
+    # Merge hazard rates into active employees
     df = active.merge(
         hz,
         on=[EMP_ROLE, 'tenure_band'],
         how='left',
     )
+    
+    # CRITICAL: Verify the merge didn't inflate the employee count
+    if len(df) != n:
+        logger.error(f"[TERM] Year {year}: CRITICAL ERROR - Merge inflated employee count from {n} to {len(df)}!")
+        logger.error(f"[TERM] Year {year}: This will cause incorrect termination counts.")
+        # Force df back to the original active employees to prevent inflation
+        # Keep only the first occurrence of each employee to avoid duplicates
+        if EMP_ID in df.columns:
+            df = df.drop_duplicates(subset=[EMP_ID])
+        else:
+            df = df.iloc[:n]  # Fallback if EMP_ID not available
+        logger.info(f"[TERM] Year {year}: Corrected employee count back to {len(df)}.")
+    
+    # Verify we still have the same employees
+    assert len(df) == n, f"Employee count mismatch after hazard table merge: {len(df)} != {n}"
     missing_hazard = df['term_rate'].isna().sum()
     logger.info(f"[TERM] Year {year}: {missing_hazard} employees missing hazard/term_rate after merge.")
     logger.info(f"[TERM] Year {year}: term_rate stats: min={df['term_rate'].min()}, max={df['term_rate'].max()}, mean={df['term_rate'].mean()}, median={df['term_rate'].median()}.")

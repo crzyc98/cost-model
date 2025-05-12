@@ -463,10 +463,14 @@ def run_dynamics_for_year(
 
     # Calculate hires needed, accounting for new hire termination rate
     if net_growth_needed > 0:
-        hires_to_make = math.ceil(net_growth_needed * (1 + new_hire_termination_rate))
-        log.info(
-            f"Year {sim_year}: Calculated {hires_to_make} hires needed to achieve net growth of {net_growth_needed} (including {new_hire_termination_rate:.2%} new hire terminations)"
-        )
+        if new_hire_termination_rate < 1.0:
+            hires_to_make = math.ceil(net_growth_needed / (1 - new_hire_termination_rate))
+            log.info(
+                f"Year {sim_year}: Calculated {hires_to_make} hires needed to achieve net growth of {net_growth_needed} (accounting for {new_hire_termination_rate:.2%} new hire terminations via division)"
+            )
+        else:
+            hires_to_make = 0
+            log.warning(f"Year {sim_year}: new_hire_termination_rate >= 1.0, cannot hire any employees.")
     else:
         hires_to_make = 0
         log.info(
