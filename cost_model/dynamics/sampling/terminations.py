@@ -79,8 +79,38 @@ def sample_terminations(
     already_term = df_out[EMP_TERM_DATE].notna()
     valid_hire = hires.notna()
 
-    # Determine who terminates using previous robust logic
-    terminated_mask = ~already_term & valid_hire & (draws < probs.values)
+    # --- Special-case float/int “annual” termination_rate: pick exactly N = ceil(rate×active), weighted by hazard ---
+    import math
+    if isinstance(termination_rate, (float, int)):
+        valid_idx  = df_out.index[~already_term & valid_hire]
+        total_valid= len(valid_idx)
+        rate       = float(termination_rate)
+        n_to_term  = math.ceil(total_valid * rate)
+        logger.info(f"sample_terminations: terminating exactly {n_to_term} of {total_valid} per annual rate {rate:.2%}")
+
+        if n_to_term > 0 and total_valid > 0:
+            # — merge in per-row hazard (term_rate) if it’s on df_out —
+            if 'term_rate' in df_out.columns:
+                weights = df_out.loc[valid_idx, 'term_rate'].fillna(0.0)
+                # normalize to sum=1
+                probs_w = weights.div(weights.sum()) if weights.sum() > 0 else None
+            else:
+                probs_w = None
+
+            # weighted sampling without replacement
+            if probs_w is not None:
+                losers = rng.choice(valid_idx, size=min(n_to_term, total_valid),
+                                    replace=False, p=probs_w.values)
+            else:
+                losers = rng.choice(valid_idx, size=min(n_to_term, total_valid), replace=False)
+
+            terminated_mask = df_out.index.isin(losers)
+        else:
+            terminated_mask = pd.Series(False, index=df_out.index)
+    else:
+        # Fallback to original per-row probability logic
+        draws = rng.random(len(df_out))
+        terminated_mask = ~already_term & valid_hire & (draws < probs.values)
 
     n_terminated = terminated_mask.sum()
     # Use more informative log message
@@ -99,12 +129,28 @@ def sample_terminations(
         year_start_dt = pd.Timestamp(year=year_end.year, month=1, day=1)
         term_dates = term_dates.clip(lower=year_start_dt, upper=year_end)
 
-        # Assign termination date and status using .loc
-        df_out.loc[terminated_mask, EMP_TERM_DATE] = term_dates
-        # Ensure STATUS_COL exists
-        if STATUS_COL not in df_out.columns:
-            df_out[STATUS_COL] = "Active"  # Or appropriate default
-        df_out.loc[terminated_mask, STATUS_COL] = "Terminated"
+        # Defensive fix: Do not allow termination before hire date
+        hire_dates = hires[terminated_mask]
+        invalid_mask = term_dates < hire_dates
+        if invalid_mask.any():
+            logger.warning(f"{invalid_mask.sum()} terminations had term_date < hire_date. Setting term_date to NaT and not marking as terminated for these rows.")
+            # For these, set term_date to NaT and do not mark as terminated
+            # Only assign valid term dates
+            valid_mask = ~invalid_mask
+            # Assign only to valid rows
+            df_out.loc[terminated_mask[terminated_mask].index[valid_mask], EMP_TERM_DATE] = term_dates[valid_mask]
+            # Mark only valid as terminated
+            if STATUS_COL not in df_out.columns:
+                df_out[STATUS_COL] = "Active"
+            df_out.loc[terminated_mask[terminated_mask].index[valid_mask], STATUS_COL] = "Terminated"
+            # For invalid, leave as not terminated (Active/NaT)
+        else:
+            # Assign termination date and status using .loc
+            df_out.loc[terminated_mask, EMP_TERM_DATE] = term_dates
+            # Ensure STATUS_COL exists
+            if STATUS_COL not in df_out.columns:
+                df_out[STATUS_COL] = "Active"  # Or appropriate default
+            df_out.loc[terminated_mask, STATUS_COL] = "Terminated"
 
         # Ensure correct dtype after assignment
         df_out[EMP_TERM_DATE] = pd.to_datetime(df_out[EMP_TERM_DATE])

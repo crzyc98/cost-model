@@ -231,7 +231,7 @@ def run(
         draw  = rng.random(n)
         losers = df.loc[draw < probs, EMP_ID].tolist()
         logger.info(f"[TERM] Year {year}: {len(losers)} employees selected for termination.")
-        if not losers:
+        if len(losers) == 0:
             logger.info(f"[TERM] Year {year}: No employees selected for termination (stochastic draw).")
             return [pd.DataFrame(columns=EVENT_COLS)]
 
@@ -314,7 +314,7 @@ def run_new_hires(
         draw = rng.random(n)
         rates = df_nh['new_hire_termination_rate']
         losers = df_nh.loc[draw < rates, EMP_ID].tolist()
-    if not losers:
+    if len(losers) == 0:
         return [pd.DataFrame(columns=EVENT_COLS)]
     dates = _random_dates_in_year(year, len(losers), rng)
     term_events = []

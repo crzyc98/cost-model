@@ -587,6 +587,12 @@ def run_dynamics_for_year(
     if not df_processed.empty:
         final_df_list.append(df_processed.reset_index(drop=True))
     if not new_hires_df.empty:
+        # Debug: Log birth date distribution in new hires
+        birth_dates = new_hires_df[EMP_BIRTH_DATE]
+        unique_birth_dates = birth_dates.nunique()
+        log.debug(f"New hires birth date stats: Total={len(new_hires_df)}, Unique={unique_birth_dates}")
+        if unique_birth_dates < len(new_hires_df):
+            log.warning(f"Potential birth date duplication: Only {unique_birth_dates} unique birth dates among {len(new_hires_df)} new hires")
         final_df_list.append(new_hires_df.reset_index(drop=True))
 
     if not final_df_list:

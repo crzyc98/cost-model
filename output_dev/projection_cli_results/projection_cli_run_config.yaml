@@ -5,10 +5,13 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
     census_template_path: data/census_template.parquet
     days_into_year_for_cola: 182
     days_into_year_for_promotion: 182
-    deterministic_termination: false
+    deterministic_termination: true
     log_level: DEBUG
     maintain_headcount: false
+    max_working_age: 65
+    min_working_age: 22
     monthly_transition: false
+    new_hire_age_std_dev: 5
     new_hire_average_age: 30
     new_hire_compensation_params: !!python/object/apply:types.SimpleNamespace
       state:

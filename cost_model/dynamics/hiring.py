@@ -204,7 +204,20 @@ def _generate_ages(
     max_age: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Generates ages using a truncated normal distribution."""
+    """
+    Generate an array of integer ages for new hires using a truncated normal distribution.
+
+    Args:
+        num: Number of ages to generate.
+        mean: Mean age for the distribution.
+        std_dev: Standard deviation for the distribution.
+        min_age: Minimum allowed age (inclusive).
+        max_age: Maximum allowed age (inclusive).
+        rng: Numpy random Generator for reproducibility.
+
+    Returns:
+        np.ndarray of shape (num,) with integer ages, clipped to [min_age, max_age].
+    """
     safe_std_dev = max(std_dev, 1e-6)
     a, b = (min_age - mean) / safe_std_dev, (max_age - mean) / safe_std_dev
     ages = truncnorm.rvs(a, b, loc=mean, scale=safe_std_dev, size=num, random_state=rng)
@@ -214,22 +227,44 @@ def _generate_ages(
 def _calculate_birth_dates(
     hire_dates: pd.Series, ages: np.ndarray, rng: np.random.Generator
 ) -> pd.Series:
-    """Calculates birth dates based on hire date and age."""
-    birth_dates_list = []
-    for hire_date, age in zip(hire_dates, ages):
-        birth_year = hire_date.year - age
-        birth_month = rng.integers(1, 13)
-        birth_day = rng.integers(1, 29)
+    """
+    Calculate birth dates by subtracting exact years and adding random jitter.
+    This ensures unique birth dates and proper date arithmetic.
+    
+    Args:
+        hire_dates: Series of hire dates
+        ages: Array of ages
+        rng: Random number generator
+        
+    Returns:
+        Series of birth dates with datetime64[ns] dtype
+    """
+    # Generate random month and day for each hire
+    months = rng.integers(1, 13, size=len(hire_dates))
+    days = rng.integers(1, 29, size=len(hire_dates))
+    
+    # Calculate birth dates by subtracting exact years and using random month/day
+    birth_dates = []
+    for hire_date, age, month, day in zip(hire_dates, ages, months, days):
         try:
-            birth_dates_list.append(
-                pd.Timestamp(year=birth_year, month=birth_month, day=birth_day)
-            )
+            birth_year = hire_date.year - age
+            birth_date = pd.Timestamp(year=birth_year, month=month, day=day)
+            birth_dates.append(birth_date)
         except ValueError:
-            logger.warning(
-                f"Could not create birth date {birth_year}-{birth_month}-{birth_day}, using Jan 1st."
-            )
-            birth_dates_list.append(pd.Timestamp(year=birth_year, month=1, day=1))
-    return pd.Series(birth_dates_list, name=EMP_BIRTH_DATE)
+            # If the date is invalid (like Feb 30), use the first day of the month
+            birth_date = pd.Timestamp(year=birth_year, month=month, day=1)
+            birth_dates.append(birth_date)
+    
+    # Create Series with explicit datetime64[ns] dtype
+    birth_dates_series = pd.Series(birth_dates, index=hire_dates.index, name=EMP_BIRTH_DATE, dtype='datetime64[ns]')
+    
+    # Debug logging
+    if not pd.api.types.is_datetime64_any_dtype(birth_dates_series):
+        logger.warning(f"Birth dates not in datetime format: {birth_dates_series.dtype}")
+    if birth_dates_series.isna().any():
+        logger.warning(f"Found NA values in birth dates: {birth_dates_series.isna().sum()}")
+    
+    return birth_dates_series
 
 
 # --- MODIFIED FUNCTION ---
@@ -363,19 +398,38 @@ def generate_new_hires(
     ages = _generate_ages(
         num_hires, age_mean, age_std_dev, min_age_cfg, max_age_cfg, rng
     )
+    print("Generated Ages:", ages)
+    # Defensive check: warn if all ages are identical (could cause identical birth dates)
+    if len(set(ages)) == 1:
+        logger.warning(f"All generated ages are identical ({ages[0]}). This may cause identical birth dates. Check scenario_config or RNG usage.")
     birth_dates = _calculate_birth_dates(hire_dates, ages, rng)
-
-    # Call _calculate_compensation with the correctly named default dict
-    compensation = _calculate_compensation(
-        roles, ages, role_comp_params, default_comp_params_as_dict, min_age_cfg, rng
-    )
-
+    print("Calculated Birth Dates:", birth_dates.tolist())
+    
+    # Debug: Verify birth date types and values
+    if not pd.api.types.is_datetime64_any_dtype(birth_dates):
+        logger.warning(f"Birth dates not in datetime format: {birth_dates.dtype}")
+    if birth_dates.isna().any():
+        logger.warning(f"Found NA values in birth dates: {birth_dates.isna().sum()}")
+    
+    # Ensure birth dates are properly converted to datetime
+    birth_dates = pd.to_datetime(birth_dates)
+    
+    # Debug: Verify final birth date values
+    unique_dates = birth_dates.unique()
+    if len(unique_dates) < len(birth_dates):
+        logger.warning(f"Only {len(unique_dates)} unique birth dates among {len(birth_dates)} hires")
+    if (unique_dates == pd.Timestamp('1990-01-01')).any():
+        logger.warning("Found default birth date 1990-01-01 in birth dates")
+    
+    # Ensure birth dates are explicitly included in the DataFrame
     nh_df_data = {
         id_col_name: ids,
         EMP_HIRE_DATE: hire_dates,
         EMP_BIRTH_DATE: birth_dates,
         "employee_role": roles,
-        EMP_GROSS_COMP: compensation,
+        EMP_GROSS_COMP: _calculate_compensation(
+            roles, ages, role_comp_params, default_comp_params_as_dict, min_age_cfg, rng
+        ),
         "employment_status": "Active",
         EMP_TERM_DATE: pd.NaT,
     }

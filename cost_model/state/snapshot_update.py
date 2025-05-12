@@ -88,6 +88,7 @@ from .schema import (
     EVT_TERM,
     EMP_ID,
     EMP_HIRE_DATE,
+    EMP_BIRTH_DATE,
     EMP_GROSS_COMP,
     EMP_TERM_DATE,
     EMP_TENURE,
@@ -131,6 +132,11 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     new_df = new_df.merge(last_term, left_index=True, right_index=True, how="left")
     new_df["active"] = new_df[EMP_TERM_DATE].isna()
 
+    # Debug: Verify birth date types before ensure_columns_and_types
+    if not pd.api.types.is_datetime64_any_dtype(new_df[EMP_BIRTH_DATE]):
+        logger.warning(f"Birth dates not in datetime format: {new_df[EMP_BIRTH_DATE].dtype}")
+        new_df[EMP_BIRTH_DATE] = pd.to_datetime(new_df[EMP_BIRTH_DATE], errors='coerce')
+    
     new_df = ensure_columns_and_types(new_df)
 
     as_of = pd.Timestamp(f"{year}-12-31")

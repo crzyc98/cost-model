@@ -7,12 +7,15 @@ global_parameters:
   annual_termination_rate: 0.15
   new_hire_termination_rate: .25
   new_hire_rate: 0.17
+  new_hire_age_std_dev: 5
+  min_working_age: 22
+  max_working_age: 65
   use_expected_attrition: false
   days_into_year_for_cola: 182
   days_into_year_for_promotion: 182
   new_hire_average_age: 30
   census_template_path: "data/census_template.parquet"
-  deterministic_termination: False
+  deterministic_termination: true
   monthly_transition: false
   maintain_headcount: false
   role_distribution:
