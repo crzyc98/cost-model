@@ -1,140 +1,166 @@
-Here’s a high‐level refactoring plan to move your codebase entirely onto the “new”, cleaner column names—no more ad-hoc renames in downstream scripts:
+# Column Names and Data Schema
 
-⸻
+## Overview
 
-1. Define a Central Column-Names Constants Module
+The cost model uses a centralized column naming system defined in `cost_model/utils/columns.py`. This approach eliminates magic strings, prevents drift between scripts, and makes future renaming trivial.
 
-Create utils/columns.py with something like:
+## Current Implementation
 
-# utils/columns.py
+The column names are organized into several categories in `cost_model/utils/columns.py`:
 
-# Raw census → standardized
-EMP_SSN           = "employee_ssn"
-EMP_ROLE         = "employee_role"
-EMP_BIRTH_DATE   = "employee_birth_date"
-EMP_HIRE_DATE    = "employee_hire_date"
-EMP_TERM_DATE    = "employee_termination_date"
+### Census and Snapshot Columns
 
-# HR snapshots out of project_hr()
-GROSS_COMP       = "gross_compensation"
-PLAN_YEAR_COMP   = "plan_year_compensation"
-CAPPED_COMP      = "capped_compensation"
-DEFERRAL_RATE    = "deferral_rate"
-PRE_TAX_CONTR    = "pre_tax_contributions"
-EMP_MATCH        = "employer_match_contribution"
-EMP_NEC          = "employer_non_elective_contribution"
+```python
+# Census and snapshot columns (raw and standardized)
+EMP_SSN = "employee_ssn"
+EMP_ROLE = "employee_role"
+EMP_BIRTH_DATE = "employee_birth_date"
+EMP_HIRE_DATE = "employee_hire_date"
+EMP_TERM_DATE = "employee_termination_date"
+EMP_GROSS_COMP = "employee_gross_compensation"
+EMP_TENURE = "employee_tenure"  # Standard column for years of service
+EMP_PLAN_YEAR_COMP = "employee_plan_year_compensation"
+EMP_CAPPED_COMP = "employee_capped_compensation"
+EMP_DEFERRAL_RATE = "employee_deferral_rate"
+EMP_CONTR = "employee_contribution"
+EMPLOYER_CORE = "employer_core_contribution"
+EMPLOYER_MATCH = "employer_match_contribution"
+EMP_ID = "employee_id"
+```
 
+### Status and Eligibility Flags
+
+```python
 # Flags
-IS_ELIGIBLE      = "is_eligible"
+IS_ELIGIBLE = "is_eligible"
 IS_PARTICIPATING = "is_participating"
+ELIGIBILITY_ENTRY_DATE = "eligibility_entry_date"
+STATUS_COL = "status"
+ACTIVE_STATUS = "Active"
+INACTIVE_STATUS = "Inactive"
+HOURS_WORKED = "hours_worked"
+```
 
+### Auto Enrollment and Auto Increase Columns
 
+```python
+# Auto Enrollment (AE) columns
+AE_OPTED_OUT = "ae_opted_out"
+PROACTIVE_ENROLLED = "proactive_enrolled"
+AUTO_ENROLLED = "auto_enrolled"
 
-⸻
+# Auto Increase (AI) columns
+AI_OPTED_OUT = "ai_opted_out"
+AI_ENROLLED = "ai_enrolled"
 
-2. Update Your Census‐Prep Script
+ENROLLMENT_DATE = "enrollment_date"
+AE_WINDOW_START = "ae_window_start"
+AE_WINDOW_END = "ae_window_end"
+FIRST_CONTRIBUTION_DATE = "first_contribution_date"
+AE_OPT_OUT_DATE = "ae_opt_out_date"
+AUTO_REENROLLED = "auto_reenrolled"
+ENROLLMENT_METHOD = "enrollment_method"
+BECAME_ELIGIBLE_DURING_YEAR = "became_eligible_during_year"
+WINDOW_CLOSED_DURING_YEAR = "window_closed_during_year"
+```
 
-In scripts/preprocess_census.py, instead of hard‐coding strings:
+### Summary Columns
 
-from utils.columns import EMP_SSN, EMP_ROLE, …  
+```python
+# Summary CSV column names
+SUM_EMP_CONTR = "total_employee_contributions"
+SUM_EMP_MATCH = "total_employer_match"
+```
 
-col_map = {
-    "ssn":           EMP_SSN,
-    "role":          EMP_ROLE,
-    …
-    "employee_deferral_pct": DEFERRAL_RATE,
-    …
+### Event Log Columns
+
+```python
+# Event log columns
+EVENT_TYPE = "event_type"  # Type of event (hire, term, comp, etc.)
+EVENT_DATE = "event_date"  # When the event occurred
+EVENT_ID = "event_id"      # Unique identifier for the event
+EVENT_DATA = "event_data"  # JSON data associated with the event
+```
+
+### Demographic Analysis Columns
+
+```python
+# Band columns for demographic analysis
+TENURE_BAND = "tenure_band"  # Categorical tenure (e.g., "0-1 years")
+AGE_BAND = "age_band"        # Categorical age (e.g., "21-30")
+```
+
+## Usage in Code
+
+To use these column names in your code:
+
+```python
+from cost_model.utils.columns import EMP_DEFERRAL_RATE, IS_ELIGIBLE, EMPLOYER_MATCH
+
+# Access DataFrame columns
+df[EMP_DEFERRAL_RATE] = 0.03
+total_match = df[EMPLOYER_MATCH].sum()
+
+# Check column existence
+assert IS_ELIGIBLE in df.columns
+```
+
+## Best Practices
+
+1. **Always import from columns.py**: Never use string literals for column names
+   ```python
+   # Bad
+   df["employee_deferral_rate"] = 0.03
+   
+   # Good
+   from cost_model.utils.columns import EMP_DEFERRAL_RATE
+   df[EMP_DEFERRAL_RATE] = 0.03
+   ```
+
+2. **Use column constants in tests**: Ensure tests are resilient to column name changes
+   ```python
+   # In tests
+   from cost_model.utils.columns import EMP_DEFERRAL_RATE
+   assert EMP_DEFERRAL_RATE in df.columns
+   ```
+
+3. **Add new columns to columns.py**: When adding new data fields, define them in the central location
+
+4. **Document column meanings**: When adding new columns, include a comment explaining their purpose
+
+## Schema Definition
+
+The central schema for snapshots is defined in `cost_model.state.snapshot` with column names from `columns.py` and appropriate data types:
+
+```python
+# Example from snapshot.py
+SNAPSHOT_COLS = [
+    EMP_ID, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE,
+    EMP_GROSS_COMP, EMP_PLAN_YEAR_COMP, EMP_DEFERRAL_RATE,
+    IS_ELIGIBLE, IS_PARTICIPATING, TENURE_BAND
+]
+
+SNAPSHOT_DTYPES = {
+    EMP_ID: pd.StringDtype(),
+    EMP_ROLE: pd.StringDtype(),
+    EMP_BIRTH_DATE: 'datetime64[ns]',
+    EMP_HIRE_DATE: 'datetime64[ns]',
+    EMP_TERM_DATE: 'datetime64[ns]',
+    EMP_GROSS_COMP: pd.Float64Dtype(),
+    EMP_PLAN_YEAR_COMP: pd.Float64Dtype(),
+    EMP_DEFERRAL_RATE: pd.Float64Dtype(),
+    IS_ELIGIBLE: pd.BooleanDtype(),
+    IS_PARTICIPATING: pd.BooleanDtype(),
+    TENURE_BAND: pd.StringDtype()
 }
-df = df.rename(columns=col_map)
+```
 
-Now every downstream script can refer to columns.DEFERRAL_RATE or simply "deferral_rate" confidently.
+## Recent Updates
 
-⸻
+Recent updates to the column definitions include:
 
-3. Change project_hr and apply_plan_rules to Use the New Names
+1. Added `TENURE_BAND` and `EMP_DEFERRAL_RATE` to `SNAPSHOT_COLS` and their respective data types to `SNAPSHOT_DTYPES` in `cost_model.state.snapshot.py` to resolve KeyError issues in multi-year projections.
 
-Anywhere you previously wrote:
+2. Added special constants for auto-enrollment events: `BECAME_ELIGIBLE_DURING_YEAR` and `WINDOW_CLOSED_DURING_YEAR` to replace hard-coded strings in the auto-enrollment module.
 
-df["gross_compensation"]
-df["employee_pre_tax_contribution"]
-# …
-
-replace with:
-
-from utils.columns import GROSS_COMP, PRE_TAX_CONTR, …  
-
-df[GROSS_COMP]
-df[PRE_TAX_CONTR]
-# …
-
-Do the same in your auto‐enrollment, eligibility, contributions, and Monte Carlo wrapper.
-
-⸻
-
-4. Remove Any Ad-hoc Renaming in Your Runner Scripts
-
-You no longer need that manual df.rename(...) block in run_plan_rules.py—your census prep and project_hr both hand you a DataFrame that already speaks your new language.
-
-⸻
-
-5. Update Your Tests
-
-Anywhere in utils/test.py or your pytest suite you assert columns, switch the old names → constants (or to the new strings). E.g.:
-
-# before
-assert "deferral_rate" in df.columns
-
-# after (if you pull in columns.py)
-from utils.columns import DEFERRAL_RATE
-assert DEFERRAL_RATE in df.columns
-
-
-
-⸻
-
-6. Smoke-Test & Iterate
-	1.	Run your full pipeline end-to-end:
-
-python scripts/preprocess_census.py … 
-python scripts/run_hr_snapshots.py …
-python scripts/run_plan_rules.py …
-python scripts/compare_scenario_metrics.py …
-
-
-	2.	Run pytest and fix any remaining failures.
-
-⸻
-
-By centralizing your column names, you:
-	•	Eliminate magic strings
-	•	Prevent drift between scripts
-	•	Make it trivial to rename again in future (just change columns.py)
-
-Let me know if you’d like snippets of any particular file updated, or if you’d like a simple search-and-replace script to batch-convert your code!
-That outline looks solid—here’s a quick sanity check on each step and a few extra notes:
-	1.	Central columns.py
-	•	✅ Defines a single source of truth for all field names
-	•	✅ Makes downstream renames trivial
-	•	Tip: Consider including both old and new names as constants during the transition, so you can alias OLD_DEFERRAL_RATE = "employee_deferral_pct" → DEFERRAL_RATE and remove the old one once everything is switched.
-	2.	Update Census‐Prep
-	•	✅ You’ll only rename once in preprocess_census.py
-	•	🔍 Double-check that every raw field (including any legacy names) is covered in your col_map.
-	3.	Migrate project_hr & apply_plan_rules
-	•	✅ Swap out literal strings for columns.GROSS_COMP, etc.
-	•	🔍 Watch for any third-party calls (e.g. sample_new_hire_compensation) that expect the old names—if they peek at df["pre_tax_contributions"], you may need a tiny shim or adjust those functions too.
-	4.	Remove Ad-Hoc Renames
-	•	✅ Cleaning up your runner scripts will eliminate duplication
-	•	🔍 Ensure no downstream code (e.g. plotting, exports) still references old names.
-	5.	Update Tests
-	•	✅ Swap assertions in utils/test.py and any pytest fixtures
-	•	🔍 Add a smoke test that loads your preprocessed census, runs Phase I + Phase II on one year, and asserts the new set of columns exactly matches your columns.py constants.
-	6.	Smoke-Test & Iterate
-	•	✅ End-to-end run, then pytest
-	•	🔍 If you hit KeyErrors, trace them back to missing renames or overlooked scripts.
-
-Extra recommendations:
-	•	Deprecation period: For a week or two, you could keep both old and new names in columns.py and log a warning when old names are used—gives the team time to switch.
-	•	Bulk refactor script: A quick grep -rl "employee_pre_tax_contribution" | xargs sed -i "" "s/employee_pre_tax_contribution/PRE_TAX_CONTR/g" can accelerate the change, then commit in one go.
-	•	Documentation update: Don’t forget to update your README, test fixtures, and any examples to use the new names.
-
-All in all, that approach should cleanly migrate you off the legacy column names and make future changes trivial. Let me know if you’d like help drafting the actual columns.py or a small refactor script!
+3. Added event type constants for contribution events to standardize event logging.
