@@ -267,8 +267,28 @@ def run_one_year(
     else:
         start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
 
-    nh_rate = getattr(global_params, 'new_hire_rate', 0.0)
-    nh_term_rate = getattr(global_params, 'new_hire_termination_rate', 0.0)
+    # Try to get new_hire_rate from different possible locations in the config
+    nh_rate = 0.0
+    # 1. Try from global_params.new_hires.new_hire_rate (nested structure)
+    if hasattr(global_params, 'new_hires') and hasattr(global_params.new_hires, 'new_hire_rate'):
+        nh_rate = global_params.new_hires.new_hire_rate
+        logger.info(f"[RUN_ONE_YEAR YR={year}] Using new_hire_rate={nh_rate} from global_params.new_hires.new_hire_rate")
+    # 2. Fall back to direct attribute on global_params
+    else:
+        nh_rate = getattr(global_params, 'new_hire_rate', 0.0)
+        logger.info(f"[RUN_ONE_YEAR YR={year}] Using new_hire_rate={nh_rate} from global_params.new_hire_rate")
+    
+    # Similarly for new_hire_termination_rate
+    nh_term_rate = 0.0
+    # 1. Try from global_params.attrition.new_hire_termination_rate (nested structure)
+    if hasattr(global_params, 'attrition') and hasattr(global_params.attrition, 'new_hire_termination_rate'):
+        nh_term_rate = global_params.attrition.new_hire_termination_rate
+        logger.info(f"[RUN_ONE_YEAR YR={year}] Using new_hire_termination_rate={nh_term_rate} from global_params.attrition.new_hire_termination_rate")
+    # 2. Fall back to direct attribute on global_params
+    else:
+        nh_term_rate = getattr(global_params, 'new_hire_termination_rate', 0.0)
+        logger.info(f"[RUN_ONE_YEAR YR={year}] Using new_hire_termination_rate={nh_term_rate} from global_params.new_hire_termination_rate")
+    
     net_hires = int(math.ceil(start_count * nh_rate))
     gross_hires = int(math.ceil(net_hires / (1 - nh_term_rate))) if nh_term_rate < 1.0 else 0
 

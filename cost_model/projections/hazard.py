@@ -26,10 +26,23 @@ def build_hazard_table(
         logger.warning(f"'{EMP_ROLE}' or 'tenure_band' not in initial snapshot. Using default 'all'/'all'.")
         unique_roles_tenures = [{EMP_ROLE: 'all', 'tenure_band': 'all'}]
 
-    global_term_rate = getattr(global_params, 'annual_termination_rate', 0.10)
-    global_comp_raise_pct = getattr(global_params, 'annual_compensation_increase_rate', 0.03)
-    global_nh_term_rate = getattr(global_params, 'new_hire_termination_rate', 0.25)
-    logger.info(f"Using global rates: Term={global_term_rate}, CompPct={global_comp_raise_pct}")
+    # Robustly check for annual_termination_rate, comp_raise_pct, and nh_term_rate
+    if hasattr(global_params, 'annual_termination_rate'):
+        global_term_rate = global_params.annual_termination_rate
+    else:
+        logger.warning("global_params missing 'annual_termination_rate'. Using default 0.10. Available attributes: %s", dir(global_params))
+        global_term_rate = 0.10
+    if hasattr(global_params, 'annual_compensation_increase_rate'):
+        global_comp_raise_pct = global_params.annual_compensation_increase_rate
+    else:
+        logger.warning("global_params missing 'annual_compensation_increase_rate'. Using default 0.03. Available attributes: %s", dir(global_params))
+        global_comp_raise_pct = 0.03
+    if hasattr(global_params, 'new_hire_termination_rate'):
+        global_nh_term_rate = global_params.new_hire_termination_rate
+    else:
+        logger.warning("global_params missing 'new_hire_termination_rate'. Using default 0.25. Available attributes: %s", dir(global_params))
+        global_nh_term_rate = 0.25
+    logger.info(f"Using global rates: Term={global_term_rate}, CompPct={global_comp_raise_pct}, NH_Term={global_nh_term_rate}")
 
     records = []
     for year in years:

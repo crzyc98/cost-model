@@ -1,6 +1,5 @@
-# cost_model/config/loaders.py
-
 import yaml
+import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Set, Tuple
@@ -9,7 +8,7 @@ from cerberus import Validator
 
 # Keys whose values should remain as dicts rather than namespaces
 # These can be nested paths like 'global_parameters.new_hire_compensation_params'
-DICT_KEYS = {
+DICT_KEYS: Set[str] = {
     'role_compensation_params',
     'new_hire_compensation_params',
     'global_parameters.role_compensation_params',
@@ -17,11 +16,13 @@ DICT_KEYS = {
     # add any other mapping-style sections here
 }
 
+
 def should_remain_dict(key_path: str) -> bool:
     """
     Check if a key path should remain a dict based on DICT_KEYS.
     """
     return key_path in DICT_KEYS or any(key_path.endswith(f'.{k}') for k in DICT_KEYS)
+
 
 def dict_to_namespace(obj: Any, path: str = '') -> Any:
     """
@@ -29,15 +30,13 @@ def dict_to_namespace(obj: Any, path: str = '') -> Any:
     Lists will be converted elementwise.
     """
     if isinstance(obj, dict):
-        # If this path should remain a dict, return it as is
         if should_remain_dict(path):
             return obj
-        
-        # Otherwise convert to namespace, but check each child
-        converted = {}
+        converted: Dict[str, Any] = {}
         for k, v in obj.items():
-            child_path = f"{path}.{k}" if path else k
-            converted[k] = dict_to_namespace(v, child_path)
+            str_k = str(k)  # Ensure all keys are strings
+            child_path = f"{path}.{str_k}" if path else str_k
+            converted[str_k] = dict_to_namespace(v, child_path)
         return SimpleNamespace(**converted)
     elif isinstance(obj, list):
         return [dict_to_namespace(v, path) for v in obj]
@@ -48,10 +47,8 @@ def dict_to_namespace(obj: Any, path: str = '') -> Any:
 logger = logging.getLogger(__name__)
 
 
-# Define a custom exception for configuration loading errors
 class ConfigLoadError(Exception):
     """Custom exception for errors during config loading."""
-
     pass
 
 
@@ -69,22 +66,19 @@ def load_yaml_config(config_path: Path) -> Optional[Dict[str, Any]]:
         ConfigLoadError: If the file cannot be found or parsed.
     """
     if not isinstance(config_path, Path):
-        config_path = Path(config_path)  # Ensure it's a Path object
+        config_path = Path(config_path)
 
     logger.info(f"Attempting to load configuration from: {config_path}")
 
     try:
-        # Check if the file exists
         if not config_path.is_file():
             logger.error(f"Configuration file not found at path: {config_path}")
             raise ConfigLoadError(f"Configuration file not found: {config_path}")
 
-        # Open and parse the YAML file
-        with open(config_path, "r", encoding="utf-8") as f:
-            config_data = yaml.safe_load(f)  # Use safe_load for security
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f)
 
         if not isinstance(config_data, dict):
-            # Handle cases where YAML is valid but not a dictionary at the top level
             logger.error(
                 f"Configuration file {config_path} did not parse into a dictionary."
             )
@@ -96,14 +90,12 @@ def load_yaml_config(config_path: Path) -> Optional[Dict[str, Any]]:
         return config_data
 
     except FileNotFoundError as e:
-        # This case is technically covered by is_file(), but good practice to handle
         logger.error(f"Configuration file not found (FileNotFoundError): {config_path}")
         raise ConfigLoadError(f"Configuration file not found: {config_path}") from e
     except yaml.YAMLError as e:
         logger.exception(f"Error parsing YAML configuration file {config_path}: {e}")
         raise ConfigLoadError(f"Error parsing YAML file {config_path}") from e
     except Exception as e:
-        # Catch any other unexpected errors during file handling or loading
         logger.exception(
             f"An unexpected error occurred while loading config {config_path}: {e}"
         )
@@ -112,18 +104,20 @@ def load_yaml_config(config_path: Path) -> Optional[Dict[str, Any]]:
 
 def load_config_to_namespace(config_path: Path) -> SimpleNamespace:
     """
-    Loads YAML, validates its schema, merges role defaults, and converts to a SimpleNamespace at the top level.
+    Loads YAML, validates its schema, merges role defaults, and converts to a SimpleNamespace.
     - Mapping-style sections in DICT_KEYS remain dicts (including nested paths).
     - role_compensation_params is merged with new_hire_compensation_params defaults for each role.
-    - Raises ConfigLoadError on schema or validation errors.
+    - Raises ConfigLoadError on validation errors.
     """
     config_data = load_yaml_config(config_path)
     if config_data is None:
         raise ConfigLoadError(f"No config at {config_path}")
 
-    # --- 1. Schema validation (expand as needed) ---
+    # 1. Schema validation
     schema = {
         'global_parameters': {'type': 'dict', 'required': False},
+        'plan_rules': {'type': 'dict', 'required': False},
+        'scenarios': {'type': 'dict', 'required': False},
         'new_hire_compensation_params': {'type': 'dict', 'required': False},
         'role_compensation_params': {'type': 'dict', 'required': False},
         # Add other top-level keys as needed
@@ -132,29 +126,37 @@ def load_config_to_namespace(config_path: Path) -> SimpleNamespace:
     if not v.validate(config_data):
         raise ConfigLoadError(f"Config validation failed: {v.errors}")
 
-    # --- 2. Handle default merging for role_compensation_params ---
-    # Top-level params
+    # 2. Merge top-level defaults
     if 'new_hire_compensation_params' in config_data and 'role_compensation_params' in config_data:
-        default_params = config_data['new_hire_compensation_params']
-        raw_role = config_data['role_compensation_params']
-        merged_role = {}
-        for role, overrides in raw_role.items():
-            merged_role[role] = {**default_params, **overrides}
-        config_data['role_compensation_params'] = merged_role
-    
-    # Nested params under global_parameters
-    if 'global_parameters' in config_data and isinstance(config_data['global_parameters'], dict):
-        global_params = config_data['global_parameters']
-        if 'new_hire_compensation_params' in global_params and 'role_compensation_params' in global_params:
-            default_params = global_params['new_hire_compensation_params']
-            raw_role = global_params['role_compensation_params']
-            merged_role = {}
-            for role, overrides in raw_role.items():
-                merged_role[role] = {**default_params, **overrides}
-            global_params['role_compensation_params'] = merged_role
+        default_params = config_data['new_hire_compensation_params'] or {}
+        raw_roles = config_data['role_compensation_params'] or {}
+        merged = {role: {**default_params, **overrides} for role, overrides in raw_roles.items()}
+        config_data['role_compensation_params'] = merged
 
-    # Convert to namespace with path-based dict preservation
-    return dict_to_namespace(config_data)
+    # 3. Merge under global_parameters if present
+    gp = config_data.get('global_parameters')
+    if isinstance(gp, dict):
+        # --- Flatten attrition & new_hires into global_parameters ---
+        # 1) Pull attrition sub-dict up
+        attr = gp.pop('attrition', {}) or {}
+        gp.update(attr)
+        # 2) Pull new_hires sub-dict up
+        nh = gp.pop('new_hires', {}) or {}
+        gp.update(nh)
+        # Always update config_data with the flattened gp
+        config_data['global_parameters'] = gp
+        # 4) Process compensation params
+        nhcp = gp.get('new_hire_compensation_params')
+        rcp = gp.get('role_compensation_params')
+        if isinstance(nhcp, dict) and isinstance(rcp, dict):
+            merged_gp_roles = {role: {**nhcp, **overrides} for role, overrides in rcp.items()}
+            gp['role_compensation_params'] = merged_gp_roles
+            config_data['global_parameters'] = gp
+
+    # 4. Convert to namespace, preserving mapping keys
+    namespace = dict_to_namespace(config_data)
+    logger.debug(f"Configuration loaded into namespace: {namespace}")
+    return namespace
 
 # Expose for import
 __all__ = [
@@ -162,40 +164,3 @@ __all__ = [
     'load_config_to_namespace',
     'ConfigLoadError',
 ]
-
-# Example Usage (could be in another module like config/accessors.py or simulation.py)
-if __name__ == "__main__":
-    # This block is for demonstration/testing purposes only
-    # In a real scenario, you'd call load_yaml_config from elsewhere
-
-    # Configure basic logging for the example
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)-8s] [%(name)s] %(message)s",
-    )
-
-    # Assume a dummy config file exists at ../configs/example_config.yaml relative to this file
-    # You would replace this with the actual path logic needed in your application
-    try:
-        # Construct path relative to this file's location for example
-        example_config_path = (
-            Path(__file__).parent.parent.parent / "configs" / "dev_tiny.yaml"
-        )
-        print(f"Looking for example config at: {example_config_path}")
-
-        loaded_config = load_yaml_config(example_config_path)
-
-        if loaded_config:
-            print("\n--- Example Loaded Config ---")
-            # print(yaml.dump(loaded_config, default_flow_style=False)) # Pretty print YAML
-            print("Global Parameters:", loaded_config.get("global_parameters", {}))
-            print("Scenarios:", list(loaded_config.get("scenarios", {}).keys()))
-        else:
-            print("Config loading returned None (error should have been raised).")
-
-    except ConfigLoadError as e:
-        print("\n--- CONFIGURATION ERROR ---")
-        print(e)
-    except Exception as e:
-        print("\n--- UNEXPECTED ERROR ---")
-        print(e)

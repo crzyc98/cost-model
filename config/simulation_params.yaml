@@ -1,0 +1,46 @@
+scenarios:
+  baseline:
+    name: Baseline
+    description: Default simulation parameters generated from historical data
+global_parameters:
+  compensation:
+    new_hire:
+      comp_base_salary: 66456.95999999999
+      comp_min_salary: 57557.104999999996
+      comp_max_salary: 185460.97
+      comp_age_factor: -0.02209353227335901
+      comp_stochastic_std_dev: 0.4109273141111264
+      new_hire_age_mean: 46.0
+      new_hire_age_std: 10.9
+    roles:
+      Executive:
+        comp_base_salary: 315679.72
+        comp_min_salary: 263614.81
+        comp_max_salary: 466086.79400000005
+        comp_age_factor: -0.00253871005010324
+        comp_stochastic_std_dev: 0.3064158769318981
+      Manager:
+        comp_base_salary: 180794.77000000002
+        comp_min_salary: 127302.723
+        comp_max_salary: 233636.56200000003
+        comp_age_factor: 0.006341263706526061
+        comp_stochastic_std_dev: 0.24242303385044559
+      Staff:
+        comp_base_salary: 61473.45
+        comp_min_salary: 44677.962
+        comp_max_salary: 76200.24799999999
+        comp_age_factor: 0.007474783993533746
+        comp_stochastic_std_dev: 0.2129779339831023
+  attrition:
+    annual_termination_rate: 0.3333333333333333
+    termination_rate_by_tenure:
+      0-1: 0.34
+      1-3: 0.323943661971831
+      3-5: 0.4
+      5+: 0.3333333333333333
+  new_hires: {}
+  onboarding: {}
+plan_rules:
+  behavioral_params:
+    voluntary_default_deferral: 3.86
+    voluntary_window_days: 180

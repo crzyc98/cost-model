@@ -28,9 +28,9 @@ global_parameters:
   # Compensation parameters
   compensation:
     new_hire:
-      comp_base_salary: 85000
-      comp_min_salary: 50000
-      comp_max_salary: 250000
+      comp_base_salary: 66044.575
+      comp_min_salary: 46497.041000000005
+      comp_max_salary: 203016.17099999997
       comp_age_factor: 0.0033760083775277103
       comp_stochastic_std_dev: 0.5792934742024154
       new_hire_age_mean: 44.5

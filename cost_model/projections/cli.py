@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-from .config import load_config_to_namespace
+from cost_model.config.loaders import load_config_to_namespace  # Use robust loader with flattening
 from .snapshot import create_initial_snapshot
 from .event_log import create_initial_event_log
 from .runner import run_projection_engine

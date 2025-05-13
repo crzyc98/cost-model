@@ -1,8 +1,41 @@
 global_parameters: !!python/object/apply:types.SimpleNamespace
   state:
-    annual_compensation_increase_rate: 0.05
     annual_termination_rate: 0.15
     census_template_path: data/census_template.parquet
+    compensation: !!python/object/apply:types.SimpleNamespace
+      state:
+        new_hire: !!python/object/apply:types.SimpleNamespace
+          state:
+            comp_age_factor: 0.0033760083775277103
+            comp_base_salary: 85000
+            comp_max_salary: 250000
+            comp_min_salary: 50000
+            comp_stochastic_std_dev: 0.5792934742024154
+            new_hire_age_mean: 44.5
+            new_hire_age_std: 11.6
+        roles: !!python/object/apply:types.SimpleNamespace
+          state:
+            Executive: !!python/object/apply:types.SimpleNamespace
+              state:
+                comp_age_factor: -0.00253871005010324
+                comp_base_salary: 315679.72
+                comp_max_salary: 466086.79400000005
+                comp_min_salary: 263614.81
+                comp_stochastic_std_dev: 0.3064158769318981
+            Manager: !!python/object/apply:types.SimpleNamespace
+              state:
+                comp_age_factor: 0.006341263706526061
+                comp_base_salary: 180794.77000000002
+                comp_max_salary: 233636.56200000003
+                comp_min_salary: 127302.723
+                comp_stochastic_std_dev: 0.24242303385044559
+            Staff: !!python/object/apply:types.SimpleNamespace
+              state:
+                comp_age_factor: 0.007474783993533746
+                comp_base_salary: 61473.45
+                comp_max_salary: 76200.24799999999
+                comp_min_salary: 44677.962
+                comp_stochastic_std_dev: 0.2129779339831023
     days_into_year_for_cola: 182
     days_into_year_for_promotion: 182
     deterministic_termination: true
@@ -13,13 +46,6 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
     monthly_transition: false
     new_hire_age_std_dev: 5
     new_hire_average_age: 30
-    new_hire_compensation_params: !!python/object/apply:types.SimpleNamespace
-      state:
-        comp_age_factor: 0.05
-        comp_base_salary: 100000
-        comp_max_salary: 450000
-        comp_min_salary: 40000
-        comp_stochastic_std_dev: 0.08
     new_hire_rate: 0.17
     new_hire_termination_rate: 0.25
     onboarding: !!python/object/apply:types.SimpleNamespace
@@ -36,29 +62,6 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         - 1.0
     projection_years: 5
     random_seed: 42
-    role_compensation_params: !!python/object/apply:types.SimpleNamespace
-      state:
-        Executive: !!python/object/apply:types.SimpleNamespace
-          state:
-            comp_age_factor: 0.05
-            comp_base_salary: 200000
-            comp_max_salary: 450000
-            comp_min_salary: 40000
-            comp_stochastic_std_dev: 0.08
-        Manager: !!python/object/apply:types.SimpleNamespace
-          state:
-            comp_age_factor: 0.05
-            comp_base_salary: 150000
-            comp_max_salary: 450000
-            comp_min_salary: 40000
-            comp_stochastic_std_dev: 0.08
-        Staff: !!python/object/apply:types.SimpleNamespace
-          state:
-            comp_age_factor: 0.05
-            comp_base_salary: 100000
-            comp_max_salary: 450000
-            comp_min_salary: 40000
-            comp_stochastic_std_dev: 0.08
     role_distribution: !!python/object/apply:types.SimpleNamespace
       state:
         Staff: 1.0
@@ -142,4 +145,5 @@ scenarios: !!python/object/apply:types.SimpleNamespace
   state:
     baseline: !!python/object/apply:types.SimpleNamespace
       state:
-        name: TinyDev
+        description: Default simulation parameters generated from historical data
+        name: Baseline

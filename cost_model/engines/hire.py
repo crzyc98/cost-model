@@ -49,15 +49,40 @@ def run(
     # No need to recalculate hires_to_make - the caller has already done this math
     # including the gross-up for new hire termination rate if needed
     
-    # Get role and default compensation parameters, handling both dict and SimpleNamespace
-    role_comp_params = getattr(global_params, 'role_compensation_params', {})
-    default_params = getattr(global_params, 'new_hire_compensation_params', {})
+    # Get role and default compensation parameters from various possible locations
+    role_comp_params = {}
+    default_params = {}
     
-    # Convert to dict if they're SimpleNamespace
-    if not isinstance(role_comp_params, dict):
-        role_comp_params = vars(role_comp_params) if hasattr(role_comp_params, '__dict__') else {}
-    if not isinstance(default_params, dict):
-        default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
+    # Try to get role_compensation_params from different possible locations
+    # 1. Try from global_params.compensation.roles (nested structure in dev_tiny.yaml)
+    if hasattr(global_params, 'compensation') and hasattr(global_params.compensation, 'roles'):
+        logger.info(f"[HIRE.RUN YR={simulation_year}] Using role_comp_params from global_params.compensation.roles")
+        role_comp_params = global_params.compensation.roles
+        if not isinstance(role_comp_params, dict):
+            role_comp_params = vars(role_comp_params) if hasattr(role_comp_params, '__dict__') else {}
+    # 2. Try direct attribute on global_params
+    elif hasattr(global_params, 'role_compensation_params'):
+        logger.info(f"[HIRE.RUN YR={simulation_year}] Using role_comp_params from global_params.role_compensation_params")
+        role_comp_params = global_params.role_compensation_params
+        if not isinstance(role_comp_params, dict):
+            role_comp_params = vars(role_comp_params) if hasattr(role_comp_params, '__dict__') else {}
+    
+    # Try to get new_hire_compensation_params from different possible locations
+    # 1. Try from global_params.compensation.new_hire (nested structure in dev_tiny.yaml)
+    if hasattr(global_params, 'compensation') and hasattr(global_params.compensation, 'new_hire'):
+        logger.info(f"[HIRE.RUN YR={simulation_year}] Using default_params from global_params.compensation.new_hire")
+        default_params = global_params.compensation.new_hire
+        if not isinstance(default_params, dict):
+            default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
+    # 2. Try direct attribute on global_params
+    elif hasattr(global_params, 'new_hire_compensation_params'):
+        logger.info(f"[HIRE.RUN YR={simulation_year}] Using default_params from global_params.new_hire_compensation_params")
+        default_params = global_params.new_hire_compensation_params
+        if not isinstance(default_params, dict):
+            default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
+            
+    # Log available roles for debugging
+    logger.info(f"[HIRE.RUN YR={simulation_year}] Available roles in role_comp_params: {list(role_comp_params.keys()) if isinstance(role_comp_params, dict) else 'None'}")
 
     if hires_to_make <= 0:
         logger.info(f"[HIRE.RUN YR={simulation_year}] No hires to make as passed-in value is zero or negative.")
@@ -129,16 +154,16 @@ def run(
         # --- Use DefaultSalarySampler for config-driven salary sampling ---
         # Try to get age parameters from multiple possible locations
         # 1. From default_params dict
-        new_hire_age_mean = default_params.get("new_hire_age_mean", None)
-        new_hire_age_std = default_params.get("new_hire_age_std", None)
+        new_hire_age_mean = default_params.get("new_hire_average_age", None)
+        new_hire_age_std = default_params.get("new_hire_age_std_dev", None)
         new_hire_age_min = default_params.get("new_hire_age_min", None)
         new_hire_age_max = default_params.get("new_hire_age_max", None)
         
         # 2. If not found, try direct attributes on global_params
         if new_hire_age_mean is None:
-            new_hire_age_mean = getattr(global_params, "new_hire_age_mean", 30)
+            new_hire_age_mean = getattr(global_params, "new_hire_average_age", 30)
         if new_hire_age_std is None:
-            new_hire_age_std = getattr(global_params, "new_hire_age_std", 5)
+            new_hire_age_std = getattr(global_params, "new_hire_age_std_dev", 5)
         if new_hire_age_min is None:
             new_hire_age_min = getattr(global_params, "new_hire_age_min", 22)
         if new_hire_age_max is None:
@@ -151,8 +176,15 @@ def run(
         sampler = DefaultSalarySampler(rng)
         starting_comps = []
         for idx, role in enumerate(role_choices):
-            # Use per-role params (guaranteed complete by loader)
-            params = role_comp_params[role]
+            # Use per-role params with fallback to default params if role not found
+            if role in role_comp_params:
+                params = role_comp_params[role]
+                logger.info(f"[HIRE.RUN YR={simulation_year}] Using role-specific params for {role}")
+            else:
+                # Fall back to default params if role not found
+                logger.warning(f"[HIRE.RUN YR={simulation_year}] Role '{role}' not found in role_comp_params. Using default params.")
+                params = default_params
+            
             comp = sampler.sample_new_hires(
                 size=1,
                 params=params,
