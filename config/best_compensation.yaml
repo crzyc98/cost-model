@@ -15,7 +15,7 @@ global_parameters:
   deterministic_termination: true
   monthly_transition: false
   maintain_headcount: false
-  census_template_path: "data/census_template.parquet"
+  census_template_path: data/census_template.parquet
   target_growth: 0.03
 
   # Workforce demographics
@@ -109,8 +109,8 @@ plan_rules:
 
   employer_match:
     tiers:
-      - match_rate: 0.0
-        cap_deferral_pct: 0.0
+    - match_rate: 0.0
+      cap_deferral_pct: 0.0
     dollar_cap: 0.0
 
   employer_nec:

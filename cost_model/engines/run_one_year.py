@@ -195,6 +195,7 @@ def run_one_year(
 
     # Flatten plan-rule events
     plan_rule_events = [df for df in all_new_events if isinstance(df, pd.DataFrame)]
+    plan_rule_events = [df for df in plan_rule_events if not df.empty and not df.isna().all().all()]
     plan_rule_df = pd.concat(plan_rule_events, ignore_index=True) if plan_rule_events else pd.DataFrame(columns=EVENT_COLS)
 
     # --- 3. Compensation bump & terminations for existing employees ---
@@ -235,6 +236,7 @@ def run_one_year(
         for df in lst or []:
             if isinstance(df, pd.DataFrame) and not df.empty:
                 core_events.append(df)
+    core_events = [df for df in core_events if not df.empty and not df.isna().all().all()]
     core_df = pd.concat(core_events, ignore_index=True) if core_events else pd.DataFrame(columns=EVENT_COLS)
 
     # 3c. update snapshot with comp+term
@@ -317,6 +319,7 @@ def run_one_year(
         hire_comp_events = []
 
     hire_dfs = [df for df in hire_events + hire_comp_events if isinstance(df, pd.DataFrame) and not df.empty]
+    hire_dfs = [df for df in hire_dfs if not df.empty and not df.isna().all().all()]
     hires_df = pd.concat(hire_dfs, ignore_index=True) if hire_dfs else pd.DataFrame(columns=EVENT_COLS)
     logger.info(f"[RUN_ONE_YEAR YR={year}] Generated {len(hires_df)} new-hire events")
 
@@ -338,17 +341,17 @@ def run_one_year(
     # --- 7. New-hire terminations ---
     nh_term_list = term.run_new_hires(snap_with_hires, hazard_slice, year_rng, year, deterministic_term)
     nh_term_frames = [df for df in (nh_term_list or []) if isinstance(df, pd.DataFrame) and not df.empty]
-    if nh_term_frames:
-        nh_term_df = pd.concat(nh_term_frames, ignore_index=True)
-    else:
-        nh_term_df = pd.DataFrame(columns=EVENT_COLS)
+    nh_term_frames = [df for df in nh_term_frames if not df.empty and not df.isna().all().all()]
+    nh_term_df = pd.concat(nh_term_frames, ignore_index=True) if nh_term_frames else pd.DataFrame(columns=EVENT_COLS)
     logger.info(f"[RUN_ONE_YEAR YR={year}] New-hire terminations: {len(nh_term_df)}")
     # 4) After new-hire terminations
     nh_terms_removed = len(nh_term_df) if not nh_term_df.empty else 0
 
     # --- 8. Final event log for the year ---
-    all_events = pd.concat([plan_rule_df, core_df, hires_df, nh_term_df], ignore_index=True)
-    full_event_log_for_year = all_events.sort_values(['event_time', 'event_type'], ignore_index=True)
+    all_bits = [plan_rule_df, core_df, hires_df, nh_term_df]
+    all_bits = [df for df in all_bits if not df.empty and not df.isna().all().all()]
+    full_event_log_for_year = pd.concat(all_bits, ignore_index=True) if all_bits else pd.DataFrame(columns=EVENT_COLS)
+    full_event_log_for_year = full_event_log_for_year.sort_values(['event_time', 'event_type'], ignore_index=True)
 
     # --- 9. Final snapshot update (apply NH terminations) ---
     final_snapshot = snapshot.update(snap_with_hires, nh_term_df, year)

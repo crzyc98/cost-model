@@ -7,7 +7,7 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         new_hire: !!python/object/apply:types.SimpleNamespace
           state:
             comp_age_factor: 0.0033760083775277103
-            comp_base_salary: 85000
+            comp_base_salary: 130000.0
             comp_max_salary: 250000
             comp_min_salary: 50000
             comp_stochastic_std_dev: 0.5792934742024154
@@ -17,21 +17,21 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
           state:
             Executive: !!python/object/apply:types.SimpleNamespace
               state:
-                comp_age_factor: -0.00253871005010324
+                comp_age_factor: 0.003
                 comp_base_salary: 315679.72
                 comp_max_salary: 466086.79400000005
                 comp_min_salary: 263614.81
                 comp_stochastic_std_dev: 0.3064158769318981
             Manager: !!python/object/apply:types.SimpleNamespace
               state:
-                comp_age_factor: 0.006341263706526061
+                comp_age_factor: 0.012
                 comp_base_salary: 180794.77000000002
                 comp_max_salary: 233636.56200000003
                 comp_min_salary: 127302.723
                 comp_stochastic_std_dev: 0.24242303385044559
             Staff: !!python/object/apply:types.SimpleNamespace
               state:
-                comp_age_factor: 0.007474783993533746
+                comp_age_factor: 0.012
                 comp_base_salary: 61473.45
                 comp_max_salary: 76200.24799999999
                 comp_min_salary: 44677.962
@@ -64,8 +64,11 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
     random_seed: 42
     role_distribution: !!python/object/apply:types.SimpleNamespace
       state:
-        Staff: 1.0
+        Executive: 0.15
+        Manager: 0.35
+        Staff: 0.5
     start_year: 2025
+    target_growth: 0.03
     use_expected_attrition: false
 plan_rules: !!python/object/apply:types.SimpleNamespace
   state:
