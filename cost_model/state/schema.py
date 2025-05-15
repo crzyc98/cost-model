@@ -44,6 +44,7 @@ print(f"Found {len(term_events)} termination events")
 print(f"Found {len(comp_events)} compensation events")
 
 # Create a new DataFrame with the correct schema
+# The 'job_level_source' column tracks the provenance of each job_level assignment for auditability.
 new_snapshot = pd.DataFrame({
     EMP_ID: ['EMP001', 'EMP002', 'EMP003'],
     EMP_HIRE_DATE: ['2025-01-15', '2025-02-01', '2025-03-10'],
@@ -145,6 +146,8 @@ SNAPSHOT_COLS = [
     EMP_DEFERRAL_RATE,
     "tenure_band",
     EMP_TENURE,
+    "job_level_source",
+    "exited",
 ]
 
 SNAPSHOT_DTYPES = {
@@ -158,6 +161,8 @@ SNAPSHOT_DTYPES = {
     EMP_DEFERRAL_RATE: pd.Float64Dtype(),
     "tenure_band": pd.StringDtype(),
     EMP_TENURE: "float64",
+    "job_level_source": pd.CategoricalDtype(),
+    "exited": pd.BooleanDtype(),
 }
 
 __all__ = [

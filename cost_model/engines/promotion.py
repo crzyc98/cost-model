@@ -41,9 +41,8 @@ def promote(
         "event_time": promo_time,
         EMP_ID: promotees[EMP_ID],
         "event_type": EVT_PROMOTION,
-        "value_json": promotees.apply(
-            lambda r: json.dumps({"from": r[EMP_ROLE], "to": new_titles.loc[r.name]}), axis=1
-        ),
+        "value_num": 0.0,  # No numeric value for promotion events
+        "value_json": "{}",  # Empty JSON for compatibility
         "meta": "Promotion based on eligibility"
     })
     # Merit raises
@@ -52,13 +51,7 @@ def promote(
         EMP_ID: promotees[EMP_ID],
         "event_type": EVT_RAISE,
         "value_num": promotees[EMP_GROSS_COMP] * merit_pct,
-        "value_json": promotees.apply(
-            lambda r: json.dumps({
-                "pct": merit_pct,
-                "old_comp": r[EMP_GROSS_COMP],
-                "new_comp": r[EMP_GROSS_COMP] * (1 + merit_pct)
-            }), axis=1
-        ),
+        "value_json": "{}",  # Empty JSON for compatibility
         "meta": "Merit raise concurrent with promotion"
     })
     # Assign event_id if needed, slice to schema

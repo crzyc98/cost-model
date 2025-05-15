@@ -13,12 +13,13 @@ from typing import Tuple, List
 import numpy as np
 import pandas as pd
 
-from . import comp, term, hire
+from . import term, hire
 from .cola import cola
 from cost_model.state.event_log import EVENT_COLS
 from cost_model.state import snapshot
 from cost_model.utils.columns import (
     EMP_ID,
+    EMP_LEVEL,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
     EMP_ROLE,
@@ -26,12 +27,15 @@ from cost_model.utils.columns import (
     EMP_GROSS_COMP,
     EMP_DEFERRAL_RATE,
 )
+from cost_model.state.job_levels.sampling import sample_mixed_new_hires
+from cost_model.state.event_log import create_event, EVT_HIRE
 
 from cost_model.plan_rules.eligibility import run as eligibility_run
 from cost_model.plan_rules.eligibility_events import run as eligibility_events_run
 from cost_model.plan_rules.enrollment import run as enrollment_run
 from cost_model.plan_rules.contribution_increase import run as contrib_increase_run
 from cost_model.plan_rules.proactive_decrease import run as proactive_decrease_run
+from .compensation import update_salary
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +169,13 @@ def run_one_year(
     # --- 2. Plan rules engines (eligibility → etc) ---
     cfg = hazard_slice.iloc[0]['cfg']
 
-    # Eligibility
-    evs = eligibility_run(prev_snapshot, as_of, getattr(cfg, 'eligibility', None))
-    for df in evs or []:
-        if not df.empty:
-            all_new_events.append(df)
+    # Eligibility (skip if no config provided)
+    elig_cfg = getattr(cfg, 'eligibility', None)
+    if elig_cfg is not None:
+        evs = eligibility_run(prev_snapshot, as_of, elig_cfg)
+        for df in evs or []:
+            if not df.empty:
+                all_new_events.append(df)
     # Eligibility milestones
     ee_cfg = getattr(cfg, 'eligibility_events', None)
     if ee_cfg:
@@ -177,21 +183,27 @@ def run_one_year(
         for df in ee_evs or []:
             if not df.empty:
                 all_new_events.append(df)
-    # Enrollment
-    evs = enrollment_run(prev_snapshot, pd.concat(all_new_events, ignore_index=True), as_of, getattr(cfg, 'enrollment', None))
-    for df in evs or []:
-        if not df.empty:
-            all_new_events.append(df)
-    # Contribution increase
-    evs = contrib_increase_run(prev_snapshot, pd.concat(all_new_events, ignore_index=True), as_of, getattr(cfg, 'contribution_increase', None))
-    for df in evs or []:
-        if not df.empty:
-            all_new_events.append(df)
-    # Proactive decrease
-    evs = proactive_decrease_run(prev_snapshot, pd.concat(all_new_events, ignore_index=True), as_of, getattr(cfg, 'proactive_decrease', None))
-    for df in evs or []:
-        if not df.empty:
-            all_new_events.append(df)
+    # Enrollment (skip if no events or no config)
+    enrollment_cfg = getattr(cfg, 'enrollment', None)
+    if enrollment_cfg is not None and all_new_events:
+        evs = enrollment_run(prev_snapshot, pd.concat(all_new_events, ignore_index=True), as_of, enrollment_cfg)
+        for df in evs or []:
+            if not df.empty:
+                all_new_events.append(df)
+    # Contribution increase (skip if no events or no config)
+    ci_cfg = getattr(cfg, 'contribution_increase', None)
+    if ci_cfg is not None and all_new_events:
+        evs = contrib_increase_run(prev_snapshot, pd.concat(all_new_events, ignore_index=True), as_of, ci_cfg)
+        for df in evs or []:
+            if not df.empty:
+                all_new_events.append(df)
+    # Proactive decrease (skip if no events or no config)
+    pd_cfg = getattr(cfg, 'proactive_decrease', None)
+    if pd_cfg is not None and all_new_events:
+        evs = proactive_decrease_run(prev_snapshot, pd.concat(all_new_events, ignore_index=True), as_of, pd_cfg)
+        for df in evs or []:
+            if not df.empty:
+                all_new_events.append(df)
 
     # Flatten plan-rule events
     plan_rule_events = [df for df in all_new_events if isinstance(df, pd.DataFrame)]
@@ -220,8 +232,13 @@ def run_one_year(
     n0_exp = int(mask_exp.sum())  # For net-growth calculation
     logger.info(f"[YR={year}] SOY Experienced Active = {start_count}")
 
-    # 3a. comp bump
-    comp_events = comp.bump(prev_snapshot, hazard_slice, as_of, year_rng)
+    # 3a. comp bump (COLA → promo → merit)
+    # update_salary mutates EMP_GROSS_COMP and returns EVT_RAISE events
+    comp_events = [update_salary(
+        prev_snapshot,
+        params=global_params.compensation,
+        rng=year_rng
+    )]
     # 3b. term events (EXPERIENCED ONLY: exclude new hires)
     term_events = term.run(prev_snapshot.loc[mask_exp], hazard_slice, year_rng, deterministic_term)
     # Integrity check: log number and EMP_IDs of term events
@@ -317,6 +334,32 @@ def run_one_year(
     else:
         hire_events = hire_tuple or []
         hire_comp_events = []
+
+    # --- 5b. Sample levels & compensation for new hires ---
+    if gross_hires > 0:
+        # derive distribution of levels from previous snapshot
+        curr_dist = prev_snapshot[EMP_LEVEL].value_counts(normalize=True).to_dict()
+        level_counts = {lvl: int(dist * gross_hires) for lvl, dist in curr_dist.items()}
+        assigned = sum(level_counts.values())
+        if assigned < gross_hires and level_counts:
+            level_counts[min(level_counts.keys())] += (gross_hires - assigned)
+        # sample new hires with levels & compensation
+        new_hires = sample_mixed_new_hires(level_counts, age_range=(25, 55), random_state=year_rng).reset_index(drop=True)
+        # collect hire event IDs
+        hire_events_df = pd.concat(hire_events, ignore_index=True) if hire_events else pd.DataFrame(columns=EVENT_COLS)
+        hire_events_df = hire_events_df.reset_index(drop=True)
+        new_hires[EMP_ID] = hire_events_df[EMP_ID]
+        # build compensation events for hires
+        comp_events = []
+        for _, r in new_hires.iterrows():
+            comp_events.append(create_event(
+                event_time=as_of,
+                employee_id=r[EMP_ID],
+                event_type=EVT_HIRE,
+                value_num=r['compensation'],
+                meta="New-hire starting compensation"
+            ))
+        hire_comp_events = pd.DataFrame(comp_events, columns=EVENT_COLS)
 
     hire_dfs = [df for df in hire_events + hire_comp_events if isinstance(df, pd.DataFrame) and not df.empty]
     hire_dfs = [df for df in hire_dfs if not df.empty and not df.isna().all().all()]

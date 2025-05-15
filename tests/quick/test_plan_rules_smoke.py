@@ -3,7 +3,7 @@ import os
 import yaml
 import pytest
 import copy
-from utils.rules.validators import PlanRules, ValidationError
+from cost_model.rules.validators import PlanRules, ValidationError
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "configs", "config.yaml")
 
