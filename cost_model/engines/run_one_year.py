@@ -15,7 +15,7 @@ import pandas as pd
 
 from . import term, hire
 from .cola import cola
-from cost_model.state.event_log import EVENT_COLS
+from cost_model.state.event_log import EVENT_COLS, EVT_COMP
 from cost_model.state import snapshot
 from cost_model.utils.columns import (
     EMP_ID,
@@ -317,25 +317,18 @@ def run_one_year(
         f"gross_hires={gross_hires} (to allow for {nh_term_rate*100:.1f}% NH term)"
     )
 
-    # --- 5. Generate gross_hires new-hire events + starting comp ---
-    # pass the termination pool into hire.run
-    terminated_events = pd.concat(term_events, ignore_index=True) if term_events is not None and len(term_events) > 0 else pd.DataFrame()
-    hire_tuple = hire.run(
+    # --- 5. Generate gross_hires new-hire events ---
+    hire_events = hire.run(
         temp_snap,
         gross_hires,
         hazard_slice,
         year_rng,
         census_template_path,
         global_params,
-        terminated_events=terminated_events,
-    )
-    if isinstance(hire_tuple, tuple) and len(hire_tuple) == 2:
-        hire_events, hire_comp_events = hire_tuple
-    else:
-        hire_events = hire_tuple or []
-        hire_comp_events = []
+        terminated_events=pd.concat(term_events, ignore_index=True) if term_events is not None and len(term_events) > 0 else pd.DataFrame()
+    ) or []
 
-    # --- 5b. Sample levels & compensation for new hires ---
+    # --- 5b. Sample compensation for hires using band-aware sampler ---
     if gross_hires > 0:
         # derive distribution of levels from previous snapshot
         curr_dist = prev_snapshot[EMP_LEVEL].value_counts(normalize=True).to_dict()
@@ -344,22 +337,25 @@ def run_one_year(
         if assigned < gross_hires and level_counts:
             level_counts[min(level_counts.keys())] += (gross_hires - assigned)
         # sample new hires with levels & compensation
-        new_hires = sample_mixed_new_hires(level_counts, age_range=(25, 55), random_state=year_rng).reset_index(drop=True)
-        # collect hire event IDs
+        new_hires = sample_mixed_new_hires(level_counts, age_range=(25, 55), random_state=year_rng)
+        new_hires = new_hires.rename(columns={'level_id': EMP_LEVEL, 'compensation': EMP_GROSS_COMP})
+        new_hires['job_level_source'] = 'hire'
+        # align hire IDs from hire events
         hire_events_df = pd.concat(hire_events, ignore_index=True) if hire_events else pd.DataFrame(columns=EVENT_COLS)
-        hire_events_df = hire_events_df.reset_index(drop=True)
-        new_hires[EMP_ID] = hire_events_df[EMP_ID]
-        # build compensation events for hires
+        new_hires[EMP_ID] = hire_events_df[EMP_ID].reset_index(drop=True)
+        # build compensation events
         comp_events = []
         for _, r in new_hires.iterrows():
             comp_events.append(create_event(
                 event_time=as_of,
                 employee_id=r[EMP_ID],
-                event_type=EVT_HIRE,
-                value_num=r['compensation'],
+                event_type=EVT_COMP,
+                value_num=r[EMP_GROSS_COMP],
                 meta="New-hire starting compensation"
             ))
-        hire_comp_events = pd.DataFrame(comp_events, columns=EVENT_COLS)
+        hire_comp_events = [pd.DataFrame(comp_events, columns=EVENT_COLS)]
+    else:
+        hire_comp_events = []
 
     hire_dfs = [df for df in hire_events + hire_comp_events if isinstance(df, pd.DataFrame) and not df.empty]
     hire_dfs = [df for df in hire_dfs if not df.empty and not df.isna().all().all()]
@@ -406,5 +402,18 @@ def run_one_year(
         logger.error(f"[YR={year}] Duplicate EMP_IDs detected in final snapshot!")
         raise ValueError("Duplicate EMP_IDs in final snapshot!")
     logger.info(f"[YR={year}] Post-NH-term    = {final_snapshot['active'].sum()}  (removed {nh_terms_removed} NH terms)")
-
+    # Propagate job_level_source for new hires
+    if 'job_level_source' in final_snapshot.columns:
+        # Add 'hire' category if column is categorical
+        if pd.api.types.is_categorical_dtype(final_snapshot['job_level_source']):
+            final_snapshot['job_level_source'] = final_snapshot['job_level_source'].cat.add_categories(['hire'])
+        final_snapshot['job_level_source'] = final_snapshot['job_level_source'].fillna('hire')
+    # Propagate employee levels for existing and new hires
+    if EMP_LEVEL not in final_snapshot.columns:
+        # map levels from original snapshot
+        level_map = prev_snapshot.set_index(EMP_ID)[EMP_LEVEL].to_dict()
+        # include new hire levels if any
+        if gross_hires > 0:
+            level_map.update(new_hires.set_index(EMP_ID)[EMP_LEVEL].to_dict())
+        final_snapshot[EMP_LEVEL] = final_snapshot[EMP_ID].map(level_map)
     return full_event_log_for_year, final_snapshot

@@ -290,27 +290,6 @@ def run(
         except Exception as e:
             logger.error(f"Error processing birth date for {eid}: {str(e)}")
             raise
-    comp_events = []
-    end_of_year = pd.Timestamp(f"{simulation_year}-12-31")
-    for eid, dt, comp in zip(new_ids, hire_dates, starting_comps):
-        days_worked = (end_of_year - dt).days + 1
-        prorated = comp * (days_worked / 365.25)
-        value_json = json.dumps({
-            "reason": "starting_salary",
-            "full_year": comp,
-            "days_worked": days_worked
-        })
-        comp_events.append(
-            create_event(
-                event_time=dt,
-                employee_id=eid,
-                event_type=EVT_COMP,
-                value_num=prorated,
-                value_json=None,
-                meta=f"Prorated comp for {eid}"
-            )
-        )
     hire_df = pd.DataFrame(hire_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
-    comp_df = pd.DataFrame(comp_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
-    return [hire_df, comp_df]
-    
+    # Only return hire events; compensation will be sampled in run_one_year
+    return [hire_df]  
