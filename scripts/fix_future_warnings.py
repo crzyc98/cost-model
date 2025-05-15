@@ -54,7 +54,7 @@ def main():
     print("Checking for potential FutureWarnings in DataFrame concatenation...")
     
     # Check run_one_year.py specifically
-    run_one_year_path = PROJECT_ROOT / "cost_model" / "engines" / "run_one_year.py"
+    run_one_year_path = PROJECT_ROOT / "cost_model" / "engines" / "run_one_year_engine.py"
     if run_one_year_path.exists():
         print(f"\nChecking {run_one_year_path.relative_to(PROJECT_ROOT)}...")
         issues = find_concat_with_empty_df(run_one_year_path)

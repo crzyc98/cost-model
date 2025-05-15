@@ -1,7 +1,7 @@
-# cost_model/engines/run_one_year.py
+# cost_model/engines/run_one_year_engine.py
 """
 Orchestration engine for running a complete simulation year, coordinating all workforce dynamics.
-QuickStart: see docs/cost_model/engines/run_one_year.md
+QuickStart: see docs/cost_model/engines/run_one_year_engine.md
 """
 
 import json
@@ -379,17 +379,78 @@ def run_one_year(
         # align hire IDs from hire events
         hire_events_df = pd.concat(hire_events, ignore_index=True) if hire_events else pd.DataFrame(columns=EVENT_COLS)
         new_hires[EMP_ID] = hire_events_df[EMP_ID].reset_index(drop=True)
-        # build compensation events
+        # build compensation events - ensure values are properly set with no empty rows
         comp_events = []
-        for _, r in new_hires.iterrows():
+        logger.info(f"[YR={year}] Processing {len(new_hires)} new hires for compensation events")
+        
+        for idx, r in new_hires.iterrows():
+            # Get EMP_ID and ensure it's valid
+            emp_id = r.get(EMP_ID)
+            if pd.isna(emp_id) or emp_id == "":
+                logger.warning(f"[YR={year}] Row {idx}: Skipping EVT_COMP creation - missing employee ID")
+                continue
+                
+            # Extract compensation and validate it
+            # First make sure the column exists
+            if EMP_GROSS_COMP not in r:
+                logger.warning(f"[YR={year}] Row {idx}: Employee {emp_id} missing EMP_GROSS_COMP column")
+                # Try to get salary from other fields if possible
+                if 'compensation' in r:
+                    comp_value = r['compensation']
+                    logger.info(f"[YR={year}] Using 'compensation' column instead for {emp_id}: {comp_value}")
+                else:
+                    logger.error(f"[YR={year}] No compensation found for {emp_id} - cannot create EVT_COMP")
+                    continue
+            else:
+                comp_value = r[EMP_GROSS_COMP]
+            
+            # Handle NaN values
+            if pd.isna(comp_value):
+                logger.warning(f"[YR={year}] NaN compensation for {emp_id} - trying to fix")
+                # Try to get compensation another way - use average compensation for their role
+                role = r.get('employee_role', None)
+                if role is not None and not pd.isna(role):
+                    role_avg_comp = new_hires.loc[~pd.isna(new_hires[EMP_GROSS_COMP]) & 
+                                                 (new_hires['employee_role'] == role), 
+                                                 EMP_GROSS_COMP].mean()
+                    if not pd.isna(role_avg_comp) and role_avg_comp > 0:
+                        comp_value = role_avg_comp
+                        logger.info(f"[YR={year}] Using role average comp for {emp_id}: {comp_value}")
+                    else:
+                        # If no average available, use a default value
+                        comp_value = 75000.0  # Default compensation as fallback
+                        logger.warning(f"[YR={year}] Using default comp value for {emp_id}: {comp_value}")
+                else:
+                    # If no role info, use a default value
+                    comp_value = 75000.0  # Default compensation as fallback
+                    logger.warning(f"[YR={year}] Using default comp value for {emp_id}: {comp_value}")
+            
+            # Try to convert to float and validate
+            try:
+                comp_value = float(comp_value)
+                if comp_value <= 0:
+                    logger.warning(f"[YR={year}] Non-positive compensation ({comp_value}) for {emp_id} - using default")
+                    comp_value = 75000.0
+            except (ValueError, TypeError):
+                logger.warning(f"[YR={year}] Invalid compensation type for {emp_id} - using default")
+                comp_value = 75000.0
+                
+            # Create the compensation event
             comp_events.append(create_event(
                 event_time=as_of,
-                employee_id=r[EMP_ID],
+                employee_id=emp_id,
                 event_type=EVT_COMP,
-                value_num=r[EMP_GROSS_COMP],
+                value_num=comp_value,  # Ensure this is a valid float
                 meta="New-hire starting compensation"
             ))
-        hire_comp_events = [pd.DataFrame(comp_events, columns=EVENT_COLS)]
+            
+        # Only create DataFrame if we have valid events
+        if comp_events:
+            logger.info(f"[YR={year}] Created {len(comp_events)} compensation events for new hires")
+            hire_comp_events = [pd.DataFrame(comp_events)]
+        else:
+            logger.warning(f"[YR={year}] No valid compensation events created for new hires")
+            hire_comp_events = []
     else:
         hire_comp_events = []
 
@@ -443,9 +504,38 @@ def run_one_year(
     # 5) Merge their updated salaries back into the full snapshot
     snap_with_hires.loc[experienced_mask, EMP_GROSS_COMP] = bumped_experienced[EMP_GROSS_COMP]
 
-    # 6) (optional) append any EVT_COMP events from this bump into your event log
-    # If you want to track bump events, you can uncomment the following line:
-    # event_log = pd.concat([event_log, bumped_experienced], ignore_index=True)
+    # 6) Create and append EVT_COMP events for the compensation bump
+    comp_events = []
+    # Get original vs updated compensation values
+    before_comps = experienced[EMP_GROSS_COMP].to_dict()
+    after_comps = bumped_experienced[EMP_GROSS_COMP].to_dict()
+    
+    # Create event logs for experienced employees
+    for emp_id, after_comp in after_comps.items():
+        before_comp = before_comps.get(emp_id, 0)
+        if pd.isna(before_comp):
+            before_comp = 0.0
+            logger.warning(f"[YR={year}] Fixed NA before_comp value for {emp_id}: using 0.0")
+        if pd.isna(after_comp):
+            # Skip if after_comp is still NA
+            logger.warning(f"[YR={year}] Skipping - NA after_comp value for {emp_id}")
+            continue
+            
+        # Calculate absolute delta (always log the comp event regardless of size)
+        delta = float(after_comp - before_comp)
+        comp_events.append(create_event(
+            pd.Timestamp(f"{year}-01-01"),
+            emp_id,
+            EVT_COMP,
+            value_num=delta,  # Even if delta is very small, still log it
+            meta=f"Annual compensation increase of {rate:.1%}"
+        ))
+    
+    # Add the comp events to the event log
+    if comp_events:
+        logger.info(f"[YR={year}] Adding {len(comp_events)} compensation bump events to log")
+        comp_events_df = pd.DataFrame(comp_events)
+        event_log = pd.concat([event_log, comp_events_df], ignore_index=True)
 
     # --- 7. New-hire terminations ---
     nh_term_list = term.run_new_hires(snap_with_hires, hazard_slice, year_rng, year, deterministic_term)

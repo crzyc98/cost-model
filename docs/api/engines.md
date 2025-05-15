@@ -15,4 +15,4 @@ Simulates terminations across the active population.
 ## One-Year Simulation Engine
 Runs a single year of the simulation, applying comp, term, hire, and snapshot logic.
 
-::: cost_model.engines.run_one_year
+::: cost_model.engines.run_one_year_engine

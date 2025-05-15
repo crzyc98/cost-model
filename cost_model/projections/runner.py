@@ -12,7 +12,7 @@ from typing import Dict, Tuple, Any, List
 from datetime import datetime  
 
 # --- Core Simulation Engine ---
-from cost_model.engines.run_one_year import run_one_year
+from cost_model.engines.run_one_year_engine import run_one_year
 from cost_model.projections.hazard import build_hazard_table
 from cost_model.projections.snapshot import update_snapshot_with_events
 from cost_model.projections.summaries.core import build_core_summary

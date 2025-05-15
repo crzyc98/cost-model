@@ -5,7 +5,7 @@ import types
 import pytest
 from pathlib import Path
 
-from cost_model.engines.run_one_year import run_one_year
+from cost_model.engines.run_one_year_engine import run_one_year
 from cost_model.utils.columns import (
     EMP_ID,
     EMP_LEVEL,
