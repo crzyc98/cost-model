@@ -15,7 +15,7 @@ import pandas as pd
 
 from . import term, hire
 from .cola import cola
-from cost_model.state.event_log import EVENT_COLS, EVT_COMP
+from cost_model.state.event_log import EVENT_COLS, EVT_COMP, EVT_HIRE
 from cost_model.state import snapshot
 from cost_model.utils.columns import (
     EMP_ID,
@@ -26,9 +26,21 @@ from cost_model.utils.columns import (
     EMP_TERM_DATE,
     EMP_GROSS_COMP,
     EMP_DEFERRAL_RATE,
+    EMP_ACTIVE,
+    EMP_TENURE_BAND,
+    EMP_LEVEL_SOURCE,
+    EMP_EXITED
 )
+REQUIRED_SNAPSHOT_DEFAULTS = {
+    EMP_LEVEL: pd.NA,
+    EMP_LEVEL_SOURCE: pd.NA,
+    EMP_EXITED: False,
+    EMP_ACTIVE: True,
+    EMP_TENURE_BAND: pd.NA,
+}
+
 from cost_model.state.job_levels.sampling import sample_mixed_new_hires
-from cost_model.state.event_log import create_event, EVT_HIRE
+from cost_model.state.event_log import create_event
 
 from cost_model.plan_rules.eligibility import run as eligibility_run
 from cost_model.plan_rules.eligibility_events import run as eligibility_events_run
@@ -36,17 +48,39 @@ from cost_model.plan_rules.enrollment import run as enrollment_run
 from cost_model.plan_rules.contribution_increase import run as contrib_increase_run
 from cost_model.plan_rules.proactive_decrease import run as proactive_decrease_run
 from .compensation import update_salary
-
+from cost_model.dynamics.compensation import apply_comp_bump
+from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP
 logger = logging.getLogger(__name__)
 
+# helper functions below
 def _dbg(label: str, df: pd.DataFrame, year: int):
     if df is None:
         logger.error(f"[DBG YR={year}] {label:<25} DataFrame is None!")
         return
     uniq = df[EMP_ID].nunique() if EMP_ID in df.columns else df.index.nunique()
     rows = len(df)
-    act = df['active'].sum() if 'active' in df.columns else 'N/A'
+    act = df[EMP_ACTIVE].sum() if EMP_ACTIVE in df.columns else 'N/A'
     logger.debug(f"[DBG YR={year}] {label:<25} rows={rows:5d} uniq_ids={uniq:5d} act={act}")
+
+def _nonempty_frames(dfs: List[pd.DataFrame]) -> List[pd.DataFrame]:
+    """
+    Return only those DataFrames which are non-empty AND not entirely NA.
+    """
+    good = []
+    for df in dfs:
+        if df.empty:
+            continue
+        if df.isna().all().all():
+            continue
+        good.append(df)
+    return good
+
+def ensure_snapshot_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Add any missing snapshot columns with safe defaults."""
+    for col, default in REQUIRED_SNAPSHOT_DEFAULTS.items():
+        if col not in df.columns:
+            df[col] = default
+    return df
 
 def run_one_year(
     event_log: pd.DataFrame,
@@ -66,6 +100,8 @@ def run_one_year(
     Returns (full_event_log_for_year, final_snapshot).
     """
 
+    # --- 0. (NEW) Pre-flight: guarantee incoming snapshot has the full schema
+    prev_snapshot = ensure_snapshot_cols(prev_snapshot.copy())
     # —————————————————————————————————————————————
     # Ensure hazard_table is loaded with all required columns
     logger.debug(f"Hazard‐table columns before rename: {hazard_table.columns.tolist()}")
@@ -225,8 +261,8 @@ def run_one_year(
         & (prev_snapshot[EMP_HIRE_DATE] >= as_of)
     )
     logger.info(f"[YR={year}] SOY experienced mask: {mask_exp.sum()} | new hire mask: {mask_new_hire.sum()} | total: {len(prev_snapshot)}")
-    if 'active' in prev_snapshot.columns:
-        start_count = int(prev_snapshot['active'].loc[mask_exp].sum())
+    if EMP_ACTIVE in prev_snapshot.columns:
+        start_count = int(prev_snapshot[EMP_ACTIVE].loc[mask_exp].sum())
     else:
         start_count = int(mask_exp.sum())
     n0_exp = int(mask_exp.sum())  # For net-growth calculation
@@ -257,7 +293,7 @@ def run_one_year(
     core_df = pd.concat(core_events, ignore_index=True) if core_events else pd.DataFrame(columns=EVENT_COLS)
 
     # 3c. update snapshot with comp+term
-    temp_snap = snapshot.update(prev_snapshot.set_index(EMP_ID, drop=False), core_df, year)
+    temp_snap = snapshot.update(ensure_snapshot_cols(prev_snapshot).set_index(EMP_ID, drop=False), core_df, year)
     # Integrity check: log unique EMP_IDs and assert uniqueness
     n_unique_empids = temp_snap[EMP_ID].nunique() if EMP_ID in temp_snap.columns else temp_snap.index.nunique()
     n_rows = len(temp_snap)
@@ -267,22 +303,22 @@ def run_one_year(
         raise ValueError("Duplicate EMP_IDs in post-term snapshot!")
     _dbg("post-term snapshot", temp_snap, year)
     # 2) After comp+term but BEFORE hires
-    n_active_survivors = int(temp_snap['active'].sum()) if 'active' in temp_snap.columns else len(temp_snap)
+    n_active_survivors = int(temp_snap[EMP_ACTIVE].sum()) if EMP_ACTIVE in temp_snap.columns else len(temp_snap)
     logger.info(f"[YR={year}] Post-term Active= {n_active_survivors}")
 
     # count survivors
     survivors = temp_snap.loc[
         temp_snap[EMP_TERM_DATE].isna() | (temp_snap[EMP_TERM_DATE] > as_of)
     ]
-    n_active_survivors = int(survivors['active'].sum()) if 'active' in survivors.columns else len(survivors)
+    n_active_survivors = int(survivors[EMP_ACTIVE].sum()) if EMP_ACTIVE in survivors.columns else len(survivors)
     n_terminated = start_count - n_active_survivors
     logger.info(f"[RUN_ONE_YEAR YR={year}] Terminations: {n_terminated}, survivors active: {n_active_survivors}")
 
     # --- 4. Gross-up new-hire rate logic ---
     import math
     # Capture start-of-year headcount
-    if 'active' in prev_snapshot.columns:
-        start_count = int(prev_snapshot['active'].sum())
+    if EMP_ACTIVE in prev_snapshot.columns:
+        start_count = int(prev_snapshot[EMP_ACTIVE].sum())
     else:
         start_count = int(((prev_snapshot[EMP_TERM_DATE].isna()) | (prev_snapshot[EMP_TERM_DATE] > as_of)).sum())
 
@@ -357,14 +393,17 @@ def run_one_year(
     else:
         hire_comp_events = []
 
-    hire_dfs = [df for df in hire_events + hire_comp_events if isinstance(df, pd.DataFrame) and not df.empty]
-    hire_dfs = [df for df in hire_dfs if not df.empty and not df.isna().all().all()]
-    hires_df = pd.concat(hire_dfs, ignore_index=True) if hire_dfs else pd.DataFrame(columns=EVENT_COLS)
+    hire_dfs = [df for df in hire_events + hire_comp_events if isinstance(df, pd.DataFrame)]
+    # filter non-empty/all-NA frames
+    parts_hires = _nonempty_frames(hire_dfs)
+    hires_df = pd.concat(parts_hires, ignore_index=True) if parts_hires else pd.DataFrame(columns=EVENT_COLS)
     logger.info(f"[RUN_ONE_YEAR YR={year}] Generated {len(hires_df)} new-hire events")
 
     # --- 6. Apply hires to snapshot (pre NH-term) ---
-    before_nh_df = pd.concat([core_df, hires_df], ignore_index=True) if not hires_df.empty else core_df
-    snap_with_hires = snapshot.update(temp_snap, before_nh_df, year)
+    # --- before new hires snapshot merge ---
+    parts = _nonempty_frames([core_df, hires_df])
+    before_nh_df = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=EVENT_COLS)
+    snap_with_hires = snapshot.update(ensure_snapshot_cols(temp_snap), before_nh_df, year)
     # Integrity check: log unique EMP_IDs and assert uniqueness
     n_unique_empids_hires = snap_with_hires[EMP_ID].nunique() if EMP_ID in snap_with_hires.columns else snap_with_hires.index.nunique()
     n_rows_hires = len(snap_with_hires)
@@ -375,7 +414,38 @@ def run_one_year(
     _dbg("with hires snapshot", snap_with_hires, year)
     # 3) After applying new hires (but BEFORE NH-termination)
     hires_added = len(hires_df) if not hires_df.empty else 0
-    logger.info(f"[YR={year}] After Hires     = {snap_with_hires['active'].sum()}  (added {hires_added} hires)")
+    logger.info(f"[YR={year}] After Hires     = {snap_with_hires[EMP_ACTIVE].sum()}  (added {hires_added} hires)")
+
+    # --- 6b. Apply annual comp bump only to experienced employees ---
+    # 1) Identify all new-hire IDs so we can exclude them
+    new_hire_ids = set(hires_df[EMP_ID]) if not hires_df.empty else set()
+
+    # 2) Build mask of those present at year-start (i.e. not new hires)
+    experienced_mask = ~snap_with_hires[EMP_ID].isin(new_hire_ids)
+    experienced = snap_with_hires.loc[experienced_mask]
+    # Debug: check experienced slice before bump
+    logger.debug(
+        f"[YR={year}] Experienced slice: {len(experienced)} rows; sample IDs: {experienced[EMP_ID].tolist()[:5]}"
+    )
+
+    # 3) Determine bump rate from hazard table
+    rate = float(hazard_slice['comp_raise_pct'].iloc[0])
+
+    # 4) Run the bump on experienced headcount
+    bumped_experienced = apply_comp_bump(
+        experienced,
+        EMP_GROSS_COMP,
+        rate,
+        year_rng,
+        logger
+    )
+
+    # 5) Merge their updated salaries back into the full snapshot
+    snap_with_hires.loc[experienced_mask, EMP_GROSS_COMP] = bumped_experienced[EMP_GROSS_COMP]
+
+    # 6) (optional) append any EVT_COMP events from this bump into your event log
+    # If you want to track bump events, you can uncomment the following line:
+    # event_log = pd.concat([event_log, bumped_experienced], ignore_index=True)
 
     # --- 7. New-hire terminations ---
     nh_term_list = term.run_new_hires(snap_with_hires, hazard_slice, year_rng, year, deterministic_term)
@@ -393,7 +463,7 @@ def run_one_year(
     full_event_log_for_year = full_event_log_for_year.sort_values(['event_time', 'event_type'], ignore_index=True)
 
     # --- 9. Final snapshot update (apply NH terminations) ---
-    final_snapshot = snapshot.update(snap_with_hires, nh_term_df, year)
+    final_snapshot = snapshot.update(ensure_snapshot_cols(snap_with_hires), nh_term_df, year)
     # Integrity check: log unique EMP_IDs and assert uniqueness
     n_unique_empids_final = final_snapshot[EMP_ID].nunique() if EMP_ID in final_snapshot.columns else final_snapshot.index.nunique()
     n_rows_final = len(final_snapshot)
@@ -401,7 +471,7 @@ def run_one_year(
     if n_unique_empids_final != n_rows_final:
         logger.error(f"[YR={year}] Duplicate EMP_IDs detected in final snapshot!")
         raise ValueError("Duplicate EMP_IDs in final snapshot!")
-    logger.info(f"[YR={year}] Post-NH-term    = {final_snapshot['active'].sum()}  (removed {nh_terms_removed} NH terms)")
+    logger.info(f"[YR={year}] Post-NH-term    = {final_snapshot[EMP_ACTIVE].sum()}  (removed {nh_terms_removed} NH terms)")
     # Propagate job_level_source for new hires
     if 'job_level_source' in final_snapshot.columns:
         # Add 'hire' category if column is categorical

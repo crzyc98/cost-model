@@ -30,7 +30,8 @@ except ImportError:
 # --- State and Utility Imports ---
 from cost_model.utils.columns import (
     EMP_ID, EMP_HIRE_DATE, EMP_ROLE, EMP_TERM_DATE,
-    EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_DEFERRAL_RATE
+    EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_DEFERRAL_RATE,
+    EMP_ACTIVE, EMP_TENURE_BAND
 )
 
 # Define event priority mapping for snapshot updates
@@ -67,24 +68,24 @@ def run_projection_engine(
 
     # Initialize the current snapshot and current event log
     current_snapshot = initial_snapshot_df.copy()
-    logger.info(f"[RUNNER] Initial snapshot: {len(current_snapshot)} total rows, {current_snapshot['active'].sum()} active rows")
+    logger.info(f"[RUNNER] Initial snapshot: {len(current_snapshot)} total rows, {current_snapshot[EMP_ACTIVE].sum()} active rows")
 
     # Validate and use the 'active' column from create_initial_snapshot directly.
     # create_initial_snapshot is responsible for correctly interpreting the census, including 'active' status.
-    if 'active' not in current_snapshot.columns:
+    if EMP_ACTIVE not in current_snapshot.columns:
         logger.error("CRITICAL: Initial snapshot from create_initial_snapshot is missing the 'active' column. This should not happen. Falling back to all active.")
-        current_snapshot['active'] = pd.Series([True] * len(current_snapshot), index=current_snapshot.index)
-    elif not pd.api.types.is_bool_dtype(current_snapshot['active'].dtype):
-        logger.error(f"CRITICAL: Initial snapshot 'active' column (type: {current_snapshot['active'].dtype}) is not boolean. Attempting conversion or falling back.")
+        current_snapshot[EMP_ACTIVE] = pd.Series([True] * len(current_snapshot), index=current_snapshot.index)
+    elif not pd.api.types.is_bool_dtype(current_snapshot[EMP_ACTIVE].dtype):
+        logger.error(f"CRITICAL: Initial snapshot 'active' column (type: {current_snapshot[EMP_ACTIVE].dtype}) is not boolean. Attempting conversion or falling back.")
         try:
             # Attempt to convert to boolean. This is a fix-up for unexpected 'active' column types.
-            current_snapshot['active'] = current_snapshot['active'].astype(bool)
+            current_snapshot[EMP_ACTIVE] = current_snapshot[EMP_ACTIVE].astype(bool)
         except Exception as e_conv:
             logger.error(f"Failed to convert 'active' column to bool: {e_conv}. Falling back to all active.")
-            current_snapshot['active'] = pd.Series([True] * len(current_snapshot), index=current_snapshot.index)
+            current_snapshot[EMP_ACTIVE] = pd.Series([True] * len(current_snapshot), index=current_snapshot.index)
     
     # Log the definitive initial active count taken from the snapshot's 'active' column.
-    active_count_for_runner = current_snapshot['active'].sum()
+    active_count_for_runner = current_snapshot[EMP_ACTIVE].sum()
     logger.info(f"Runner: Initial active headcount from snapshot's 'active' column: {active_count_for_runner}")
 
     # Verify consistency between 'active' column and EMP_TERM_DATE if possible, but 'active' column is primary.
@@ -122,8 +123,8 @@ def run_projection_engine(
     ee_contrib_event_types = [et for et in ee_contrib_event_types if et is not None and isinstance(et, str)]
     logger.debug(f"EE Contribution event types being tracked: {ee_contrib_event_types}")
 
-    if initial_snapshot_df is not None and 'active' in initial_snapshot_df.columns:
-        last_year_active_headcount = initial_snapshot_df[initial_snapshot_df['active']].shape[0]
+    if initial_snapshot_df is not None and EMP_ACTIVE in initial_snapshot_df.columns:
+        last_year_active_headcount = initial_snapshot_df[initial_snapshot_df[EMP_ACTIVE]].shape[0]
     else:
         last_year_active_headcount = 0
         logger.warning("[RUNNER] Initial snapshot is missing or has no 'active' column. First year growth rate might be off.")
@@ -131,16 +132,16 @@ def run_projection_engine(
     from cost_model.utils.columns import EMP_ROLE
     for yr_idx, current_sim_year in enumerate(projection_sim_years):
         logger.info(f"--- Simulating Year {current_sim_year} (Index {yr_idx}) ---")
-        logger.debug(f"SOY {current_sim_year} - Snapshot shape: {current_snapshot.shape}, Active: {current_snapshot['active'].sum() if 'active' in current_snapshot else 'N/A'}")
+        logger.debug(f"SOY {current_sim_year} - Snapshot shape: {current_snapshot.shape}, Active: {current_snapshot[EMP_ACTIVE].sum() if EMP_ACTIVE in current_snapshot else 'N/A'}")
         logger.debug(f"SOY {current_sim_year} - Cumulative Event Log shape: {current_cumulative_event_log.shape}")
 
         # --- Patch: Regenerate hazard table for the current year using the current snapshot ---
         hazard_table = build_hazard_table([current_sim_year], current_snapshot, global_params, plan_rules_config)
         # --- Check for missing (role, tenure_band) combos ---
         missing_combos = []
-        if EMP_ROLE in current_snapshot.columns and 'tenure_band' in current_snapshot.columns:
-            snapshot_combos = set(tuple(x) for x in current_snapshot[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
-            hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
+        if EMP_ROLE in current_snapshot.columns and EMP_TENURE_BAND in current_snapshot.columns:
+            snapshot_combos = set(tuple(x) for x in current_snapshot[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
+            hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
             missing_combos = snapshot_combos - hazard_combos
             if missing_combos:
                 logger.warning(f"[HAZARD TABLE] Year {current_sim_year}: Missing hazard table entries for combinations: {missing_combos}")
@@ -175,7 +176,7 @@ def run_projection_engine(
                 pd.Timestamp(f"{current_sim_year}-12-31"), # Apply events as of EOY for next snapshot
                 EVENT_PRIORITY
             )
-            logger.info(f"[RUNNER YR={current_sim_year}] Snapshot updated. Active after events: {current_snapshot['active'].sum()}")
+            logger.info(f"[RUNNER YR={current_sim_year}] Snapshot updated. Active after events: {current_snapshot[EMP_ACTIVE].sum()}")
 
         # Append to cumulative log
         if event_log_for_year is not None and not event_log_for_year.empty:
@@ -191,7 +192,7 @@ def run_projection_engine(
 
         active_employees_df = pd.DataFrame()
         if 'active' in current_snapshot.columns:
-            active_employees_df = current_snapshot[current_snapshot["active"]].copy()
+            active_employees_df = current_snapshot[current_snapshot[EMP_ACTIVE]].copy()
         active_headcount_eoy = len(active_employees_df)
 
         eligible_count = active_headcount_eoy
@@ -275,12 +276,12 @@ def run_projection_engine(
                 EVENT_EMP_ID
             ].unique().tolist()
         # Employees who were active at any point during the year
-        active_ids_soy = set(current_snapshot[current_snapshot['active']].index.tolist())
+        active_ids_soy = set(current_snapshot[current_snapshot[EMP_ACTIVE]].index.tolist())
         # Employees who terminated this year
         terminated_this_year = snap['term_year'] == current_sim_year
         # Build mask: active EOY, or terminated this year, or had comp/term event this year, or were active SOY
         mask = (
-            snap['active'] |
+            snap[EMP_ACTIVE] |
             terminated_this_year |
             snap[EMP_ID].isin(comp_ids) |
             snap[EMP_ID].isin(term_ids) |

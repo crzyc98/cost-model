@@ -6,39 +6,97 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
       state:
         new_hire: !!python/object/apply:types.SimpleNamespace
           state:
-            comp_age_factor: 0.0033760083775277103
-            comp_base_salary: 130000.0
-            comp_max_salary: 250000
-            comp_min_salary: 50000
-            comp_stochastic_std_dev: 0.5792934742024154
-            new_hire_age_mean: 44.5
-            new_hire_age_std: 11.6
-        roles: !!python/object/apply:types.SimpleNamespace
-          state:
-            Executive: !!python/object/apply:types.SimpleNamespace
-              state:
-                comp_age_factor: 0.003
-                comp_base_salary: 315679.72
-                comp_max_salary: 466086.79400000005
-                comp_min_salary: 263614.81
-                comp_stochastic_std_dev: 0.3064158769318981
-            Manager: !!python/object/apply:types.SimpleNamespace
-              state:
-                comp_age_factor: 0.012
-                comp_base_salary: 180794.77000000002
-                comp_max_salary: 233636.56200000003
-                comp_min_salary: 127302.723
-                comp_stochastic_std_dev: 0.24242303385044559
-            Staff: !!python/object/apply:types.SimpleNamespace
-              state:
-                comp_age_factor: 0.012
-                comp_base_salary: 61473.45
-                comp_max_salary: 76200.24799999999
-                comp_min_salary: 44677.962
-                comp_stochastic_std_dev: 0.2129779339831023
+            age_mean: 44.5
+            age_std: 11.6
     days_into_year_for_cola: 182
     days_into_year_for_promotion: 182
     deterministic_termination: true
+    job_levels:
+    - !!python/object/apply:types.SimpleNamespace
+      state:
+        avg_annual_merit_increase: 0.03
+        comp_age_factor: 0.003
+        comp_base_salary: 35000
+        comp_stochastic_std_dev: 0.58
+        description: Non-exempt employees paid hourly wages
+        job_families:
+        - Operations
+        - Facilities
+        level_id: 0
+        max_compensation: 55000
+        min_compensation: 35000
+        name: Hourly
+        promotion_probability: 0.08
+        target_bonus_percent: 0.0
+    - !!python/object/apply:types.SimpleNamespace
+      state:
+        avg_annual_merit_increase: 0.035
+        comp_age_factor: 0.012
+        comp_base_salary: 61473.45
+        comp_stochastic_std_dev: 0.213
+        description: Entry-level exempt employees, individual contributors
+        job_families:
+        - Engineering
+        - HR
+        - Finance
+        - IT
+        level_id: 1
+        max_compensation: 80000
+        min_compensation: 50000
+        name: Staff
+        promotion_probability: 0.12
+        target_bonus_percent: 0.05
+    - !!python/object/apply:types.SimpleNamespace
+      state:
+        avg_annual_merit_increase: 0.04
+        comp_age_factor: 0.012
+        comp_base_salary: 180794.77
+        comp_stochastic_std_dev: 0.242
+        description: First-level management with direct reports
+        job_families:
+        - Engineering
+        - HR
+        - Finance
+        - IT
+        level_id: 2
+        max_compensation: 120000
+        min_compensation: 75000
+        name: Manager
+        promotion_probability: 0.08
+        target_bonus_percent: 0.15
+    - !!python/object/apply:types.SimpleNamespace
+      state:
+        avg_annual_merit_increase: 0.045
+        comp_age_factor: 0.003
+        comp_base_salary: 263614.81
+        comp_stochastic_std_dev: 0.306
+        description: Mid-level management, often managing other managers
+        job_families:
+        - Engineering
+        - HR
+        - Finance
+        - IT
+        level_id: 3
+        max_compensation: 160000
+        min_compensation: 110000
+        name: SrMgr
+        promotion_probability: 0.05
+        target_bonus_percent: 0.25
+    - !!python/object/apply:types.SimpleNamespace
+      state:
+        avg_annual_merit_increase: 0.05
+        comp_age_factor: 0.003
+        comp_base_salary: 315679.72
+        comp_stochastic_std_dev: 0.306
+        description: Senior leadership roles (VP, C-suite, etc.)
+        job_families:
+        - Executive
+        level_id: 4
+        max_compensation: 350000
+        min_compensation: 150000
+        name: Exec
+        promotion_probability: 0.02
+        target_bonus_percent: 0.4
     log_level: DEBUG
     maintain_headcount: false
     max_working_age: 65

@@ -11,12 +11,13 @@ from typing import Mapping, Any, Optional
 
 # Attempt to import column constants, provide fallbacks
 try:
-    from ..utils.columns import EMP_GROSS_COMP
+    from ..utils.columns import EMP_GROSS_COMP, EMP_TENURE
 except ImportError:
     print(
         "Warning (compensation.py): Could not import column constants from utils. Using string literals."
     )
     EMP_GROSS_COMP = "employee_gross_compensation"
+    EMP_TENURE = "employee_tenure"
 
 # Import sampling helpers if needed (e.g., for second-year bumps)
 try:
@@ -61,12 +62,16 @@ def apply_comp_bump(
         DataFrame with updated compensation.
     """
     df2 = df.copy()
+    # Debug: input slice for comp bump
+    log.debug(
+        f"apply_comp_bump called on {len(df2)} rows; sample pre-bump comps: {df2[comp_col].head(5).tolist()}"
+    )
     if comp_col not in df2:
         log.warning(f"Compensation column '{comp_col}' not found, skipping comp bump.")
         return df2
-    if "tenure" not in df2.columns:
+    if EMP_TENURE not in df2.columns:
         log.warning(
-            "Column 'tenure' not found, cannot apply tenure-based comp bump logic. Applying flat rate to all."
+            f"Column '{EMP_TENURE}' not found, cannot apply tenure-based comp bump logic. Applying flat rate to all."
         )
         df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0) * (
             1 + rate
@@ -81,12 +86,12 @@ def apply_comp_bump(
     df2[comp_col] = (
         pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0).astype(float)
     )
-    df2["tenure"] = pd.to_numeric(df2["tenure"], errors="coerce").fillna(0.0)
+    df2[EMP_TENURE] = pd.to_numeric(df2[EMP_TENURE], errors="coerce").fillna(0.0)
 
     # Define masks based on tenure
-    mask_new_or_first_year = df2["tenure"] < 1.0  # Tenure is float, check < 1
-    mask_second_year = (df2["tenure"] >= 1.0) & (df2["tenure"] < 2.0)
-    mask_experienced = df2["tenure"] >= 2.0
+    mask_new_or_first_year = df2[EMP_TENURE] < 1.0  # Tenure is float, check < 1
+    mask_second_year = (df2[EMP_TENURE] >= 1.0) & (df2[EMP_TENURE] < 2.0)
+    mask_experienced = df2[EMP_TENURE] >= 2.0
 
     n_new = mask_new_or_first_year.sum()
     n_second = mask_second_year.sum()
@@ -131,6 +136,11 @@ def apply_comp_bump(
             f"Applying flat rate bump ({rate:.1%}) to {n_exp} experienced employees."
         )
         df2.loc[mask_experienced, comp_col] *= 1 + rate
+        # Debug: bump amounts for experienced slice
+        bump_amounts = df2[comp_col] - df[comp_col]
+        log.debug(
+            f"Calculated flat-rate bump={rate:.2%}; sample bump_amounts: {bump_amounts[mask_experienced].head(5).tolist()}"
+        )
 
     # Ensure non-negative compensation
     df2[comp_col] = df2[comp_col].clip(lower=0)

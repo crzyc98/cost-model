@@ -18,6 +18,10 @@ EMPLOYER_CORE = "employer_core_contribution"
 EMPLOYER_MATCH = "employer_match_contribution"
 EMP_ID = "employee_id"
 EMP_LEVEL = "employee_level"    
+EMP_ACTIVE      = "active"
+EMP_TENURE_BAND = "tenure_band"
+EMP_LEVEL_SOURCE= "job_level_source"
+EMP_EXITED      = "exited"
 
 # Flags
 IS_ELIGIBLE = "is_eligible"

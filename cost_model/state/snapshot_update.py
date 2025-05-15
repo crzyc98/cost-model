@@ -111,6 +111,19 @@ __all__: List[str] = ["update"]
 # Internal helpers
 # -----------------------------------------------------------------------------
 
+def _nonempty_frames(dfs: List[pd.DataFrame]) -> List[pd.DataFrame]:
+    """
+    Return only those DataFrames which are non-empty AND not entirely NA.
+    """
+    good = []
+    for df in dfs:
+        if df.empty:
+            continue
+        if df.isna().all().all():
+            continue
+        good.append(df)
+    return good
+
 def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int) -> pd.DataFrame:
     hires = get_first_event(new_events, EVT_HIRE)
     new_ids = hires[~hires[EMP_ID].isin(current.index)][EMP_ID].unique()
@@ -182,9 +195,10 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     logger.info("--- End Pre-concat diagnostics ---")
     # --- END VERBOSE DEBUGGING ---
 
-    result = pd.concat([current, new_df], verify_integrity=True, copy=False) # verify_integrity can now be True
+    parts = _nonempty_frames([current, new_df])
+    result = pd.concat(parts, verify_integrity=True, copy=False)
     
-    # Post-concat check (should be redundant if pre-checks are thorough, but good safety net)
+    # Post-concat check (should be redundant if pre-concat checks are thorough, but good safety net)
     if not result.index.is_unique:
         # This case should ideally not be reached if pre-concat checks are correct.
         post_concat_dups = result.index[result.index.duplicated()].unique().tolist()
@@ -230,4 +244,9 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
     # SNAPSHOT_COLS already contains EMP_TENURE, so avoid duplication
     cur = cur[SNAPSHOT_COLS].astype(SNAPSHOT_DTYPES)
     cur.index.name = EMP_ID
+    
+    from pandas import CategoricalDtype
+    if isinstance(cur['job_level_source'].dtype, CategoricalDtype):
+        cur['job_level_source'] = cur['job_level_source'].astype("category")
+    
     return cur

@@ -9,7 +9,7 @@ import numpy as np
 import json
 from typing import Optional, Dict, Any
 from cost_model.state.event_log import EVENT_COLS, EVT_RAISE, create_event
-from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_LEVEL
+from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_LEVEL, EMP_LEVEL_SOURCE
 
 def update_salary(
     df: pd.DataFrame,
@@ -50,12 +50,13 @@ def update_salary(
             )
             events.append(evt)
 
-    # 2) Promotion bump
+    # 2) Promotion bump (mask-based, avoids pandas NA ambiguity)
     promo_map = getattr(params, 'promo_raise_pct', {})
-    for idx, row in df.iterrows():
-        src = row.get('job_level_source')
-        if src in ('markov-promo', 'rule-promo'):
-            lvl_from = int(row[EMP_LEVEL])
+    if promo_map and EMP_LEVEL_SOURCE in df.columns:
+        promo_sources = ["markov-promo", "rule-promo"]
+        mask = df[EMP_LEVEL_SOURCE].isin(promo_sources)
+        for idx in df.loc[mask].index:
+            lvl_from = int(df.at[idx, EMP_LEVEL])
             key = f"{lvl_from}_to_{lvl_from + 1}"
             pct = promo_map.get(key, 0.0)
             if pct:
