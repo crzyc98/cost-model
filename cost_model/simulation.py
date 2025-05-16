@@ -136,8 +136,8 @@ def run_simulation(
     # Bootstrap events (empty for now, or could seed with hires)
     events = pd.DataFrame()
     # Build snapshot
-    from cost_model.state import snapshot as snapmod
-    snap = snapmod.build_full(census_df, year)
+    from cost_model.state.snapshot import build_full as snapmod_build_full
+    snap = snapmod_build_full(census_df, year)
     # Patch in role and tenure_band if present using standardized names
     col_map = {
         EMP_ROLE: 'role',

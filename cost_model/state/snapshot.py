@@ -1,19 +1,24 @@
 # cost_model/state/snapshot.py
 """
-Functions to build and update the workforce snapshot DataFrame from the event log.
-Provides both a full rebuild capability (for bootstrapping/testing) and
-an incremental update capability (for efficient year-over-year processing).
-
-QuickStart: see docs/cost_model/state/snapshot.md
+Compatibility layer for the workforce snapshot module.
+This file maintains backward compatibility while gradually transitioning to the new modular structure.
 """
 
+import warnings
 import logging
+from typing import Dict, List, Any, Optional, Set, Tuple
 import pandas as pd
 import numpy as np
-import json  # Needed for parsing value_json
 
-# --- Dependencies ---
-# Assumed defined in cost_model/state/event_log.py
+from .snapshot_build import build_full
+from .snapshot_update import update
+from .constants import (
+    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_LEVEL, EMP_GROSS_COMP,
+    EMP_TERM_DATE, EMP_ACTIVE, EMP_TENURE, EMP_TENURE_BAND,
+    EMP_DEFERRAL_RATE, SNAPSHOT_COLS, SNAPSHOT_DTYPES
+)
+
+# Legacy imports for compatibility
 try:
     from .event_log import EVT_HIRE, EVT_TERM, EVT_COMP, EVENT_COLS
 except ImportError:
@@ -29,38 +34,14 @@ except ImportError:
         "meta",
     ]
 
-
-# Assumed defined in cost_model/utils/columns.py
-try:
-    from ..utils.columns import (
-        EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
-        EMP_GROSS_COMP, EMP_TERM_DATE, EMP_DEFERRAL_RATE, EMP_TENURE,
-        EMP_TENURE_BAND,
-        EMP_ACTIVE
-    )
-except ImportError:
-    print(
-        "Warning: Could not import EMP_ID or other constants from utils.columns. Defaulting..."
-    )
-    # Fallback column names that match the standard schema
-    EMP_ID = "employee_id"
-    EMP_HIRE_DATE = "employee_hire_date"
-    EMP_BIRTH_DATE = "employee_birth_date"
-    EMP_ROLE = "employee_role"
-    EMP_GROSS_COMP = "employee_gross_compensation"
-    EMP_TERM_DATE = "employee_termination_date"
-    EMP_DEFERRAL_RATE = "employee_deferral_rate"
-    EMP_TENURE = "employee_tenure"  # Ensure this matches schema.py
-
 logger = logging.getLogger(__name__)
 
-# --- Snapshot Schema Definition ---
-# Columns and their desired order in the snapshot
+# --- Legacy API ---
 SNAPSHOT_COLS = [
     EMP_ID,          # Ensure EMP_ID is part of the columns
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_ROLE,
+    EMP_LEVEL,
     EMP_GROSS_COMP,  # Was "current_comp", maps to gross compensation
     EMP_TERM_DATE,   # Was "term_date"
     EMP_ACTIVE,        # pandas BooleanDtype (True/False/NA) - snapshot specific
@@ -74,7 +55,7 @@ SNAPSHOT_DTYPES = {
     EMP_ID: pd.StringDtype(),           # Add dtype for EMP_ID
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
-    EMP_ROLE: pd.StringDtype(),          # Nullable string
+    EMP_LEVEL: pd.StringDtype(),          # Nullable string
     EMP_GROSS_COMP: pd.Float64Dtype(),  # Nullable float, was "current_comp"
     EMP_TERM_DATE: "datetime64[ns]",     # Stays datetime, NaT represents null
     "active": pd.BooleanDtype(),         # Nullable boolean - snapshot specific
@@ -704,6 +685,4 @@ def update(
         empty.index.name = EMP_ID
         return empty
 
-# --- Compatibility re-exports -------------------------------------------------
-from .snapshot_build import build_full as build_full  # noqa: F401
-from .snapshot_update import update as update  # noqa: F401
+

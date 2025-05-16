@@ -10,7 +10,7 @@ import logging
 from pathlib import Path # Though not used directly in func, good for path handling if extended
 from typing import Union, Dict, Tuple, List
 
-from cost_model.state.snapshot import SNAPSHOT_COLS as SNAPSHOT_COL_NAMES, SNAPSHOT_DTYPES
+from cost_model.state.snapshot.constants import SNAPSHOT_COLS as SNAPSHOT_COL_NAMES, SNAPSHOT_DTYPES
 from cost_model.state.job_levels.loader import ingest_with_imputation
 from cost_model.utils.columns import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 

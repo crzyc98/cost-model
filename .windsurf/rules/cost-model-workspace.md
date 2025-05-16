@@ -8,6 +8,7 @@ trigger: always_on
 
 RULE: Always activate source .venv/bin/activate
 RULE: Always test using python3 scripts/run_multi_year_projection.py --config config/dev_tiny.yaml --census data/census_preprocessed.parquet
+RULE: use standardized columns from cost_model/utils/columns.py and cost_model/state/schema.py
 
 # === Core Simulation Logic ===
 RULE: All simulation orchestration and control loops must live in cost_model/simulation.py.
