@@ -60,6 +60,17 @@ SUM_CONTRIB = "total_contributions"
 SUM_PLAN_COMP = "total_plan_year_compensation"
 SUM_CAP_COMP = "total_capped_compensation"
 
+# Hazard table columns
+HazardTable = "hazard_table"
+SIMULATION_YEAR = "simulation_year"
+TERM_RATE = "term_rate"
+COMP_RAISE_PCT = "comp_raise_pct"
+NEW_HIRE_TERM_RATE = "new_hire_termination_rate"
+COLA_PCT = "cola_pct"
+CFG = "cfg"
+
+# Note: EMP_LEVEL is already defined above as "employee_level"
+
 AVG_DEFERRAL_PART = "avg_deferral_rate_participants"
 AVG_DEFERRAL_TOTAL = "avg_deferral_rate_total"
 

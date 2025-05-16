@@ -76,53 +76,88 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         EMP_TENURE: 0.0,
         EMP_TENURE_BAND: pd.NA,
         # Initialize with default values for employee level and role
-        EMP_LEVEL: pd.NA,
-        EMP_LEVEL_SOURCE: 'hire',  # Default source for initial snapshot
+        EMP_LEVEL: pd.Series([pd.NA] * len(census_df), dtype='Int64'),
+        EMP_LEVEL_SOURCE: pd.Series([pd.NA] * len(census_df), dtype='string'),
         EMP_EXITED: False,  # Will be updated based on termination status
-        'employee_role': pd.NA  # Will be set to a default value if not in census
+        EMP_ROLE: pd.NA  # Will be set to a default value if not in census
     }
+    
+    # Set tenure_band based on employee_tenure
+    if EMP_TENURE in initial_data:
+        # Define tenure bands
+        bands = {
+            '0-1': (0, 1),
+            '1-3': (1, 3),
+            '3-5': (3, 5),
+            '5+': (5, float('inf'))
+        }
+        
+        # Create tenure_band column
+        def get_tenure_band(tenure: float) -> str:
+            for band, (min_val, max_val) in bands.items():
+                if min_val <= tenure < max_val:
+                    return band
+            return '5+'
+        
+        # Convert initial_data to DataFrame first
+        snapshot_df = pd.DataFrame(initial_data)
+        snapshot_df[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE].apply(get_tenure_band)
+        initial_data[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE_BAND].values
     
     # Set termination dates if they exist in the census
     if has_term_dates:
         initial_data[EMP_TERM_DATE] = census_df[term_col]
         initial_data[EMP_EXITED] = ~census_df[term_col].isna()
         
-    # Infer job levels using compensation data if not already present
-    if EMP_LEVEL in census_df.columns and not census_df[EMP_LEVEL].isna().all():
-        initial_data[EMP_LEVEL] = census_df[EMP_LEVEL].astype('Int64')
-        logger.info(f"Using existing '{EMP_LEVEL}' column from census data")
-        
-        # Set the level source
-        initial_data[EMP_LEVEL_SOURCE] = 'census'
-    else:
-        logger.info("Inferring job levels from compensation data...")
-        # Create a temporary DataFrame with compensation data
-        temp_df = pd.DataFrame({
-            EMP_ID: census_df[EMP_ID],
-            EMP_GROSS_COMP: census_df[EMP_GROSS_COMP]
-        })
-        
-        # Infer job levels using the job levels module
-        temp_df = ingest_with_imputation(temp_df, comp_col=EMP_GROSS_COMP, target_level_col=EMP_LEVEL)
-        
-        # Map the inferred job levels to our snapshot
-        if EMP_LEVEL in temp_df.columns:
-            initial_data[EMP_LEVEL] = temp_df[EMP_LEVEL].astype('Int64')
-            if EMP_LEVEL_SOURCE in temp_df.columns:
-                initial_data[EMP_LEVEL_SOURCE] = temp_df[EMP_LEVEL_SOURCE]
-            logger.info(f"Inferred job levels: {temp_df[EMP_LEVEL].value_counts(dropna=False).to_dict()}")
+        # Infer job levels using compensation data if not already present
+        if EMP_LEVEL in census_df.columns and not census_df[EMP_LEVEL].isna().all():
+            initial_data[EMP_LEVEL] = census_df[EMP_LEVEL].astype('Int64')
+            logger.info(f"Using existing '{EMP_LEVEL}' column from census data")
+            
+            # Set the level source
+            initial_data[EMP_LEVEL_SOURCE] = 'census'
         else:
-            logger.warning("Failed to infer job levels. Defaulting to level 1.")
-            initial_data[EMP_LEVEL] = 1
-            initial_data[EMP_LEVEL_SOURCE] = 'default'
+            logger.info("Inferring job levels from compensation data...")
+            # Create a temporary DataFrame with compensation data
+            temp_df = pd.DataFrame({
+                EMP_ID: census_df[EMP_ID],
+                EMP_GROSS_COMP: census_df[EMP_GROSS_COMP]
+            })
+            
+            # Ensure job levels are initialized
+            from cost_model.state.job_levels import init_job_levels
+            init_job_levels()
+            
+            # Infer job levels using the job levels module
+            target_level_col = EMP_LEVEL
+            temp_df = ingest_with_imputation(temp_df, comp_col=EMP_GROSS_COMP, target_level_col=target_level_col)
+            
+            # Ensure we have the required columns in temp_df
+            required_cols = [EMP_ID, target_level_col, EMP_LEVEL_SOURCE]
+            missing_cols = [col for col in required_cols if col not in temp_df.columns]
+            if missing_cols:
+                logger.error(f"Missing required columns in temp_df: {missing_cols}")
+                raise ValueError(f"Failed to create job levels column in temp_df")
+            
+            # Update initial_data dictionary directly from temp_df
+            initial_data[target_level_col] = temp_df[target_level_col].values
+            initial_data[EMP_LEVEL_SOURCE] = temp_df[EMP_LEVEL_SOURCE].values
+            
+            # Log the inferred job levels
+            logger.info(f"Inferred job levels: {temp_df[target_level_col].value_counts(dropna=False).to_dict()}")
+            logger.debug(f"Job levels distribution: {temp_df[target_level_col].value_counts(dropna=False)}")
+    else:
+        logger.warning("Failed to infer job levels. Defaulting to level 1.")
+        initial_data[EMP_LEVEL] = pd.Series([1] * len(initial_data[EMP_ID]), dtype='Int64')
+        initial_data[EMP_LEVEL_SOURCE] = pd.Series(['default'] * len(initial_data[EMP_ID]), dtype='string')
     
     # Set employee role if it exists in census, otherwise use default 'Regular'
-    if 'employee_role' in census_df.columns:
-        initial_data['employee_role'] = census_df['employee_role'].astype('string')
-        logger.info(f"Using 'employee_role' column from census data")
+    if EMP_ROLE in census_df.columns:
+        initial_data[EMP_ROLE] = census_df[EMP_ROLE].astype('string')
+        logger.info(f"Using '{EMP_ROLE}' column from census data")
     else:
-        logger.warning("No employee role column found in census. Initializing with default role 'Regular'.")
-        initial_data['employee_role'] = 'Regular'
+        logger.warning(f"No {EMP_ROLE} column found in census. Initializing with default role 'Regular'.")
+        initial_data[EMP_ROLE] = 'Regular'
 
     snapshot_df = pd.DataFrame(initial_data)
     

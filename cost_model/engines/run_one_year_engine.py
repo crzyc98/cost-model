@@ -20,6 +20,7 @@ from cost_model.state import snapshot
 from cost_model.utils.columns import (
     EMP_ID,
     EMP_LEVEL,
+    EMP_LEVEL_SOURCE,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
     EMP_TERM_DATE,
@@ -28,8 +29,26 @@ from cost_model.utils.columns import (
     EMP_ACTIVE,
     EMP_TENURE_BAND,
     EMP_LEVEL_SOURCE,
-    EMP_EXITED
+    EMP_EXITED,
+    EMP_TENURE,
+    SIMULATION_YEAR,
+    TERM_RATE,
+    COMP_RAISE_PCT,
+    NEW_HIRE_TERM_RATE,
+    COLA_PCT,
+    CFG
 )
+from cost_model.state.schema import (
+    EVENT_COLS,
+    EVT_COMP,
+    EVT_HIRE,
+    EVT_TERM,
+    EVT_COLA,
+    EVT_PROMOTION,
+    EVT_RAISE,
+    EVT_CONTRIB
+)
+
 REQUIRED_SNAPSHOT_DEFAULTS = {
     EMP_LEVEL: pd.NA,
     EMP_LEVEL_SOURCE: pd.NA,
@@ -48,7 +67,6 @@ from cost_model.plan_rules.contribution_increase import run as contrib_increase_
 from cost_model.plan_rules.proactive_decrease import run as proactive_decrease_run
 from .compensation import update_salary
 from cost_model.dynamics.compensation import apply_comp_bump
-from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP
 logger = logging.getLogger(__name__)
 
 # helper functions below
@@ -116,26 +134,16 @@ def run_one_year(
             )
     logger.debug(f"Hazard‐table columns after  rename: {hazard_table.columns.tolist()}")
 
-    # Standardize the level column using EMP_LEVEL from columns.py
-    if 'level' not in hazard_table.columns:
-        if EMP_LEVEL in hazard_table.columns:
-            hazard_table = hazard_table.rename(columns={EMP_LEVEL: 'level'})
-            logger.debug(f"Renamed hazard_table.{EMP_LEVEL} → hazard_table.level")
-        else:
-            raise ValueError(
-                f"Your hazard_table is missing both 'level' and {EMP_LEVEL} columns; "
-                "one of these is required for hazard-based terminations."
-            )
-    # Check for all required columns
+    # Check for all required columns using standardized names
     expected = {
-        'simulation_year',
-        'level',
-        'tenure_band',
-        'term_rate',
-        'comp_raise_pct',
-        'new_hire_termination_rate',
-        'cola_pct',
-        'cfg'
+        SIMULATION_YEAR,
+        EMP_LEVEL,
+        EMP_TENURE_BAND,
+        TERM_RATE,
+        COMP_RAISE_PCT,
+        NEW_HIRE_TERM_RATE,
+        COLA_PCT,
+        CFG
     }
     missing = expected - set(hazard_table.columns)
     if missing:
@@ -145,8 +153,8 @@ def run_one_year(
     # --- 1. Extract the hazard slice for this year ---
     hazard_slice = hazard_table[hazard_table['simulation_year'] == year]
     # Log unique levels and tenure_bands in hazard_slice and prev_snapshot for this year
-    unique_hazard_levels = hazard_slice['level'].unique().tolist() if 'level' in hazard_slice.columns else []
-    unique_hazard_tenure = hazard_slice['tenure_band'].unique().tolist() if 'tenure_band' in hazard_slice.columns else []
+    unique_hazard_levels = hazard_slice[EMP_LEVEL].unique().tolist() if EMP_LEVEL in hazard_slice.columns else []
+    unique_hazard_tenure = hazard_slice[EMP_TENURE_BAND].unique().tolist() if EMP_TENURE_BAND in hazard_slice.columns else []
     unique_snap_levels = prev_snapshot[EMP_LEVEL].unique().tolist() if EMP_LEVEL in prev_snapshot.columns else []
     unique_snap_tenure = prev_snapshot[EMP_TENURE_BAND].unique().tolist() if EMP_TENURE_BAND in prev_snapshot.columns else []
     logger.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice levels: {unique_hazard_levels}")
@@ -165,9 +173,9 @@ def run_one_year(
         }])
 
     # Log rates
-    log_term_rate = hazard_slice['term_rate'].mean()
-    log_comp_rate = hazard_slice['comp_raise_pct'].mean()
-    log_nh_term_rate = hazard_slice['new_hire_termination_rate'].mean()
+    log_term_rate = hazard_slice[TERM_RATE].mean()
+    log_comp_rate = hazard_slice[COMP_RAISE_PCT].mean()
+    log_nh_term_rate = hazard_slice[NEW_HIRE_TERM_RATE].mean()
     logger.info(f"[RUN_ONE_YEAR YR={year}] Rates → term={log_term_rate:.3f}, comp={log_comp_rate:.3f}, nh_term={log_nh_term_rate:.3f}")
 
     # reproducible RNG per year

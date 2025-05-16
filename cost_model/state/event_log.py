@@ -89,7 +89,7 @@ from typing import Dict, Optional, Any
 
 # Attempt to import EMP_ID, define fallback if needed (e.g., for standalone testing)
 try:
-    from ..utils.columns import EMP_ID
+    from ..utils.columns import EMP_ID, SIMULATION_YEAR
 except ImportError:
     print(
         "Warning: Could not import EMP_ID from utils.columns. Defaulting to 'employee_id'."
@@ -311,6 +311,7 @@ def create_event(
         "value_num": value_num,
         "value_json": value_json,
         "meta": meta,
+        SIMULATION_YEAR: int(event_time.year) if not pd.isna(event_time) else None
     }
 
 

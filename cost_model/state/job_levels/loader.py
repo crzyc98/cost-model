@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from cost_model.utils.columns import (
+    EMP_ID,
     EMP_GROSS_COMP, 
     EMP_LEVEL, 
     EMP_LEVEL_SOURCE,
@@ -117,10 +118,6 @@ def ingest_with_imputation(
     # Ensure the target column is of integer type
     df[target_level_col] = pd.to_numeric(df[target_level_col], errors='coerce').astype('Int64')
     
-    # Also create a 'job_level' column for backward compatibility with snapshot.py
-    # This is critical because create_initial_snapshot looks for 'job_level' specifically
-    df['job_level'] = df[target_level_col]
-    
     # Track source of the level assignment
     if EMP_LEVEL_SOURCE not in df.columns:
         df[EMP_LEVEL_SOURCE] = pd.NA
@@ -138,4 +135,12 @@ def ingest_with_imputation(
     df.loc[from_imputed, EMP_LEVEL_SOURCE] = 'percentile-impute'
     
     # Clean up any temporary columns
-    return df.drop(columns=['imputed_level'], errors='ignore')
+    df = df.drop(columns=['imputed_level'], errors='ignore')
+    
+    # Ensure we have the required columns
+    required_cols = [EMP_ID, target_level_col, EMP_LEVEL_SOURCE]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns after processing: {missing_cols}")
+    
+    return df[required_cols]

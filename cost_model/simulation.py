@@ -17,6 +17,7 @@ from typing import Optional
 # Configuration Loading & Access
 from cost_model.config.models import MainConfig, GlobalParameters # Needed for type hints
 from cost_model.config.accessors import get_scenario_config # Import the actual function
+from cost_model.utils.columns import EMP_ID, EMP_ROLE, EMP_TENURE_BAND
 
 # Data I/O
 # TODO: Update these imports if readers/writers structure changes
@@ -137,10 +138,14 @@ def run_simulation(
     # Build snapshot
     from cost_model.state import snapshot as snapmod
     snap = snapmod.build_full(census_df, year)
-    # Patch in role and tenure_band if present
-    for col in ['role', 'tenure_band']:
-        if col in census_df.columns:
-            snap[col] = snap.index.map(census_df.set_index('employee_id')[col].to_dict()).astype(str)
+    # Patch in role and tenure_band if present using standardized names
+    col_map = {
+        EMP_ROLE: 'role',
+        EMP_TENURE_BAND: 'tenure_band'
+    }
+    for std_col, census_col in col_map.items():
+        if census_col in census_df.columns:
+            snap[std_col] = snap.index.map(census_df.set_index(EMP_ID)[census_col].to_dict()).astype(str)
 
     # 4. Load hazard table
     hazard_path = Path('cost_model/state/hazard_table.csv')

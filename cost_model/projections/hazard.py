@@ -7,7 +7,16 @@ QuickStart: see docs/cost_model/projections/hazard.md
 import pandas as pd
 import logging
 from typing import List
-from cost_model.utils.columns import EMP_LEVEL
+from cost_model.utils.columns import (
+    EMP_LEVEL,
+    EMP_TENURE_BAND,
+    SIMULATION_YEAR,
+    TERM_RATE,
+    COMP_RAISE_PCT,
+    NEW_HIRE_TERM_RATE,
+    COLA_PCT,
+    CFG
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +28,12 @@ def build_hazard_table(
 ) -> pd.DataFrame:
     """Generates the hazard table based on configuration and initial snapshot."""
     logger.info("Generating hazard table...")
-    from cost_model.utils.columns import EMP_TENURE
-    if EMP_LEVEL in initial_snapshot.columns and 'tenure_band' in initial_snapshot.columns:
-        unique_levels_tenures = initial_snapshot[[EMP_LEVEL, 'tenure_band']].drop_duplicates().to_dict('records')
+    from cost_model.utils.columns import EMP_TENURE_BAND
+    if EMP_LEVEL in initial_snapshot.columns and EMP_TENURE_BAND in initial_snapshot.columns:
+        unique_levels_tenures = initial_snapshot[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates().to_dict('records')
     else:
-        logger.warning(f"'{EMP_LEVEL}' or 'tenure_band' not in initial snapshot. Using default '1'/'all'.")
-        unique_levels_tenures = [{EMP_LEVEL: 1, 'tenure_band': 'all'}]
+        logger.warning(f"'{EMP_LEVEL}' or '{EMP_TENURE_BAND}' not in initial snapshot. Using default '1'/'all'.")
+        unique_levels_tenures = [{EMP_LEVEL: 1, EMP_TENURE_BAND: 'all'}]
 
     # Robustly check for annual_termination_rate, comp_raise_pct, and nh_term_rate
     if hasattr(global_params, 'annual_termination_rate'):
@@ -48,20 +57,20 @@ def build_hazard_table(
     for year in years:
         for combo in unique_levels_tenures:
             records.append({
-                'simulation_year': year,
+                SIMULATION_YEAR: year,
                 EMP_LEVEL: combo[EMP_LEVEL],
-                'tenure_band': combo['tenure_band'],
-                'term_rate': global_term_rate,
-                'comp_raise_pct': global_comp_raise_pct,
-                'new_hire_termination_rate': global_nh_term_rate,
-                'cola_pct': getattr(global_params, 'cola_pct', 0.0),
-                'cfg': plan_rules_config
+                EMP_TENURE_BAND: combo[EMP_TENURE_BAND],
+                TERM_RATE: global_term_rate,
+                COMP_RAISE_PCT: global_comp_raise_pct,
+                NEW_HIRE_TERM_RATE: global_nh_term_rate,
+                COLA_PCT: getattr(global_params, 'cola_pct', 0.0),
+                CFG: plan_rules_config
             })
     if records:
         df = pd.DataFrame(records)
         logger.info(f"Hazard table with {len(records)} rows.")
     else:
-        cols = ['simulation_year', EMP_LEVEL, 'tenure_band', 'term_rate', 'comp_raise_pct', 'new_hire_termination_rate', 'cola_pct', 'cfg']
+        cols = [SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT, CFG]
         df = pd.DataFrame(columns=cols)
         logger.warning("Empty hazard table created.")
     return df

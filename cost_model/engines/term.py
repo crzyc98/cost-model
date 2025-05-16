@@ -10,7 +10,17 @@ import math
 import json
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_LEVEL, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
+from cost_model.utils.columns import (
+    EMP_ID,
+    EMP_LEVEL,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_TERM_DATE,
+    EMP_TENURE_BAND,
+    TERM_RATE,
+    SIMULATION_YEAR,
+    NEW_HIRE_TERM_RATE
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,8 +62,8 @@ def run(
     Simulate terminations for one simulation year.
     Assumes hazard_slice already filtered to simulation_year == year.
     """
-    # Extract the sim year (must be present as 'simulation_year')
-    year = int(hazard_slice['simulation_year'].iloc[0])
+    # Extract the sim year using standardized name
+    year = int(hazard_slice[SIMULATION_YEAR].iloc[0])
     # Determine "as_of" start of year
     as_of = pd.Timestamp(f"{year}-01-01")
     logger = logging.getLogger(__name__)
@@ -79,25 +89,23 @@ def run(
     logger.debug(f"[TERM] Year {year}: hazard_slice columns: {hazard_slice.columns.tolist()}")
     logger.debug(f"[TERM] Year {year}: hazard_slice head: {hazard_slice.head().to_dict()}")
     
-    # The hazard table uses 'level' instead of 'employee_level'
-    # Ensure consistent data types before merge
-    hz = hazard_slice[['level', 'tenure_band', 'term_rate']].copy()
-    hz = hz.rename(columns={'level': EMP_LEVEL})
+    # Use standardized column names from the hazard table
+    hz = hazard_slice[[EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE]].copy()
     # Convert to Int64 to match the schema's expected type
     hz[EMP_LEVEL] = pd.to_numeric(hz[EMP_LEVEL], errors='coerce').astype('Int64')
     # Also ensure tenure_band is string type as expected
-    hz['tenure_band'] = hz['tenure_band'].astype(str)
+    hz[EMP_TENURE_BAND] = hz[EMP_TENURE_BAND].astype(str)
     
     # Log hazard table and active employees before merge for debugging
     logger.debug(f"[TERM] Year {year}: Active employee levels: {active[EMP_LEVEL].unique().tolist()}")
-    logger.debug(f"[TERM] Year {year}: Active employee tenure bands: {active['tenure_band'].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Active employee tenure bands: {active[EMP_TENURE_BAND].unique().tolist()}")
     logger.debug(f"[TERM] Year {year}: Hazard table levels: {hz[EMP_LEVEL].unique().tolist()}")
-    logger.debug(f"[TERM] Year {year}: Hazard table tenure bands: {hz['tenure_band'].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Hazard table tenure bands: {hz[EMP_TENURE_BAND].unique().tolist()}")
     
     # Merge hazard rates into active employees
     df = active.merge(
         hz,
-        on=[EMP_LEVEL, 'tenure_band'],
+        on=[EMP_LEVEL, EMP_TENURE_BAND],
         how='left',
     )
     
@@ -116,13 +124,13 @@ def run(
     # Verify we still have the same employees
     assert len(df) == n, f"Employee count mismatch after hazard table merge: {len(df)} != {n}"
     
-    missing_hazard = df['term_rate'].isna().sum()
-    logger.info(f"[TERM] Year {year}: {missing_hazard} employees missing hazard/term_rate after merge.")
-    logger.info(f"[TERM] Year {year}: term_rate stats: min={df['term_rate'].min()}, max={df['term_rate'].max()}, mean={df['term_rate'].mean()}, median={df['term_rate'].median()}.")
+    missing_hazard = df[TERM_RATE].isna().sum()
+    logger.info(f"[TERM] Year {year}: {missing_hazard} employees missing hazard/{TERM_RATE} after merge.")
+    logger.info(f"[TERM] Year {year}: {TERM_RATE} stats: min={df[TERM_RATE].min()}, max={df[TERM_RATE].max()}, mean={df[TERM_RATE].mean()}, median={df[TERM_RATE].median()}.")
     
     # Decide terminations
     if deterministic:
-        rate = df['term_rate'].fillna(0).mean()
+        rate = df[TERM_RATE].fillna(0).mean()
         k = int(math.ceil(n * rate))
         logger.info(f"[TERM] Year {year}: Deterministic mode, using mean rate {rate:.4f}, selecting {k} for termination.")
         if k == 0:
@@ -130,7 +138,7 @@ def run(
             return [pd.DataFrame(columns=EVENT_COLS)]
         losers = rng.choice(df[EMP_ID], size=k, replace=False)
     else:
-        probs = df['term_rate'].fillna(0).values
+        probs = df[TERM_RATE].fillna(0).values
         logger.info(f"[TERM] Year {year}: Stochastic mode, min prob={probs.min()}, max prob={probs.max()}.")
         draw = rng.random(n)
         losers = df.loc[draw < probs, EMP_ID].tolist()
@@ -214,8 +222,8 @@ def run_new_hires(
         return [pd.DataFrame(columns=EVENT_COLS)]
         
     # Use the pre-filtered hazard_slice for this year
-    rate = hazard_slice['new_hire_termination_rate'].iloc[0] if 'new_hire_termination_rate' in hazard_slice.columns else 0.0
-    df_nh['new_hire_termination_rate'] = rate
+    rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hazard_slice.columns else 0.0
+    df_nh[NEW_HIRE_TERM_RATE] = rate
     
     # Now proceed with deterministic/probabilistic logic as before
     n = len(df_nh)
@@ -230,7 +238,7 @@ def run_new_hires(
         losers = rng.choice(df_nh[EMP_ID], size=k, replace=False) if k > 0 else []
     else:
         draw = rng.random(n)
-        rates = df_nh['new_hire_termination_rate']
+        rates = df_nh[NEW_HIRE_TERM_RATE]
         losers = df_nh.loc[draw < rates, EMP_ID].tolist()
         
     if len(losers) == 0:

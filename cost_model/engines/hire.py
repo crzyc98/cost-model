@@ -12,7 +12,7 @@ import numpy as np
 import datetime
 
 from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL
+from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL, SIMULATION_YEAR
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
 
@@ -240,8 +240,8 @@ def run(
     logger.info(f"[HIRE.RUN YR={simulation_year}]   Median: ${np.percentile(starting_comps, 50):,.0f}")
     logger.info(f"[HIRE.RUN YR={simulation_year}]   75th percentile: ${np.percentile(starting_comps, 75):,.0f}")
 
-    # 1. Derive year from hazard_slice['simulation_year']
-    simulation_year = int(hazard_slice['simulation_year'].iloc[0])
+    # 1. Derive year from hazard_slice[SIMULATION_YEAR]
+    simulation_year = int(hazard_slice[SIMULATION_YEAR].iloc[0])
     # Again, use EOY to filter terminations for placeholder logic
     as_of = pd.Timestamp(f"{simulation_year}-12-31")
 

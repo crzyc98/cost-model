@@ -31,7 +31,14 @@ except ImportError:
 from cost_model.utils.columns import (
     EMP_ID, EMP_HIRE_DATE, EMP_ROLE, EMP_TERM_DATE,
     EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_DEFERRAL_RATE,
-    EMP_ACTIVE, EMP_TENURE_BAND
+    EMP_ACTIVE, EMP_TENURE_BAND,
+    SIMULATION_YEAR,
+    TERM_RATE,
+    COMP_RAISE_PCT,
+    NEW_HIRE_TERM_RATE,
+    COLA_PCT,
+    CFG,
+    EMP_LEVEL
 )
 
 # Define event priority mapping for snapshot updates
@@ -181,9 +188,11 @@ def run_projection_engine(
         # Append to cumulative log
         if event_log_for_year is not None and not event_log_for_year.empty:
             # Ensure 'year' column is present and correctly typed in event_log_for_year before concat
-            if 'year' not in event_log_for_year.columns:
-                event_log_for_year['year'] = current_sim_year
-            event_log_for_year['year'] = event_log_for_year['year'].astype(int)
+            # Ensure SIMULATION_YEAR column exists and is filled with current_sim_year
+            if SIMULATION_YEAR not in event_log_for_year.columns:
+                event_log_for_year[SIMULATION_YEAR] = current_sim_year
+            # Fill NA values with current_sim_year before conversion
+            event_log_for_year[SIMULATION_YEAR] = event_log_for_year[SIMULATION_YEAR].fillna(current_sim_year).astype(int)
             
             current_cumulative_event_log = pd.concat([current_cumulative_event_log, event_log_for_year], ignore_index=True)
             logger.info(f"[RUNNER YR={current_sim_year}] Cumulative event log now has {len(current_cumulative_event_log)} events.")

@@ -34,7 +34,9 @@ except ImportError:
 try:
     from ..utils.columns import (
         EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
-        EMP_GROSS_COMP, EMP_TERM_DATE, EMP_DEFERRAL_RATE, EMP_TENURE
+        EMP_GROSS_COMP, EMP_TERM_DATE, EMP_DEFERRAL_RATE, EMP_TENURE,
+        EMP_TENURE_BAND,
+        EMP_ACTIVE
     )
 except ImportError:
     print(
@@ -61,9 +63,9 @@ SNAPSHOT_COLS = [
     EMP_ROLE,
     EMP_GROSS_COMP,  # Was "current_comp", maps to gross compensation
     EMP_TERM_DATE,   # Was "term_date"
-    "active",        # pandas BooleanDtype (True/False/NA) - snapshot specific
+    EMP_ACTIVE,        # pandas BooleanDtype (True/False/NA) - snapshot specific
     EMP_DEFERRAL_RATE, # Was "employee_deferral_rate"
-    "tenure_band",   # Snapshot specific for grouping/logic
+    EMP_TENURE_BAND,   # Snapshot specific for grouping/logic
     EMP_TENURE,      # Standardized tenure column
 ]
 
@@ -77,7 +79,7 @@ SNAPSHOT_DTYPES = {
     EMP_TERM_DATE: "datetime64[ns]",     # Stays datetime, NaT represents null
     "active": pd.BooleanDtype(),         # Nullable boolean - snapshot specific
     EMP_DEFERRAL_RATE: pd.Float64Dtype(),# Was "employee_deferral_rate"
-    "tenure_band": pd.StringDtype(),     # Snapshot specific
+    EMP_TENURE_BAND: pd.StringDtype(),     # Snapshot specific
     EMP_TENURE: 'float64',               # Standardized tenure dtype
 }
 

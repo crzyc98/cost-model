@@ -68,7 +68,7 @@ def ensure_snapshot_cols(snapshot: pd.DataFrame) -> pd.DataFrame:
     # Verify or add required columns
     for col, default in REQUIRED_SNAPSHOT_DEFAULTS.items():
         if col not in snap_copy.columns:
-            if col == 'employee_level' and 'role' in snap_copy.columns:
+            if col == EMP_LEVEL and 'role' in snap_copy.columns:
                 # Migrate from role to level if needed
                 snap_copy[col] = snap_copy['role'].apply(lambda x: {'Staff': 1, 'Manager': 2, 'SrMgr': 3, 'Director': 4}.get(x, 1))
                 continue

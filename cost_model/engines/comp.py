@@ -12,14 +12,11 @@ from typing import List
 
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP
 from cost_model.utils.columns import (
-    EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
+    EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE,
+    EMP_TENURE, EMP_TENURE_BAND
 )
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
-
-logger = logging.getLogger(__name__)
-from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP
 import logging
 
 logger = logging.getLogger(__name__)
@@ -51,10 +48,10 @@ def bump(
 
     # 3) Merge in the raise pct
     # ensure 'role' from hazard_slice is mapped to EMP_ROLE for merge
-    hz = hazard_slice[['role', 'tenure_band', 'comp_raise_pct']].rename(columns={'role': EMP_ROLE})
+    hz = hazard_slice[['role', EMP_TENURE_BAND, 'comp_raise_pct']].rename(columns={'role': EMP_ROLE})
     df = active.merge(
         hz,
-        on=[EMP_ROLE, 'tenure_band'],
+        on=[EMP_ROLE, EMP_TENURE_BAND],
         how='left'
     ).fillna({'comp_raise_pct': 0})
 
@@ -74,7 +71,7 @@ def bump(
     jan1 = pd.Timestamp(f"{year}-01-01")
     hire_dates = pd.to_datetime(df[EMP_HIRE_DATE], errors="coerce")
     tenure = ((jan1 - hire_dates).dt.days / 365.25).astype(int)
-    df["tenure"] = tenure  # REQUIRED for sampler's mask
+    df[EMP_TENURE] = tenure  # REQUIRED for sampler's mask
     mask_second = tenure == 1
     if mask_second.any():
         sampler = DefaultSalarySampler(rng=rng)
