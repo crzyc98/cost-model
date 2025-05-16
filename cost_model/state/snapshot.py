@@ -40,13 +40,15 @@ except ImportError:
     print(
         "Warning: Could not import EMP_ID or other constants from utils.columns. Defaulting..."
     )
+    # Fallback column names that match the standard schema
     EMP_ID = "employee_id"
-    EMP_HIRE_DATE = "hire_date"
-    EMP_BIRTH_DATE = "birth_date"
-    EMP_ROLE = "role"
-    EMP_GROSS_COMP = "current_comp" # or some other default
-    EMP_TERM_DATE = "term_date"
+    EMP_HIRE_DATE = "employee_hire_date"
+    EMP_BIRTH_DATE = "employee_birth_date"
+    EMP_ROLE = "employee_role"
+    EMP_GROSS_COMP = "employee_gross_compensation"
+    EMP_TERM_DATE = "employee_termination_date"
     EMP_DEFERRAL_RATE = "employee_deferral_rate"
+    EMP_TENURE = "employee_tenure"  # Ensure this matches schema.py
 
 logger = logging.getLogger(__name__)
 

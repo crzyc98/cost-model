@@ -120,6 +120,27 @@ def load_config_to_namespace(config_path: Path) -> SimpleNamespace:
         'scenarios': {'type': 'dict', 'required': False},
         'new_hire_compensation_params': {'type': 'dict', 'required': False},
         'role_compensation_params': {'type': 'dict', 'required': False},
+        'job_levels': {
+            'type': 'list',
+            'required': False,
+            'schema': {
+                'type': 'dict',
+                'schema': {
+                    'level_id': {'type': 'integer', 'required': True},
+                    'name': {'type': 'string', 'required': True},
+                    'description': {'type': 'string', 'required': False},
+                    'min_compensation': {'type': 'number', 'required': True},
+                    'max_compensation': {'type': 'number', 'required': True},
+                    'comp_base_salary': {'type': 'number', 'required': False},
+                    'comp_age_factor': {'type': 'number', 'required': False},
+                    'comp_stochastic_std_dev': {'type': 'number', 'required': False},
+                    'avg_annual_merit_increase': {'type': 'number', 'required': False},
+                    'promotion_probability': {'type': 'number', 'required': False},
+                    'target_bonus_percent': {'type': 'number', 'required': False},
+                    'job_families': {'type': 'list', 'required': False, 'schema': {'type': 'string'}}
+                }
+            }
+        },
         # Add other top-level keys as needed
     }
     v = Validator(schema)

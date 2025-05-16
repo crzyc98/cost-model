@@ -22,7 +22,6 @@ from cost_model.utils.columns import (
     EMP_LEVEL,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_ROLE,
     EMP_TERM_DATE,
     EMP_GROSS_COMP,
     EMP_DEFERRAL_RATE,
@@ -117,21 +116,20 @@ def run_one_year(
             )
     logger.debug(f"Hazard‐table columns after  rename: {hazard_table.columns.tolist()}")
 
-    # Standardize the role column using EMP_ROLE from columns.py
-    from cost_model.utils.columns import EMP_ROLE
-    if 'role' not in hazard_table.columns:
-        if EMP_ROLE in hazard_table.columns:
-            hazard_table = hazard_table.rename(columns={EMP_ROLE: 'role'})
-            logger.debug(f"Renamed hazard_table.{EMP_ROLE} → hazard_table.role")
+    # Standardize the level column using EMP_LEVEL from columns.py
+    if 'level' not in hazard_table.columns:
+        if EMP_LEVEL in hazard_table.columns:
+            hazard_table = hazard_table.rename(columns={EMP_LEVEL: 'level'})
+            logger.debug(f"Renamed hazard_table.{EMP_LEVEL} → hazard_table.level")
         else:
-            raise KeyError(
-                "Your hazard_table is missing both 'role' and EMP_ROLE columns; "
-                f"columns present: {hazard_table.columns.tolist()}"
+            raise ValueError(
+                f"Your hazard_table is missing both 'level' and {EMP_LEVEL} columns; "
+                "one of these is required for hazard-based terminations."
             )
     # Check for all required columns
     expected = {
         'simulation_year',
-        'role',
+        'level',
         'tenure_band',
         'term_rate',
         'comp_raise_pct',
@@ -146,15 +144,14 @@ def run_one_year(
 
     # --- 1. Extract the hazard slice for this year ---
     hazard_slice = hazard_table[hazard_table['simulation_year'] == year]
-    # Log unique roles and tenure_bands in hazard_slice and prev_snapshot for this year
-    from cost_model.utils.columns import EMP_ROLE
-    unique_hazard_roles = hazard_slice['role'].unique().tolist() if 'role' in hazard_slice.columns else []
+    # Log unique levels and tenure_bands in hazard_slice and prev_snapshot for this year
+    unique_hazard_levels = hazard_slice['level'].unique().tolist() if 'level' in hazard_slice.columns else []
     unique_hazard_tenure = hazard_slice['tenure_band'].unique().tolist() if 'tenure_band' in hazard_slice.columns else []
-    unique_snap_roles = prev_snapshot[EMP_ROLE].unique().tolist() if EMP_ROLE in prev_snapshot.columns else []
-    unique_snap_tenure = prev_snapshot['tenure_band'].unique().tolist() if 'tenure_band' in prev_snapshot.columns else []
-    logger.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice roles: {unique_hazard_roles}")
+    unique_snap_levels = prev_snapshot[EMP_LEVEL].unique().tolist() if EMP_LEVEL in prev_snapshot.columns else []
+    unique_snap_tenure = prev_snapshot[EMP_TENURE_BAND].unique().tolist() if EMP_TENURE_BAND in prev_snapshot.columns else []
+    logger.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice levels: {unique_hazard_levels}")
     logger.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice tenure_bands: {unique_hazard_tenure}")
-    logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot roles: {unique_snap_roles}")
+    logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot levels: {unique_snap_levels}")
     logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot tenure_bands: {unique_snap_tenure}")
     if hazard_slice.empty:
         logger.warning(f"[RUN_ONE_YEAR YR={year}] ⚠️ hazard_slice is EMPTY after filtering. "
@@ -269,7 +266,11 @@ def run_one_year(
     logger.info(f"[YR={year}] SOY Experienced Active = {start_count}")
 
     # 3a. comp bump (COLA → promo → merit)
-    # update_salary mutates EMP_GROSS_COMP and returns EVT_RAISE events
+    # Debug compensation config presence
+    if not hasattr(global_params, 'compensation'):
+        logger.error(f"[YR={year}] Missing global_params.compensation configuration!")
+    else:
+        logger.info(f"[YR={year}] Compensation config: {global_params.compensation}")
     comp_events = [update_salary(
         prev_snapshot,
         params=global_params.compensation,
@@ -562,18 +563,6 @@ def run_one_year(
         logger.error(f"[YR={year}] Duplicate EMP_IDs detected in final snapshot!")
         raise ValueError("Duplicate EMP_IDs in final snapshot!")
     logger.info(f"[YR={year}] Post-NH-term    = {final_snapshot[EMP_ACTIVE].sum()}  (removed {nh_terms_removed} NH terms)")
-    # Propagate job_level_source for new hires
-    if 'job_level_source' in final_snapshot.columns:
-        # Add 'hire' category if column is categorical
-        if pd.api.types.is_categorical_dtype(final_snapshot['job_level_source']):
-            final_snapshot['job_level_source'] = final_snapshot['job_level_source'].cat.add_categories(['hire'])
-        final_snapshot['job_level_source'] = final_snapshot['job_level_source'].fillna('hire')
-    # Propagate employee levels for existing and new hires
-    if EMP_LEVEL not in final_snapshot.columns:
-        # map levels from original snapshot
-        level_map = prev_snapshot.set_index(EMP_ID)[EMP_LEVEL].to_dict()
-        # include new hire levels if any
-        if gross_hires > 0:
-            level_map.update(new_hires.set_index(EMP_ID)[EMP_LEVEL].to_dict())
-        final_snapshot[EMP_LEVEL] = final_snapshot[EMP_ID].map(level_map)
+    
+    # Return the event log for the year and the final snapshot
     return full_event_log_for_year, final_snapshot

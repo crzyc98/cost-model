@@ -1,41 +1,23 @@
 from functools import lru_cache
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Union
 import pandas as pd
 import logging
 
-from cost_model.utils.columns import EMP_LEVEL, EMP_GROSS_COMP
+from cost_model.utils.columns import (
+    EMP_LEVEL, 
+    EMP_GROSS_COMP, 
+    EMP_LEVEL_SOURCE,
+    EMP_TENURE,
+    EMP_TENURE_BAND
+)
+from cost_model.state.schema import SNAPSHOT_COLS, SNAPSHOT_DTYPES
 from . import state
 from .init import get_level_by_id, init_job_levels
+from .models import JobLevel
+
 init_job_levels(reset_warnings=True)
 
 logger = logging.getLogger(__name__)
-
-def assign_levels_to_dataframe(df: pd.DataFrame, comp_column: str = EMP_GROSS_COMP) -> pd.DataFrame:
-    """Assign job levels to employees in a dataframe using vectorized pd.cut.
-
-    Raises:
-        ValueError: If compensation column is missing
-    """
-    if comp_column not in df.columns:
-        raise ValueError(f"Compensation column '{comp_column}' not found in dataframe")
-    # ensure job levels initialized
-    if state._COMP_INTERVALS is None:
-        init_job_levels(reset_warnings=False)
-    # determine target level column: use existing 'level_id' or create EMP_LEVEL
-    level_col = 'level_id' if 'level_id' in df.columns else EMP_LEVEL
-
-    # assign levels via lookup per compensation
-    df[level_col] = df[comp_column].apply(
-        lambda c: (get_level_by_compensation(c).level_id if get_level_by_compensation(c) else pd.NA)
-    ).astype('Int64')
-
-    # --- NEW: Track source of assignment ---
-    df["job_level_source"] = None
-    mask = df[level_col].notna()
-    df.loc[mask, "job_level_source"] = "salary-band"
-    # ---------------------------------------
-    return df
-
 
 @lru_cache(maxsize=128)
 def get_level_by_compensation(compensation: float) -> Optional['JobLevel']:

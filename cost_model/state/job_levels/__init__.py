@@ -4,7 +4,8 @@ __all__ = ['JobLevel', 'ConfigError', 'init_job_levels', 'refresh_job_levels', '
            'sample_mixed_new_hires', 'load_from_yaml', 'load_job_levels_from_config', 'get_warning_counts']
 
 from .models import JobLevel, ConfigError
-from .assign import assign_levels_to_dataframe, get_level_by_compensation, get_level_distribution
+from .utils import assign_levels_to_dataframe
+from .assign import get_level_by_compensation, get_level_distribution
 from .sampling import sample_new_hire_compensation, sample_new_hires_vectorized, sample_mixed_new_hires
 from .loader import load_from_yaml, load_job_levels_from_config
 from .init import init_job_levels, refresh_job_levels, get_warning_counts

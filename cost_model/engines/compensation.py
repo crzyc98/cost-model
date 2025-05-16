@@ -75,11 +75,15 @@ def update_salary(
     # 3) Merit distribution (level-specific)
     merit_map = getattr(params, 'merit_dist', {})
     if merit_map:
+        # Convert SimpleNamespace to dict if needed
+        if hasattr(merit_map, '__dict__'):
+            merit_map = vars(merit_map)
+        
         for idx, row in df.iterrows():
             lvl = row.get(EMP_LEVEL)
-            if lvl not in merit_map:
+            if pd.isna(lvl) or not lvl or lvl not in merit_map:
                 continue
-            dist = merit_map.get(lvl, {}) or {}
+            dist = merit_map.get(lvl, {})
             mu = dist.get('mu', 0.0)
             sigma = dist.get('sigma', 0.0)
             pct = rng.normal(mu, sigma)

@@ -1,5 +1,15 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any, Union
+import pandas as pd
+
+from cost_model.utils.columns import (
+    EMP_LEVEL,
+    EMP_GROSS_COMP,
+    EMP_LEVEL_SOURCE,
+    EMP_TENURE,
+    EMP_TENURE_BAND
+)
+from cost_model.state.schema import SNAPSHOT_COLS, SNAPSHOT_DTYPES
 
 
 class ConfigError(Exception):

@@ -44,7 +44,6 @@ try:
         EMP_ID,
         EMP_HIRE_DATE,
         EMP_BIRTH_DATE,
-        EMP_ROLE,
         EMP_GROSS_COMP,
         EMP_TERM_DATE,
         EMP_DEFERRAL_RATE,
@@ -59,13 +58,13 @@ except ImportError:  # pragma: no cover  – stand-alone import safety
     EMP_ID = "employee_id"
     EMP_HIRE_DATE = "hire_date"
     EMP_BIRTH_DATE = "birth_date"
-    EMP_ROLE = "role"
     EMP_GROSS_COMP = "current_comp"
     EMP_TERM_DATE = "term_date"
     EMP_DEFERRAL_RATE = "employee_deferral_rate"
     EMP_TENURE = "tenure_years"
     EMP_ACTIVE = "active"
     EMP_TENURE_BAND = "tenure_band"
+    EMP_LEVEL = "employee_level"
     EMP_LEVEL_SOURCE = "job_level_source"
     EMP_EXITED = "exited"
 
@@ -76,7 +75,6 @@ SNAPSHOT_COLS = [
     EMP_ID,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_ROLE,
     EMP_GROSS_COMP,
     EMP_TERM_DATE,
     EMP_ACTIVE,
@@ -92,7 +90,6 @@ SNAPSHOT_DTYPES = {
     EMP_ID: pd.StringDtype(),
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
-    EMP_ROLE: pd.StringDtype(),
     EMP_GROSS_COMP: pd.Float64Dtype(),
     EMP_TERM_DATE: "datetime64[ns]",
     EMP_ACTIVE: pd.BooleanDtype(),
@@ -100,7 +97,7 @@ SNAPSHOT_DTYPES = {
     EMP_TENURE_BAND: pd.StringDtype(),
     EMP_TENURE: "float64",
     EMP_LEVEL: pd.Int64Dtype(),
-    EMP_LEVEL_SOURCE: pd.CategoricalDtype(),
+    EMP_LEVEL_SOURCE: pd.CategoricalDtype(categories=['hire', 'promotion', 'demotion', 'manual'], ordered=True),
     EMP_EXITED: pd.BooleanDtype(),
 }
 
@@ -118,7 +115,6 @@ __all__ = [
     "EMP_ID",
     "EMP_HIRE_DATE",
     "EMP_BIRTH_DATE",
-    "EMP_ROLE",
     "EMP_GROSS_COMP",
     "EMP_TERM_DATE",
     "EMP_DEFERRAL_RATE",

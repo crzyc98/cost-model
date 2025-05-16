@@ -10,7 +10,7 @@ import math
 import json
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
+from cost_model.utils.columns import EMP_ID, EMP_LEVEL, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
 import logging
 
 logger = logging.getLogger(__name__)
@@ -67,25 +67,37 @@ def run(
         & (snapshot[EMP_HIRE_DATE] < as_of)
     ].copy()
     
+    # Ensure employee_level is Int64 to match the schema
+    active[EMP_LEVEL] = pd.to_numeric(active[EMP_LEVEL], errors='coerce').astype('Int64')
     n = len(active)
     logger.info(f"[TERM] Year {year}: {n} active employees eligible for termination.")
     if n == 0:
         logger.info(f"[TERM] Year {year}: No active employees for termination.")
         return [pd.DataFrame(columns=EVENT_COLS)]
         
-    # ensure 'role' from hazard_slice is mapped to EMP_ROLE for merge
-    hz = hazard_slice[['role', 'tenure_band', 'term_rate']].rename(columns={'role': EMP_ROLE})
+    # Debug: Log the columns in hazard_slice
+    logger.debug(f"[TERM] Year {year}: hazard_slice columns: {hazard_slice.columns.tolist()}")
+    logger.debug(f"[TERM] Year {year}: hazard_slice head: {hazard_slice.head().to_dict()}")
+    
+    # The hazard table uses 'level' instead of 'employee_level'
+    # Ensure consistent data types before merge
+    hz = hazard_slice[['level', 'tenure_band', 'term_rate']].copy()
+    hz = hz.rename(columns={'level': EMP_LEVEL})
+    # Convert to Int64 to match the schema's expected type
+    hz[EMP_LEVEL] = pd.to_numeric(hz[EMP_LEVEL], errors='coerce').astype('Int64')
+    # Also ensure tenure_band is string type as expected
+    hz['tenure_band'] = hz['tenure_band'].astype(str)
     
     # Log hazard table and active employees before merge for debugging
-    logger.debug(f"[TERM] Year {year}: Active employee roles: {active[EMP_ROLE].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Active employee levels: {active[EMP_LEVEL].unique().tolist()}")
     logger.debug(f"[TERM] Year {year}: Active employee tenure bands: {active['tenure_band'].unique().tolist()}")
-    logger.debug(f"[TERM] Year {year}: Hazard table roles: {hz[EMP_ROLE].unique().tolist()}")
+    logger.debug(f"[TERM] Year {year}: Hazard table levels: {hz[EMP_LEVEL].unique().tolist()}")
     logger.debug(f"[TERM] Year {year}: Hazard table tenure bands: {hz['tenure_band'].unique().tolist()}")
     
     # Merge hazard rates into active employees
     df = active.merge(
         hz,
-        on=[EMP_ROLE, 'tenure_band'],
+        on=[EMP_LEVEL, 'tenure_band'],
         how='left',
     )
     

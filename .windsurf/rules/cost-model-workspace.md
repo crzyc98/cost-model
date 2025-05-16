@@ -6,6 +6,9 @@ trigger: always_on
 # Agent-Specific Workspace Manifest for the cost-model Project
 # Rules and structure guide for AI agents (e.g., Windsurf) to locate and modify functionality.
 
+RULE: Always activate source .venv/bin/activate
+RULE: Always test using python3 scripts/run_multi_year_projection.py --config config/dev_tiny.yaml --census data/census_preprocessed.parquet
+
 # === Core Simulation Logic ===
 RULE: All simulation orchestration and control loops must live in cost_model/simulation.py.
 RULE: Year-by-year forecasting logic must stay within cost_model/projections/; do not scatter projection code elsewhere.

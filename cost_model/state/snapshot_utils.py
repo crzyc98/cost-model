@@ -71,7 +71,7 @@ import pandas as pd
 
 from .schema import (
     EMP_ID,
-    EMP_ROLE,
+    EMP_LEVEL,
     EMP_BIRTH_DATE,
     SNAPSHOT_COLS,
     SNAPSHOT_DTYPES,
@@ -109,21 +109,33 @@ def parse_hire_payload(value_json: str | None) -> Dict[str, Any]:  # noqa: D401
 # -----------------------------------------------------------------------------
 
 def extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:  # noqa: N802
-    """Return DF indexed by EMP_ID with EMP_ROLE & EMP_BIRTH_DATE columns."""
+    """Return DF indexed by EMP_ID with EMP_LEVEL & EMP_BIRTH_DATE columns."""
     if hire_events.empty:
-        return pd.DataFrame(columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID))
-
+        return pd.DataFrame(columns=[EMP_ID, EMP_LEVEL, EMP_BIRTH_DATE]).set_index(EMP_ID)
+    
     records = []
     for _, evt in hire_events.iterrows():
         emp_id = evt[EMP_ID]
         payload = parse_hire_payload(evt.get("value_json"))
-        role = payload.get("role")
+        
+        # Get level from payload or default to 1
+        level = payload.get("level", 1)
+        
+        # Parse birth date
         birth_raw = payload.get("birth_date")
         birth_dt = pd.to_datetime(birth_raw, errors="coerce") if birth_raw else pd.NaT
-        records.append({EMP_ID: emp_id, EMP_ROLE: role, EMP_BIRTH_DATE: birth_dt})
-
-    df = pd.DataFrame(records).set_index(EMP_ID)
-    df = df.astype({EMP_ROLE: pd.StringDtype()})
+        
+        records.append({
+            EMP_ID: emp_id, 
+            EMP_LEVEL: level, 
+            EMP_BIRTH_DATE: birth_dt
+        })
+    
+    # Create DataFrame with proper types
+    df = pd.DataFrame(records)
+    df[EMP_LEVEL] = df[EMP_LEVEL].fillna(1).astype('int64')  # Ensure level is integer
+    df = df.set_index(EMP_ID)
+    
     return df
 
 # -----------------------------------------------------------------------------

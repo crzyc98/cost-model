@@ -22,18 +22,8 @@ LOG_DIR_ROOT.mkdir(parents=True, exist_ok=True)
 log_file_name = "projection_cli_run.log"
 
 # Ensure the log file is truncated (emptied) at the start of every run
-with open(LOG_DIR_ROOT / log_file_name, "w"):  # Open in write mode to truncate
-    pass
-logging.basicConfig(
-    level=logging.INFO, # Default to INFO, can be changed by config or CLI arg later
-    format="%(asctime)s [%(levelname)-8s] [%(name)s.%(funcName)s:%(lineno)d] %(message)s",
-    handlers=[
-        logging.StreamHandler(), # Output to console
-        logging.FileHandler(LOG_DIR_ROOT / log_file_name) # Output to file
-    ]
-)
-logger = logging.getLogger(__name__) # Logger for the CLI module itself
-
+with open(LOG_DIR_ROOT / log_file_name, "w") as f:
+    pass  # Just truncate the file
 
 def main():
     parser = argparse.ArgumentParser(description="Run multi-year cost model projections.")
@@ -50,6 +40,11 @@ def main():
         help="Path to the Parquet census data file."
     )
     parser.add_argument(
+        "--debug", 
+        action="store_true",
+        help="Enable debug logging"
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=None, # If None, will use from config or a default in reporting
@@ -63,6 +58,19 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    # Setup logging based on debug flag
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)-8s] [%(name)s.%(funcName)s:%(lineno)d] %(message)s",
+        handlers=[
+            logging.StreamHandler(),  # Output to console
+            logging.FileHandler(LOG_DIR_ROOT / log_file_name)  # Output to file
+        ]
+    )
+    logger = logging.getLogger(__name__)  # Logger for the CLI module itself
+    logger.setLevel(log_level)
 
     logger.info(f"Starting projection run with CLI arguments: {args}")
 

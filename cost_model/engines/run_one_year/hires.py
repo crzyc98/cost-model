@@ -9,16 +9,17 @@ import pandas as pd
 import numpy as np
 import json
 
-from cost_model.engines import hire
 from cost_model.state.job_levels.sampling import sample_mixed_new_hires
 from cost_model.state.event_log import create_event, EVENT_COLS
 from cost_model.state.schema import (
-    EMP_ID, EMP_GROSS_COMP, EMP_ROLE, EMP_LEVEL,
-    EVT_COMP, EVT_HIRE,
-    EMP_TENURE_BAND as TENURE_BAND
+    EMP_ID, EMP_GROSS_COMP, EMP_LEVEL,
+    EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_TERM_DATE, EMP_ACTIVE,
+    EVT_HIRE, EVT_COMP, EMP_LEVEL_SOURCE
 )
 from cost_model.state.snapshot_update import _apply_new_hires
-from cost_model.engines.run_one_year_engine.utils import dbg
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 def compute_hire_counts(
@@ -145,21 +146,34 @@ def sample_and_build_hire_comp_events(
         return pd.DataFrame(), pd.DataFrame()
     
     # 1. Derive distribution of levels from previous snapshot
-    curr_dist = prev_snapshot[EMP_LEVEL].value_counts(normalize=True).to_dict() if EMP_LEVEL in prev_snapshot.columns else {}
+    if EMP_LEVEL in prev_snapshot.columns:
+        # Convert level IDs to integers and filter valid ones
+        valid_levels = pd.to_numeric(prev_snapshot[EMP_LEVEL], errors='coerce').dropna()
+        curr_dist = valid_levels.value_counts(normalize=True).to_dict()
+    else:
+        curr_dist = {}
     
-    # If no current distribution, use equal distribution for each level
+    # If no current distribution, use default distribution from job levels config
     if not curr_dist:
-        logger.warning(f"[YR={year}] No level distribution found in snapshot, using default")
-        curr_dist = {"L1": 0.5, "L2": 0.3, "L3": 0.2}
+        logger.warning(f"[YR={year}] No level distribution found in snapshot, using default job levels")
+        curr_dist = {1: 0.5, 2: 0.3, 3: 0.15, 4: 0.05}  # Default distribution for job levels 1-4
     
-    # Calculate level counts
-    level_counts = {lvl: int(dist * gross_hires) for lvl, dist in curr_dist.items()}
+    # Ensure we have integer level IDs
+    level_counts = {int(lvl): int(dist * gross_hires) for lvl, dist in curr_dist.items()}
     
     # Ensure we have the exact number of hires
     assigned = sum(level_counts.values())
     if assigned < gross_hires and level_counts:
-        min_level = min(level_counts.keys())
-        level_counts[min_level] += (gross_hires - assigned)
+        # Distribute remaining hires according to the same distribution
+        remaining = gross_hires - assigned
+        levels = list(level_counts.keys())
+        probs = [curr_dist[lvl] for lvl in levels]
+        probs = [p/sum(probs) for p in probs]  # Normalize
+        
+        # Sample remaining hires
+        additional = np.random.choice(levels, size=remaining, p=probs)
+        for lvl in additional:
+            level_counts[lvl] += 1
     
     # 2. Sample new hires with levels & compensation
     new_hires = sample_mixed_new_hires(
@@ -196,33 +210,37 @@ def sample_and_build_hire_comp_events(
         # Try different possible field names for compensation
         if EMP_GROSS_COMP in r and not pd.isna(r[EMP_GROSS_COMP]):
             comp_value = r[EMP_GROSS_COMP]
-        elif 'compensation' in r and not pd.isna(r['compensation']):
-            comp_value = r['compensation']
-            logger.info(f"[YR={year}] Using 'compensation' column instead for {emp_id}: {comp_value}")
-        
-        # If still no value, try to determine from other employees with same role
-        if comp_value is None or pd.isna(comp_value):
-            if EMP_ROLE in r and not pd.isna(r[EMP_ROLE]):
-                role = r[EMP_ROLE]
-                role_comps = new_hires[
-                    (new_hires[EMP_ROLE] == role) & 
-                    (new_hires[EMP_GROSS_COMP].notna())
-                ][EMP_GROSS_COMP]
-                
-                if not role_comps.empty:
-                    comp_value = role_comps.mean()
-                    logger.warning(
-                        f"[YR={year}] Row {idx}: Using average compensation for role {role} "
-                        f"for employee {emp_id}: {comp_value}"
-                    )
+            level = r.get(EMP_LEVEL, "N/A") if not pd.isna(r.get(EMP_LEVEL)) else "N/A"
+            logger.info(f"[YR={year}] Using compensation for {emp_id} (level={level}): {comp_value}")
             
-            # If still no value, use a default value
-            if comp_value is None or pd.isna(comp_value):
-                comp_value = 75000.0  # Default fallback value
-                logger.warning(
-                    f"[YR={year}] Row {idx}: Using default compensation value "
-                    f"for employee {emp_id}: {comp_value}"
-                )
+            # Get level-based comp if available for comparison
+            if EMP_LEVEL in new_hires.columns and not new_hires[new_hires[EMP_LEVEL] == level].empty:
+                level_comp = new_hires[
+                    (new_hires[EMP_LEVEL] == level) 
+                    & (new_hires[EMP_GROSS_COMP].notna())
+                ][EMP_GROSS_COMP].mean()
+                if not np.isnan(level_comp):
+                    logger.info(f"[YR={year}] Avg compensation for level {level}: {level_comp:.2f}")
+        
+        # If still no value, use a default based on job level if available
+        if comp_value is None or pd.isna(comp_value):
+            level = r.get(EMP_LEVEL, 1)
+            if pd.isna(level):
+                level = 1
+            
+            # Default compensation based on job level (can be adjusted)
+            level_based_comp = {
+                1: 50000.0,
+                2: 75000.0,
+                3: 100000.0,
+                4: 150000.0
+            }.get(int(level), 75000.0)
+            
+            comp_value = level_based_comp
+            logger.warning(
+                f"[YR={year}] Row {idx}: Using level-based default compensation "
+                f"for employee {emp_id} (level={level}): {comp_value}"
+            )
         
         # Final check for valid numeric compensation
         if not isinstance(comp_value, (int, float)) or pd.isna(comp_value):

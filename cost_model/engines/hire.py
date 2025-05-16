@@ -12,7 +12,7 @@ import numpy as np
 import datetime
 
 from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
+from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
 
@@ -87,13 +87,13 @@ def run(
     if hires_to_make <= 0:
         logger.info(f"[HIRE.RUN YR={simulation_year}] No hires to make as passed-in value is zero or negative.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
-    # Assign hires to roles according to proportions
-    # Choose roles based on current distribution in snapshot
-    # Fall back to a default role if snapshot is empty
-    role_counts = snapshot[EMP_ROLE].value_counts(normalize=True)
-    roles = role_counts.index.tolist() or ['Staff']
-    probs = role_counts.values.tolist() if not role_counts.empty else [1.0]
-    role_choices = rng.choice(roles, size=hires_to_make, p=probs)
+    # Assign hires to levels according to proportions
+    # Choose levels based on current distribution in snapshot
+    # Fall back to level 1 if snapshot is empty
+    level_counts = snapshot[EMP_LEVEL].value_counts(normalize=True)
+    levels = level_counts.index.tolist() or [1]
+    probs = level_counts.values.tolist() if not level_counts.empty else [1.0]
+    level_choices = rng.choice(levels, size=hires_to_make, p=probs)
     # Generate unique employee_ids (assume string IDs)
     existing_ids = (
         set(snapshot[EMP_ID])
@@ -116,6 +116,9 @@ def run(
         start + pd.Timedelta(days=int(d))
         for d in rng.integers(0, days, size=hires_to_make)
     ]
+    
+    # Initialize role_choices with default values
+    role_choices = ['Employee'] * hires_to_make
     # ----- Termination-based sampling with parameterized premium and age jitter -----
     ext_prem = getattr(global_params, 'replacement_hire_premium', 0.02)
     age_sd = getattr(global_params, 'replacement_hire_age_sd', 2)
@@ -172,18 +175,14 @@ def run(
         ages = rng.normal(new_hire_age_mean, new_hire_age_std, size=hires_to_make)
         ages = np.clip(ages, new_hire_age_min, new_hire_age_max)
 
-        # Prepare role-specific compensation parameters
+        # Prepare level-based compensation parameters
         sampler = DefaultSalarySampler(rng)
         starting_comps = []
-        for idx, role in enumerate(role_choices):
-            # Use per-role params with fallback to default params if role not found
-            if role in role_comp_params:
-                params = role_comp_params[role]
-                logger.info(f"[HIRE.RUN YR={simulation_year}] Using role-specific params for {role}")
-            else:
-                # Fall back to default params if role not found
-                logger.warning(f"[HIRE.RUN YR={simulation_year}] Role '{role}' not found in role_comp_params. Using default params.")
-                params = default_params
+        for idx, level in enumerate(level_choices):
+            # Use default params for all levels for now
+            # In the future, we can add level-specific compensation parameters if needed
+            params = default_params
+            logger.info(f"[HIRE.RUN YR={simulation_year}] Using default params for level {level}")
             
             comp = sampler.sample_new_hires(
                 size=1,
@@ -218,12 +217,19 @@ def run(
             birth_dates.append(birth_date.strftime('%Y-%m-%d'))
         
         clone_of = [''] * hires_to_make
+    # Assign roles based on the level_choices if available
+    if 'level_choices' in locals() and level_choices is not None and len(level_choices) == hires_to_make:
+        role_choices = level_choices
+    
     # Build a DataFrame with one row per new hire for output
-    hires_df = pd.DataFrame({EMP_ID: new_ids, EMP_ROLE: role_choices,
-                            'sampled_comp': starting_comps,
-                            EMP_HIRE_DATE: hire_dates,
-                            EMP_BIRTH_DATE: birth_dates,
-                            'clone_of': clone_of})
+    hires_df = pd.DataFrame({
+        EMP_ID: new_ids, 
+        EMP_ROLE: role_choices,
+        'sampled_comp': starting_comps,
+        EMP_HIRE_DATE: hire_dates,
+        EMP_BIRTH_DATE: birth_dates,
+        'clone_of': clone_of
+    })
 
     logger.info(
         f"[HIRE.RUN YR={simulation_year}] Sampled new hire salaries: mean=${np.mean(starting_comps):,.0f}, min=${np.min(starting_comps):,.0f}, max=${np.max(starting_comps):,.0f}"
@@ -273,10 +279,16 @@ def run(
             # Debug: Log final birth date value
             logger.debug(f"Processed birth date for {eid}: final={bd}, str={bd_str}")
             
+            # Convert NumPy types to native Python types for JSON serialization
+            if isinstance(role, (np.integer, np.floating)):
+                role = int(role) if isinstance(role, np.integer) else float(role)
+            if isinstance(co, (np.integer, np.floating)):
+                co = int(co) if isinstance(co, np.integer) else float(co)
+                
             payload = {
                 'role': role,
                 'birth_date': bd_str,
-                'clone_of': co or ''
+                'clone_of': str(co) if co is not None else ''
             }
             
             hire_events.append(create_event(

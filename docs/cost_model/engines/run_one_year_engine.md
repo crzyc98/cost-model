@@ -65,6 +65,15 @@ global_params = SimpleNamespace(
     }
 )
 
+# Add compensation configuration
+global_params.compensation = {
+    'COLA_rate': 0.02,                # Example 2% COLA
+    'promo_raise_pct': {'1_to_2': 0.05}, # 5% promotion bump from level 1 to 2
+    'merit_dist': {
+        'Staff': {'mu': 0.03, 'sigma': 0.01}  # Merit increases distribution for Staff
+    }
+}
+
 # Create plan rules namespace
 plan_rules = SimpleNamespace(
     eligibility_rules={

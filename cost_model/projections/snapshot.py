@@ -11,10 +11,12 @@ from pathlib import Path # Though not used directly in func, good for path handl
 from typing import Union, Dict, Tuple, List
 
 from cost_model.state.snapshot import SNAPSHOT_COLS as SNAPSHOT_COL_NAMES, SNAPSHOT_DTYPES
+from cost_model.state.job_levels.loader import ingest_with_imputation
 from cost_model.utils.columns import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
-    EMP_GROSS_COMP, EMP_DEFERRAL_RATE # EMP_TERM_DATE is not in census for initial snapshot
-) 
+    EMP_GROSS_COMP, EMP_DEFERRAL_RATE, EMP_TENURE_BAND, EMP_TENURE,
+    EMP_TERM_DATE, EMP_ACTIVE, EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED
+) # Import all required column constants
 
 logger = logging.getLogger(__name__)
 
@@ -58,21 +60,69 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         logger.info(f"Setting active status based on termination dates: {active_status.sum()} active out of {len(census_df)}")
     else:
         # If no termination dates, assume all are active
-        active_status = True
+        active_status = pd.Series(True, index=census_df.index)
         logger.info("No termination dates found in census, assuming all employees are active")
     
+    # Initialize all required columns from SNAPSHOT_COL_NAMES with appropriate defaults
     initial_data = {
-        EMP_ID: census_df[EMP_ID],
+        EMP_ID: census_df[EMP_ID].astype('string'),
         EMP_HIRE_DATE: pd.to_datetime(census_df[EMP_HIRE_DATE]),
         EMP_BIRTH_DATE: pd.to_datetime(census_df[EMP_BIRTH_DATE]),
-        EMP_ROLE: census_df[EMP_ROLE],
-        EMP_GROSS_COMP: census_df[EMP_GROSS_COMP],
-        'active': active_status,  # Set active status based on termination dates
-        EMP_DEFERRAL_RATE: census_df.get(EMP_DEFERRAL_RATE, 0.0), # Default if not present
+        EMP_GROSS_COMP: census_df[EMP_GROSS_COMP].astype('float64'),
+        EMP_TERM_DATE: pd.NaT,  # Will be updated below if termination dates exist
+        EMP_ACTIVE: active_status,
+        EMP_DEFERRAL_RATE: census_df.get(EMP_DEFERRAL_RATE, 0.0).astype('float64'),
+        # Initialize with default values that will be calculated below
+        EMP_TENURE: 0.0,
+        EMP_TENURE_BAND: pd.NA,
+        # Initialize with default values for employee level and role
+        EMP_LEVEL: pd.NA,
+        EMP_LEVEL_SOURCE: 'hire',  # Default source for initial snapshot
+        EMP_EXITED: False,  # Will be updated based on termination status
+        'employee_role': pd.NA  # Will be set to a default value if not in census
     }
-    # Add EMP_TERM_DATE if it's in SNAPSHOT_COL_NAMES, otherwise it's handled by the loop below
-    if 'employee_termination_date' in SNAPSHOT_COL_NAMES: # Assuming EMP_TERM_DATE is 'employee_termination_date'
-        initial_data['employee_termination_date'] = pd.NaT
+    
+    # Set termination dates if they exist in the census
+    if has_term_dates:
+        initial_data[EMP_TERM_DATE] = census_df[term_col]
+        initial_data[EMP_EXITED] = ~census_df[term_col].isna()
+        
+    # Infer job levels using compensation data if not already present
+    if EMP_LEVEL in census_df.columns and not census_df[EMP_LEVEL].isna().all():
+        initial_data[EMP_LEVEL] = census_df[EMP_LEVEL].astype('Int64')
+        logger.info(f"Using existing '{EMP_LEVEL}' column from census data")
+        
+        # Set the level source
+        initial_data[EMP_LEVEL_SOURCE] = 'census'
+    else:
+        logger.info("Inferring job levels from compensation data...")
+        # Create a temporary DataFrame with compensation data
+        temp_df = pd.DataFrame({
+            EMP_ID: census_df[EMP_ID],
+            EMP_GROSS_COMP: census_df[EMP_GROSS_COMP]
+        })
+        
+        # Infer job levels using the job levels module
+        temp_df = ingest_with_imputation(temp_df, comp_col=EMP_GROSS_COMP, target_level_col=EMP_LEVEL)
+        
+        # Map the inferred job levels to our snapshot
+        if EMP_LEVEL in temp_df.columns:
+            initial_data[EMP_LEVEL] = temp_df[EMP_LEVEL].astype('Int64')
+            if EMP_LEVEL_SOURCE in temp_df.columns:
+                initial_data[EMP_LEVEL_SOURCE] = temp_df[EMP_LEVEL_SOURCE]
+            logger.info(f"Inferred job levels: {temp_df[EMP_LEVEL].value_counts(dropna=False).to_dict()}")
+        else:
+            logger.warning("Failed to infer job levels. Defaulting to level 1.")
+            initial_data[EMP_LEVEL] = 1
+            initial_data[EMP_LEVEL_SOURCE] = 'default'
+    
+    # Set employee role if it exists in census, otherwise use default 'Regular'
+    if 'employee_role' in census_df.columns:
+        initial_data['employee_role'] = census_df['employee_role'].astype('string')
+        logger.info(f"Using 'employee_role' column from census data")
+    else:
+        logger.warning("No employee role column found in census. Initializing with default role 'Regular'.")
+        initial_data['employee_role'] = 'Regular'
 
     snapshot_df = pd.DataFrame(initial_data)
     
@@ -80,29 +130,50 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
     if 'active' in snapshot_df.columns and len(snapshot_df) > 1 and isinstance(snapshot_df['active'].iloc[0], bool):
         snapshot_df['active'] = [snapshot_df['active'].iloc[0]] * len(snapshot_df)
 
-    # Add tenure_band (example calculation)
+    # Calculate tenure in years
     current_date_for_tenure = pd.Timestamp(f"{start_year}-01-01")
-    snapshot_df['tenure_years'] = (current_date_for_tenure - snapshot_df[EMP_HIRE_DATE]).dt.days / 365.25
-    bins = [0, 1, 3, 5, 10, float('inf')] # Example tenure bins (in years)
+    snapshot_df[EMP_TENURE] = (current_date_for_tenure - snapshot_df[EMP_HIRE_DATE]).dt.days / 365.25
+    
+    # Calculate tenure bands
+    bins = [0, 1, 3, 5, 10, float('inf')]  # Tenure bins in years
     labels = ['0-1yr', '1-3yrs', '3-5yrs', '5-10yrs', '10+yrs']
-    snapshot_df['tenure_band'] = pd.cut(snapshot_df['tenure_years'], bins=bins, labels=labels, right=False).astype(pd.StringDtype())
-    snapshot_df = snapshot_df.drop(columns=['tenure_years'])
-
-    # Ensure all columns in SNAPSHOT_COL_NAMES exist, fill missing ones
+    snapshot_df[EMP_TENURE_BAND] = pd.cut(
+        snapshot_df[EMP_TENURE], 
+        bins=bins, 
+        labels=labels, 
+        right=False
+    ).astype(pd.StringDtype())
+    
+    # Ensure all columns in SNAPSHOT_COL_NAMES exist with correct dtypes
     for col in SNAPSHOT_COL_NAMES:
         if col not in snapshot_df.columns:
-            logger.warning(f"Snapshot column '{col}' defined in SNAPSHOT_COL_NAMES is missing. Will be added as NA.")
-            # Determine appropriate fill value based on SNAPSHOT_DTYPES
+            logger.warning(f"Snapshot column '{col}' defined in SNAPSHOT_COL_NAMES is missing. Will be added with default value.")
+            # Get the expected dtype from SNAPSHOT_DTYPES
             dtype = SNAPSHOT_DTYPES.get(col)
-            if pd.api.types.is_datetime64_any_dtype(dtype) or str(dtype).lower().startswith('datetime64'):
+            
+            # Set appropriate default value based on dtype
+            if pd.api.types.is_datetime64_any_dtype(dtype):
                 snapshot_df[col] = pd.NaT
-            elif pd.api.types.is_bool_dtype(dtype) or str(dtype).lower() in ['bool', 'boolean']:
+            elif pd.api.types.is_bool_dtype(dtype):
                 snapshot_df[col] = pd.NA
-            elif pd.api.types.is_numeric_dtype(dtype):
+            elif pd.api.types.is_integer_dtype(dtype):
+                snapshot_df[col] = pd.NA
+                snapshot_df[col] = snapshot_df[col].astype('Int64')
+            elif pd.api.types.is_float_dtype(dtype):
                 snapshot_df[col] = np.nan
-            else: # Default to StringDtype for others like 'object' or 'string'
+            elif pd.api.types.is_string_dtype(dtype):
                 snapshot_df[col] = pd.NA
-                snapshot_df[col] = snapshot_df[col].astype(pd.StringDtype()) # Ensure it's nullable string
+                snapshot_df[col] = snapshot_df[col].astype('string')
+            elif isinstance(dtype, pd.CategoricalDtype):
+                snapshot_df[col] = pd.Categorical(
+                    [pd.NA] * len(snapshot_df),
+                    categories=dtype.categories,
+                    ordered=dtype.ordered
+                )
+            else:  # Default to StringDtype for others like 'object' or 'string'
+                snapshot_df[col] = pd.NA
+                if pd.api.types.is_string_dtype(dtype) or str(dtype) == 'object':
+                    snapshot_df[col] = snapshot_df[col].astype(pd.StringDtype())  # Ensure it's nullable string
     
     # Select and order columns according to SNAPSHOT_COL_NAMES
     # Ensure EMP_ID is present before trying to set it as index
@@ -111,6 +182,30 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         logger.error(f"{EMP_ID} column is missing but listed in SNAPSHOT_COL_NAMES. Adding as NA.")
         snapshot_df[EMP_ID] = pd.NA 
         snapshot_df[EMP_ID] = snapshot_df[EMP_ID].astype(SNAPSHOT_DTYPES.get(EMP_ID, pd.StringDtype()))
+    
+    # Explicitly ensure all SNAPSHOT_COL_NAMES are in the snapshot_df
+    # and have the correct data types from SNAPSHOT_DTYPES
+    for col in SNAPSHOT_COL_NAMES:
+        dtype = SNAPSHOT_DTYPES.get(col)
+        if col not in snapshot_df.columns:
+            logger.warning(f"Column '{col}' not in snapshot_df but is in SNAPSHOT_COL_NAMES. Adding it with NAs.")
+            if pd.api.types.is_datetime64_any_dtype(dtype):
+                snapshot_df[col] = pd.NaT
+            elif isinstance(dtype, pd.CategoricalDtype):
+                snapshot_df[col] = pd.Categorical(
+                    [pd.NA] * len(snapshot_df),
+                    categories=dtype.categories,
+                    ordered=dtype.ordered
+                )
+            else:
+                snapshot_df[col] = pd.NA
+        
+        # Ensure the column has the correct dtype
+        if dtype is not None and not pd.isna(dtype):
+            try:
+                snapshot_df[col] = snapshot_df[col].astype(dtype)
+            except Exception as e:
+                logger.warning(f"Could not convert column '{col}' to dtype {dtype}: {e}")
     
     snapshot_df = snapshot_df[[col for col in SNAPSHOT_COL_NAMES if col in snapshot_df.columns]]
     

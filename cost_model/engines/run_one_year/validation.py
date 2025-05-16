@@ -9,24 +9,32 @@ import pandas as pd
 import numpy as np
 
 from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
-    EMP_GROSS_COMP, EMP_TERM_DATE, EMP_LEVEL,
+    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_LEVEL,
+    EMP_GROSS_COMP, EMP_TERM_DATE, EMP_LEVEL_SOURCE,
     EMP_TENURE_BAND as TENURE_BAND,
-    EMP_ACTIVE as ACTIVE
+    EMP_ACTIVE,  # Use the actual constant name
+    EMP_EXITED
 )
+from cost_model.utils.columns import EMP_DEFERRAL_RATE, EMP_TENURE
 
 # Required columns with default values for snapshot DataFrame
+# This should match the schema defined in cost_model/state/schema.py
 REQUIRED_SNAPSHOT_DEFAULTS = {
-    EMP_ID: None,         # must exist, no default
-    EMP_HIRE_DATE: None,  # must exist, no default
-    EMP_BIRTH_DATE: None, # must exist, no default
-    EMP_ROLE: None,       # must exist, no default
-    EMP_GROSS_COMP: None, # must exist, no default
-    EMP_TERM_DATE: pd.NaT,
-    ACTIVE: True,
-    "employee_deferral_rate": 0.0,
-    TENURE_BAND: "<1yr",
-    "employee_tenure": np.nan,
+    # Required fields (no defaults)
+    EMP_ID: None,           # must exist, no default
+    EMP_HIRE_DATE: None,    # must exist, no default
+    EMP_BIRTH_DATE: None,   # must exist, no default
+    EMP_GROSS_COMP: None,   # must exist, no default
+    
+    # Optional fields with defaults
+    EMP_LEVEL: 1,           # Default to level 1 if not specified
+    EMP_LEVEL_SOURCE: 'manual',  # Default source for job level
+    EMP_TERM_DATE: pd.NaT,  # Not terminated by default
+    EMP_ACTIVE: True,       # Active by default
+    EMP_DEFERRAL_RATE: 0.0, # No deferral by default
+    TENURE_BAND: "<1yr",    # Default tenure band
+    EMP_TENURE: 0.0,        # 0 years of tenure by default
+    EMP_EXITED: False       # Not exited by default
 }
 
 
@@ -45,9 +53,26 @@ def ensure_snapshot_cols(snapshot: pd.DataFrame) -> pd.DataFrame:
     """
     snap_copy = snapshot.copy()
     
+    # Handle legacy role column if it exists
+    if 'role' in snap_copy.columns and EMP_LEVEL not in snap_copy.columns:
+        # Map legacy role to job level if needed
+        role_to_level = {
+            'Staff': 1,
+            'Manager': 2,
+            'SrMgr': 3,
+            'Director': 4
+        }
+        snap_copy[EMP_LEVEL] = snap_copy['role'].map(role_to_level).fillna(1).astype(int)
+        snap_copy[EMP_LEVEL_SOURCE] = 'migrated_from_role'
+    
     # Verify or add required columns
     for col, default in REQUIRED_SNAPSHOT_DEFAULTS.items():
         if col not in snap_copy.columns:
+            if col == 'employee_level' and 'role' in snap_copy.columns:
+                # Migrate from role to level if needed
+                snap_copy[col] = snap_copy['role'].apply(lambda x: {'Staff': 1, 'Manager': 2, 'SrMgr': 3, 'Director': 4}.get(x, 1))
+                continue
+                
             if default is None:
                 raise ValueError(f"Required column {col} missing from snapshot")
             snap_copy[col] = default

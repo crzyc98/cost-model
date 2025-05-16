@@ -1,102 +1,41 @@
 global_parameters: !!python/object/apply:types.SimpleNamespace
   state:
+    annual_compensation_increase_rate: 0.03
     annual_termination_rate: 0.15
     census_template_path: data/census_template.parquet
     compensation: !!python/object/apply:types.SimpleNamespace
       state:
+        COLA_rate: 0.02
+        merit_dist: !!python/object/apply:types.SimpleNamespace
+          state:
+            '1': !!python/object/apply:types.SimpleNamespace
+              state:
+                mu: 0.035
+                sigma: 0.01
+            '2': !!python/object/apply:types.SimpleNamespace
+              state:
+                mu: 0.04
+                sigma: 0.012
+            '3': !!python/object/apply:types.SimpleNamespace
+              state:
+                mu: 0.045
+                sigma: 0.015
+            '4': !!python/object/apply:types.SimpleNamespace
+              state:
+                mu: 0.05
+                sigma: 0.02
         new_hire: !!python/object/apply:types.SimpleNamespace
           state:
             age_mean: 44.5
             age_std: 11.6
+        promo_raise_pct: !!python/object/apply:types.SimpleNamespace
+          state:
+            1_to_2: 0.05
+            2_to_3: 0.08
+            3_to_4: 0.1
     days_into_year_for_cola: 182
     days_into_year_for_promotion: 182
     deterministic_termination: true
-    job_levels:
-    - !!python/object/apply:types.SimpleNamespace
-      state:
-        avg_annual_merit_increase: 0.03
-        comp_age_factor: 0.003
-        comp_base_salary: 35000
-        comp_stochastic_std_dev: 0.58
-        description: Non-exempt employees paid hourly wages
-        job_families:
-        - Operations
-        - Facilities
-        level_id: 0
-        max_compensation: 55000
-        min_compensation: 35000
-        name: Hourly
-        promotion_probability: 0.08
-        target_bonus_percent: 0.0
-    - !!python/object/apply:types.SimpleNamespace
-      state:
-        avg_annual_merit_increase: 0.035
-        comp_age_factor: 0.012
-        comp_base_salary: 61473.45
-        comp_stochastic_std_dev: 0.213
-        description: Entry-level exempt employees, individual contributors
-        job_families:
-        - Engineering
-        - HR
-        - Finance
-        - IT
-        level_id: 1
-        max_compensation: 80000
-        min_compensation: 50000
-        name: Staff
-        promotion_probability: 0.12
-        target_bonus_percent: 0.05
-    - !!python/object/apply:types.SimpleNamespace
-      state:
-        avg_annual_merit_increase: 0.04
-        comp_age_factor: 0.012
-        comp_base_salary: 180794.77
-        comp_stochastic_std_dev: 0.242
-        description: First-level management with direct reports
-        job_families:
-        - Engineering
-        - HR
-        - Finance
-        - IT
-        level_id: 2
-        max_compensation: 120000
-        min_compensation: 75000
-        name: Manager
-        promotion_probability: 0.08
-        target_bonus_percent: 0.15
-    - !!python/object/apply:types.SimpleNamespace
-      state:
-        avg_annual_merit_increase: 0.045
-        comp_age_factor: 0.003
-        comp_base_salary: 263614.81
-        comp_stochastic_std_dev: 0.306
-        description: Mid-level management, often managing other managers
-        job_families:
-        - Engineering
-        - HR
-        - Finance
-        - IT
-        level_id: 3
-        max_compensation: 160000
-        min_compensation: 110000
-        name: SrMgr
-        promotion_probability: 0.05
-        target_bonus_percent: 0.25
-    - !!python/object/apply:types.SimpleNamespace
-      state:
-        avg_annual_merit_increase: 0.05
-        comp_age_factor: 0.003
-        comp_base_salary: 315679.72
-        comp_stochastic_std_dev: 0.306
-        description: Senior leadership roles (VP, C-suite, etc.)
-        job_families:
-        - Executive
-        level_id: 4
-        max_compensation: 350000
-        min_compensation: 150000
-        name: Exec
-        promotion_probability: 0.02
-        target_bonus_percent: 0.4
     log_level: DEBUG
     maintain_headcount: false
     max_working_age: 65
@@ -120,14 +59,95 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         - 1.0
     projection_years: 5
     random_seed: 42
-    role_distribution: !!python/object/apply:types.SimpleNamespace
-      state:
-        Executive: 0.15
-        Manager: 0.35
-        Staff: 0.5
     start_year: 2025
     target_growth: 0.03
     use_expected_attrition: false
+job_levels:
+- !!python/object/apply:types.SimpleNamespace
+  state:
+    avg_annual_merit_increase: 0.03
+    comp_age_factor: 0.005
+    comp_base_salary: 40000
+    comp_stochastic_std_dev: 0.1
+    description: Non-exempt employees paid hourly wages
+    job_families:
+    - Operations
+    - Facilities
+    level_id: 0
+    max_compensation: 55000
+    min_compensation: 0
+    name: Hourly
+    promotion_probability: 0.08
+    target_bonus_percent: 0.0
+- !!python/object/apply:types.SimpleNamespace
+  state:
+    avg_annual_merit_increase: 0.035
+    comp_age_factor: 0.006
+    comp_base_salary: 65000
+    comp_stochastic_std_dev: 0.1
+    description: Entry-level exempt employees, individual contributors
+    job_families:
+    - Engineering
+    - HR
+    - Finance
+    - IT
+    level_id: 1
+    max_compensation: 80000
+    min_compensation: 56000
+    name: Staff
+    promotion_probability: 0.12
+    target_bonus_percent: 0.05
+- !!python/object/apply:types.SimpleNamespace
+  state:
+    avg_annual_merit_increase: 0.04
+    comp_age_factor: 0.007
+    comp_base_salary: 95000
+    comp_stochastic_std_dev: 0.1
+    description: First-level management with direct reports
+    job_families:
+    - Engineering
+    - HR
+    - Finance
+    - IT
+    level_id: 2
+    max_compensation: 120000
+    min_compensation: 81000
+    name: Manager
+    promotion_probability: 0.08
+    target_bonus_percent: 0.15
+- !!python/object/apply:types.SimpleNamespace
+  state:
+    avg_annual_merit_increase: 0.045
+    comp_age_factor: 0.008
+    comp_base_salary: 140000
+    comp_stochastic_std_dev: 0.1
+    description: Mid-level management, often managing other managers
+    job_families:
+    - Engineering
+    - HR
+    - Finance
+    - IT
+    level_id: 3
+    max_compensation: 160000
+    min_compensation: 121000
+    name: SrMgr
+    promotion_probability: 0.05
+    target_bonus_percent: 0.2
+- !!python/object/apply:types.SimpleNamespace
+  state:
+    avg_annual_merit_increase: 0.05
+    comp_age_factor: 0.01
+    comp_base_salary: 250000
+    comp_stochastic_std_dev: 0.15
+    description: Senior leadership roles
+    job_families:
+    - Executive
+    level_id: 4
+    max_compensation: 10000000
+    min_compensation: 161000
+    name: Director
+    promotion_probability: 0.02
+    target_bonus_percent: 0.3
 plan_rules: !!python/object/apply:types.SimpleNamespace
   state:
     auto_enrollment: !!python/object/apply:types.SimpleNamespace

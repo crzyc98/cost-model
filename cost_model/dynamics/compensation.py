@@ -9,15 +9,19 @@ import pandas as pd
 import numpy as np
 from typing import Mapping, Any, Optional
 
-# Attempt to import column constants, provide fallbacks
+# Import column constants from schema to ensure consistency
 try:
-    from ..utils.columns import EMP_GROSS_COMP, EMP_TENURE
+    from ..state.schema import EMP_GROSS_COMP, EMP_TENURE
 except ImportError:
-    print(
-        "Warning (compensation.py): Could not import column constants from utils. Using string literals."
-    )
-    EMP_GROSS_COMP = "employee_gross_compensation"
-    EMP_TENURE = "employee_tenure"
+    # Fallback to utils.columns if schema import fails
+    try:
+        from ..utils.columns import EMP_GROSS_COMP, EMP_TENURE
+    except ImportError:
+        print(
+            "Warning (compensation.py): Could not import column constants from schema or utils. Using string literals."
+        )
+        EMP_GROSS_COMP = "employee_gross_compensation"
+        EMP_TENURE = "tenure_years"  # Using schema's preferred name
 
 # Import sampling helpers if needed (e.g., for second-year bumps)
 try:

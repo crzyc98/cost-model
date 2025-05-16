@@ -1,10 +1,28 @@
-from typing import Dict, Any, Optional, Union
+from functools import lru_cache
 from pathlib import Path
-import yaml
+from typing import Dict, Any, Optional, Union, List, Tuple
 import logging
+import yaml
+import numpy as np
+import pandas as pd
 
-from .models import JobLevel, ConfigError
-from .intervals import check_for_overlapping_bands as _check_for_overlapping_bands
+from cost_model.utils.columns import (
+    EMP_GROSS_COMP, 
+    EMP_LEVEL, 
+    EMP_LEVEL_SOURCE,
+    EMP_TENURE,
+    EMP_TENURE_BAND,
+    EMP_ACTIVE
+)
+from cost_model.state.schema import (
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
+    EVENT_COLS
+)
+from cost_model.state.job_levels.models import JobLevel, ConfigError
+from cost_model.state.job_levels.intervals import check_for_overlapping_bands as _check_for_overlapping_bands
+from cost_model.state.job_levels.utils import assign_levels_to_dataframe
+from cost_model.state.job_levels.engine import infer_job_level_by_percentile
 
 logger = logging.getLogger(__name__)
 
@@ -63,20 +81,61 @@ def load_from_yaml(path: Union[str, Path], strict_validation: bool = True) -> Di
 # ---------------------- DataFrame ingestion with imputation ----------------------
 
 def ingest_with_imputation(
-    raw_df: 'pd.DataFrame', comp_col: str = 'employee_gross_compensation'
+    raw_df: 'pd.DataFrame', 
+    comp_col: str = EMP_GROSS_COMP,
+    level_col: str = 'level_id',
+    target_level_col: str = EMP_LEVEL
 ) -> 'pd.DataFrame':
     """
     Assign static bands, then impute missing levels by compensation percentile.
-    Returns DataFrame with column 'job_level' fully populated.
+    
+    Args:
+        raw_df: Input DataFrame with employee data
+        comp_col: Column name for compensation (default: EMP_GROSS_COMP)
+        level_col: Source column for job levels if available (default: 'level_id')
+        target_level_col: Target column for the final job levels (default: EMP_LEVEL)
+        
+    Returns:
+        DataFrame with employee levels populated in the target_level_col and 'job_level'
     """
-    import pandas as pd
-    from .assign import assign_levels_to_dataframe
-    from .engine import infer_job_level_by_percentile
-
-    # assign using static bands
-    df = assign_levels_to_dataframe(raw_df, comp_col)
-    # percentile-based imputation
-    df = infer_job_level_by_percentile(df, comp_col)
-    # fill into job_level column
-    df['job_level'] = df.get('level_id').fillna(df['imputed_level']).astype('Int64')
-    return df.drop(columns=['imputed_level'])
+    # Make a copy of the input dataframe to avoid modifying the original
+    df = raw_df.copy()
+    
+    # First, assign levels using the static bands
+    df = assign_levels_to_dataframe(df, comp_col, target_level_col)
+    
+    # Then, perform percentile-based imputation for any remaining NAs
+    if df[target_level_col].isna().any():
+        # Create a temporary column for imputed levels
+        df = infer_job_level_by_percentile(df, comp_col)
+        
+        # Fill any remaining NAs with the imputed levels
+        na_mask = df[target_level_col].isna()
+        if 'imputed_level' in df.columns and na_mask.any():
+            df.loc[na_mask, target_level_col] = df.loc[na_mask, 'imputed_level']
+    
+    # Ensure the target column is of integer type
+    df[target_level_col] = pd.to_numeric(df[target_level_col], errors='coerce').astype('Int64')
+    
+    # Also create a 'job_level' column for backward compatibility with snapshot.py
+    # This is critical because create_initial_snapshot looks for 'job_level' specifically
+    df['job_level'] = df[target_level_col]
+    
+    # Track source of the level assignment
+    if EMP_LEVEL_SOURCE not in df.columns:
+        df[EMP_LEVEL_SOURCE] = pd.NA
+    
+    # Update source information
+    assigned_mask = df[target_level_col].notna()
+    
+    # Mark levels that came from the input level_col
+    if level_col in df.columns and not df[level_col].isna().all():
+        from_band = df[level_col].notna() & assigned_mask
+        df.loc[from_band, EMP_LEVEL_SOURCE] = 'salary-band'
+    
+    # Mark levels that were imputed
+    from_imputed = assigned_mask & (~from_band if 'from_band' in locals() else assigned_mask)
+    df.loc[from_imputed, EMP_LEVEL_SOURCE] = 'percentile-impute'
+    
+    # Clean up any temporary columns
+    return df.drop(columns=['imputed_level'], errors='ignore')

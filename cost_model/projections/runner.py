@@ -129,7 +129,7 @@ def run_projection_engine(
         last_year_active_headcount = 0
         logger.warning("[RUNNER] Initial snapshot is missing or has no 'active' column. First year growth rate might be off.")
 
-    from cost_model.utils.columns import EMP_ROLE
+    from cost_model.utils.columns import EMP_LEVEL
     for yr_idx, current_sim_year in enumerate(projection_sim_years):
         logger.info(f"--- Simulating Year {current_sim_year} (Index {yr_idx}) ---")
         logger.debug(f"SOY {current_sim_year} - Snapshot shape: {current_snapshot.shape}, Active: {current_snapshot[EMP_ACTIVE].sum() if EMP_ACTIVE in current_snapshot else 'N/A'}")
@@ -137,16 +137,16 @@ def run_projection_engine(
 
         # --- Patch: Regenerate hazard table for the current year using the current snapshot ---
         hazard_table = build_hazard_table([current_sim_year], current_snapshot, global_params, plan_rules_config)
-        # --- Check for missing (role, tenure_band) combos ---
+        # --- Check for missing (level, tenure_band) combos ---
         missing_combos = []
-        if EMP_ROLE in current_snapshot.columns and EMP_TENURE_BAND in current_snapshot.columns:
-            snapshot_combos = set(tuple(x) for x in current_snapshot[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
-            hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
+        if EMP_LEVEL in current_snapshot.columns and EMP_TENURE_BAND in current_snapshot.columns:
+            snapshot_combos = set(tuple(x) for x in current_snapshot[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates().values)
+            hazard_combos = set(tuple(x) for x in hazard_table[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates().values)
             missing_combos = snapshot_combos - hazard_combos
             if missing_combos:
                 logger.warning(f"[HAZARD TABLE] Year {current_sim_year}: Missing hazard table entries for combinations: {missing_combos}")
         else:
-            logger.warning(f"[HAZARD TABLE] Year {current_sim_year}: EMP_ROLE or tenure_band not found in current snapshot; cannot check hazard table coverage.")
+            logger.warning(f"[HAZARD TABLE] Year {current_sim_year}: EMP_LEVEL or tenure_band not found in current snapshot; cannot check hazard table coverage.")
 
         # run_one_year now returns (full_event_log_for_year, prev_snapshot)
         # We need to explicitly update our current_snapshot using the events from run_one_year.

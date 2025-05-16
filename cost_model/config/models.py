@@ -6,7 +6,7 @@ loaded from YAML files (e.g., config.yaml).
 
 import logging
 import numpy as np
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, model_validator, validator
 from typing import Dict, List, Optional, Tuple, Any
 
 logger = logging.getLogger(__name__)
@@ -55,26 +55,21 @@ class AutoEnrollOutcomeDistribution(BaseModel):
     prob_increase_to_match: float = Field(..., ge=0.0, le=1.0)
     prob_increase_high: float = Field(..., ge=0.0, le=1.0)
 
-    @root_validator
-    def check_probabilities_sum_to_one(cls, values):
+    @model_validator(mode='after')
+    def check_probabilities_sum_to_one(self) -> 'AutoEnrollOutcomeDistribution':
         """Validate that the probabilities sum approximately to 1.0."""
-        prob_sum = sum(
-            values.get(k, 0.0)
-            for k in [
-                "prob_opt_out",
-                "prob_stay_default",
-                "prob_opt_down",
-                "prob_increase_to_match",
-                "prob_increase_high",
-            ]
+        prob_sum = (
+            self.prob_opt_out +
+            self.prob_stay_default +
+            self.prob_opt_down +
+            self.prob_increase_to_match +
+            self.prob_increase_high
         )
         if not np.isclose(prob_sum, 1.0):
-            logger.warning(
-                f"Auto-enrollment outcome probabilities sum to {prob_sum:.4f}, not 1.0. Check config."
+            raise ValueError(
+                f"Probabilities must sum to 1.0, got {prob_sum:.4f}"
             )
-            # Depending on strictness, you might raise ValueError here instead of just warning
-            # raise ValueError(f"Outcome probabilities must sum to 1.0, got {prob_sum}")
-        return values
+        return self
 
 
 # --- Plan Rules Models ---
@@ -102,18 +97,16 @@ class OnboardingBumpRules(BaseModel):
         None, ge=0.0, description="Rate for bump (used by both methods)"
     )
 
-    @root_validator
-    def check_method_and_rate(cls, values):
-        enabled = values.get("enabled")
-        method = values.get("method")
-        rate = values.get("rate")
-        if enabled and not method:
-            raise ValueError("Onboarding bump method must be specified if enabled.")
-        if enabled and rate is None:
-            raise ValueError("Onboarding bump rate must be specified if enabled.")
-        if enabled and method not in ["flat_rate", "sample_plus_rate"]:
-            raise ValueError(f"Invalid onboarding bump method: {method}")
-        return values
+    @model_validator(mode='after')
+    def check_method_and_rate(self) -> 'OnboardingBumpRules':
+        if self.enabled:
+            if not self.method:
+                raise ValueError("Onboarding bump method must be specified if enabled.")
+            if self.rate is None:
+                raise ValueError("Onboarding bump rate must be specified if enabled.")
+            if self.method not in ["flat_rate", "sample_plus_rate"]:
+                raise ValueError(f"Invalid onboarding bump method: {self.method}")
+        return self
 
 
 class AutoEnrollmentRules(BaseModel):
@@ -139,34 +132,28 @@ class AutoEnrollmentRules(BaseModel):
         description="Whether to re-enroll existing participants with 0% or previous opt-outs",
     )
 
-    @validator("proactive_rate_range")
-    def check_proactive_rate_range(cls, v):
-        if v is not None:
-            if not (isinstance(v, (list, tuple)) and len(v) == 2):
-                raise ValueError(
-                    "proactive_rate_range must be a list/tuple of two numbers"
-                )
-            min_r, max_r = v
-            if not (
-                isinstance(min_r, (int, float)) and isinstance(max_r, (int, float))
-            ):
+    @model_validator(mode='after')
+    def validate_auto_enrollment_rules(self) -> 'AutoEnrollmentRules':
+        # Check proactive_rate_range
+        if self.proactive_rate_range is not None:
+            if not (isinstance(self.proactive_rate_range, (list, tuple)) and len(self.proactive_rate_range) == 2):
+                raise ValueError("proactive_rate_range must be a list/tuple of two numbers")
+                
+            min_r, max_r = self.proactive_rate_range
+            if not (isinstance(min_r, (int, float)) and isinstance(max_r, (int, float))):
                 raise ValueError("proactive_rate_range values must be numbers")
+                
             if min_r < 0 or max_r < 0:
                 raise ValueError("proactive_rate_range values cannot be negative")
+                
             if min_r > max_r:
                 raise ValueError("proactive_rate_range min cannot be greater than max")
-        return v
-
-    @root_validator
-    def check_distribution_if_enabled(cls, values):
-        enabled = values.get("enabled")
-        distribution = values.get("outcome_distribution")
-        if enabled and not distribution:
-            raise ValueError(
-                "outcome_distribution must be defined if auto_enrollment is enabled."
-            )
-        # Add checks for optional rates if needed based on distribution usage
-        return values
+        
+        # Check if outcome_distribution is provided when enabled
+        if self.enabled and not self.outcome_distribution:
+            raise ValueError("outcome_distribution must be defined if auto_enrollment is enabled.")
+            
+        return self
 
 
 class AutoIncreaseRules(BaseModel):
@@ -176,16 +163,14 @@ class AutoIncreaseRules(BaseModel):
     apply_to_new_hires_only: bool = False
     re_enroll_existing_below_cap: bool = False
 
-    @root_validator
-    def check_flags(cls, values):
+    @model_validator(mode='after')
+    def check_flags(self) -> 'AutoIncreaseRules':
         """Ensure mutually exclusive flags are not both true."""
-        new_hires_only = values.get("apply_to_new_hires_only")
-        re_enroll = values.get("re_enroll_existing_below_cap")
-        if new_hires_only and re_enroll:
+        if self.apply_to_new_hires_only and self.re_enroll_existing_below_cap:
             raise ValueError(
                 "Cannot set both 'apply_to_new_hires_only' and 're_enroll_existing_below_cap' to true."
             )
-        return values
+        return self
 
 
 class EmployerMatchRules(BaseModel):
@@ -214,16 +199,13 @@ class BehavioralParams(BaseModel):
     voluntary_increase_amount: float = Field(0.0, ge=0.0)
     voluntary_decrease_amount: float = Field(0.0, ge=0.0)
 
-    @root_validator
-    def check_change_probs(cls, values):
+    @model_validator(mode='after')
+    def check_change_probs(self) -> 'BehavioralParams':
         """Validate that the conditional change probabilities sum approximately to 1.0 or less."""
-        prob_sum = sum(
-            values.get(k, 0.0)
-            for k in [
-                "prob_increase_given_change",
-                "prob_decrease_given_change",
-                "prob_stop_given_change",
-            ]
+        prob_sum = (
+            self.prob_increase_given_change +
+            self.prob_decrease_given_change +
+            self.prob_stop_given_change
         )
         # Allow sum to be less than 1 (implies possibility of no change even if change event occurs)
         if prob_sum > 1.0001:  # Allow for slight float inaccuracies
@@ -231,7 +213,7 @@ class BehavioralParams(BaseModel):
                 f"Behavioral change outcome probabilities sum to {prob_sum:.4f}, > 1.0. Check config."
             )
             # raise ValueError(f"Change outcome probabilities must sum to <= 1.0, got {prob_sum}")
-        return values
+        return self
 
 
 class ContributionRules(BaseModel):
@@ -331,32 +313,32 @@ class GlobalParameters(BaseModel):
         default_factory=PlanRules
     )  # Use default if not specified
 
-    @root_validator(pre=True)  # Run before standard validation
-    def check_role_dist_sums_to_one(cls, values):
+    @model_validator(mode='after')
+    def validate_global_parameters(self) -> 'GlobalParameters':
+        """Run all validations for GlobalParameters."""
+        self._check_role_dist_sums_to_one()
+        self._check_maintain_headcount_vs_growth()
+        return self
+        
+    def _check_role_dist_sums_to_one(self) -> None:
         """Validate role distribution probabilities sum to 1.0 if provided."""
-        role_dist = values.get("role_distribution")
-        if role_dist and isinstance(role_dist, dict):
-            prob_sum = sum(role_dist.values())
+        if self.role_distribution and isinstance(self.role_distribution, dict):
+            prob_sum = sum(self.role_distribution.values())
             if not np.isclose(prob_sum, 1.0):
                 logger.warning(
                     f"Global role_distribution probabilities sum to {prob_sum:.4f}, not 1.0. Check config."
                 )
                 # Normalization could happen here or in accessors.py
                 # raise ValueError(f"Role distribution must sum to 1.0, got {prob_sum}")
-        return values
 
-    @root_validator
-    def check_maintain_headcount_vs_growth(cls, values):
+    def _check_maintain_headcount_vs_growth(self) -> None:
         """Ensure maintain_headcount and annual_growth_rate are used logically."""
-        maintain = values.get("maintain_headcount")
-        growth = values.get("annual_growth_rate")
-        if maintain and growth != 0.0:
+        if self.maintain_headcount and self.annual_growth_rate != 0.0:
             logger.warning(
-                f"maintain_headcount is True, but annual_growth_rate is {growth:.2%}. Growth rate will be ignored."
+                f"maintain_headcount is True, but annual_growth_rate is {self.annual_growth_rate:.2%}. Growth rate will be ignored."
             )
             # Optionally force growth rate to 0 if maintain_headcount is True
-            # values['annual_growth_rate'] = 0.0
-        return values
+            # self.annual_growth_rate = 0.0
 
 
 class ScenarioDefinition(BaseModel):
@@ -397,14 +379,14 @@ class MainConfig(BaseModel):
     global_parameters: GlobalParameters
     scenarios: Dict[str, ScenarioDefinition]
 
-    @validator("scenarios")
-    def check_baseline_scenario_exists(cls, scenarios):
+    @model_validator(mode='after')
+    def check_baseline_scenario_exists(self) -> 'MainConfig':
         """Ensure at least a 'baseline' scenario is defined."""
-        if "baseline" not in scenarios:
+        if "baseline" not in self.scenarios:
             # Depending on requirements, could default or raise error
             logger.warning("No 'baseline' scenario found in configuration.")
             # raise ValueError("A 'baseline' scenario must be defined.")
-        return scenarios
+        return self
 
 
 # Example of how to use these models after loading YAML data:
