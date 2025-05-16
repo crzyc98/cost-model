@@ -35,7 +35,8 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
 
     # Filter out employees terminated before or at the projection start year
     # If EMP_TERM_DATE is not present, treat as not terminated
-    term_col = 'employee_termination_date' if 'employee_termination_date' in census_df.columns else None
+    from ..utils.columns import EMP_TERM_DATE
+    term_col = EMP_TERM_DATE if EMP_TERM_DATE in census_df.columns else None
     if term_col:
         census_df[term_col] = pd.to_datetime(census_df[term_col], errors='coerce')
         # Only include employees with no termination date or termination after Jan 1 of the start year
@@ -47,16 +48,16 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         after_filter = len(census_df)
         logger.info(f"Filtered out {before_filter - after_filter} employees terminated before or at {start_year}-01-01. Remaining: {after_filter}")
     else:
-        logger.info("No employee_termination_date column found in census. Assuming all employees are active.")
+        logger.info(f"No {EMP_TERM_DATE} column found in census. Assuming all employees are active.")
 
     # Data for the snapshot at the beginning of the start_year
     # First, check if the census has termination dates
-    has_term_dates = 'employee_termination_date' in census_df.columns
+    has_term_dates = EMP_TERM_DATE in census_df.columns
     
     # If termination dates exist, set active status based on them
     if has_term_dates:
         # An employee is active if they have no termination date
-        active_status = census_df['employee_termination_date'].isna()
+        active_status = census_df[EMP_TERM_DATE].isna()
         logger.info(f"Setting active status based on termination dates: {active_status.sum()} active out of {len(census_df)}")
     else:
         # If no termination dates, assume all are active
@@ -282,7 +283,7 @@ def update_snapshot_with_events(
     """
     # Filter events by timestamp
     if 'event_time' in events_df.columns:
-        filtered = events_df[events_df['event_time'] <= as_of]
+        filtered = events_df[events_df[EVENT_TIME] <= as_of]
     else:
         filtered = events_df.copy()
     # Apply update from state snapshot
@@ -291,7 +292,7 @@ def update_snapshot_with_events(
     updated_snapshot = _update_snapshot(prev_snapshot, filtered, as_of.year)
     # Determine active employees at year-end
     if 'active' in updated_snapshot.columns:
-        year_end_employee_ids = updated_snapshot[updated_snapshot['active']].index.tolist()
+        year_end_employee_ids = updated_snapshot[updated_snapshot[EMP_ACTIVE]].index.tolist()
     else:
         year_end_employee_ids = []
     return updated_snapshot, year_end_employee_ids
@@ -343,7 +344,7 @@ def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_pat
     combined = pd.concat(all_snapshots, ignore_index=True)
     
     # Sort by year and employee_id
-    combined = combined.sort_values(['year', 'employee_id'])
+    combined = combined.sort_values(['year', EMP_ID])
     
     # Save to parquet
     combined.to_parquet(output_path, index=False)

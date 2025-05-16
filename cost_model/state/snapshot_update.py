@@ -1,78 +1,6 @@
-"""Incrementally update a workforce snapshot given new events.
-
-## QuickStart
-
-To update an existing workforce snapshot with new events programmatically:
-
-```python
-import pandas as pd
-import logging
-from cost_model.state.snapshot_update import update
-from cost_model.state.event_log import EVT_HIRE, EVT_TERM, EVT_COMP
-
-# Configure logging to see detailed information about the update process
-logging.basicConfig(level=logging.DEBUG)
-
-# Load an existing snapshot
-prev_snapshot = pd.read_parquet('data/snapshot_2024.parquet')
-
-# Create or load new events that occurred since the previous snapshot
-new_events = pd.DataFrame([
-    # New hire event
-    {
-        'event_id': 'evt_001',
-        'event_time': pd.Timestamp('2025-01-15'),
-        'employee_id': 'EMP101',
-        'event_type': EVT_HIRE,
-        'value_num': 60000.0,  # Starting compensation
-        'value_json': None,
-        'meta': 'New hire - Software Engineer'
-    },
-    # Termination event for existing employee
-    {
-        'event_id': 'evt_002',
-        'event_time': pd.Timestamp('2025-03-31'),
-        'employee_id': 'EMP050',  # Existing employee ID
-        'event_type': EVT_TERM,
-        'value_num': None,
-        'value_json': None,
-        'meta': 'Voluntary resignation'
-    },
-    # Compensation change for existing employee
-    {
-        'event_id': 'evt_003',
-        'event_time': pd.Timestamp('2025-04-01'),
-        'employee_id': 'EMP025',  # Existing employee ID
-        'event_type': EVT_COMP,
-        'value_num': 85000.0,  # New compensation
-        'value_json': None,
-        'meta': 'Annual merit increase'
-    }
-])
-
-# Update the snapshot for the new year
-snapshot_year = 2025
-updated_snapshot = update(prev_snapshot, new_events, snapshot_year)
-
-# Examine the results
-print(f"Updated snapshot has {len(updated_snapshot)} employees")
-print(f"Active employees: {updated_snapshot['active'].sum()}")
-
-# Check for the new hire
-if 'EMP101' in updated_snapshot.index:
-    print(f"New hire EMP101 added with compensation: {updated_snapshot.loc['EMP101', 'employee_gross_compensation']}")
-
-# Check for the terminated employee
-if 'EMP050' in updated_snapshot.index:
-    is_active = updated_snapshot.loc['EMP050', 'active']
-    term_date = updated_snapshot.loc['EMP050', 'employee_termination_date']
-    print(f"EMP050 active status: {is_active}, termination date: {term_date}")
-
-# Save the updated snapshot
-updated_snapshot.to_parquet(f'data/snapshot_{snapshot_year}.parquet')
-```
-
-This demonstrates how to update a snapshot with various event types and verify the results.
+"""
+Incrementally update a workforce snapshot given new events.
+QuickStart: see docs/cost_model/state/snapshot_update.md
 """
 from __future__ import annotations
 
@@ -86,14 +14,31 @@ from .schema import (
     EVT_HIRE,
     EVT_COMP,
     EVT_TERM,
+    EVT_COLA,
+    EVT_PROMOTION,
+    EVT_RAISE,
+    EVT_CONTRIB,
     EMP_ID,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
     EMP_GROSS_COMP,
     EMP_TERM_DATE,
+    EMP_DEFERRAL_RATE,
+    EMP_ACTIVE,
+    EMP_TENURE_BAND,
+    EMP_LEVEL,
+    EMP_LEVEL_SOURCE,
+    EMP_EXITED,
     EMP_TENURE,
+    SIMULATION_YEAR,
+    TERM_RATE,
+    COMP_RAISE_PCT,
+    NEW_HIRE_TERM_RATE,
+    COLA_PCT,
+    CFG,
     SNAPSHOT_COLS,
     SNAPSHOT_DTYPES,
+    EVENT_COLS,
 )
 from .snapshot_utils import (
     get_first_event,
@@ -169,6 +114,10 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
         new_df_dups = new_df.index[new_df.index.duplicated()].unique().tolist()
         logger.warning(f"`new_df` (new hires) had duplicate EMP_IDs: {new_df_dups}. Deduplicating (keep='last').")
         new_df = new_df[~new_df.index.duplicated(keep='last')]
+
+    # 3. Assign job levels to new hires based on compensation
+    from .job_levels.utils import assign_levels_to_dataframe
+    new_df = assign_levels_to_dataframe(new_df, target_level_col=EMP_LEVEL)
 
     # 3. Ensure `new_df` only contains IDs not already in `current` (critical for concat)
     overlap = new_df.index.intersection(current.index)

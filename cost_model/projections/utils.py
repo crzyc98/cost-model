@@ -3,7 +3,8 @@ from cost_model.utils.columns import EMP_TERM_DATE
 
 def assign_employment_status(row, sim_year):
     """Assigns employment status based on hire date, term date, and active flag."""
-    hire_date = pd.to_datetime(row.get('employee_hire_date', pd.NaT))
+    from ..utils.columns import EMP_HIRE_DATE
+    hire_date = pd.to_datetime(row.get(EMP_HIRE_DATE, pd.NaT))
     hire_year = hire_date.year if pd.notna(hire_date) else None
     term_date = pd.to_datetime(row.get(EMP_TERM_DATE, pd.NaT), errors='coerce')
     term_year = term_date.year if pd.notna(term_date) else None

@@ -12,11 +12,19 @@ import numpy as np
 
 from .snapshot_build import build_full
 from .snapshot_update import update
-from .constants import (
+from .schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_LEVEL, EMP_GROSS_COMP,
     EMP_TERM_DATE, EMP_ACTIVE, EMP_TENURE, EMP_TENURE_BAND,
-    EMP_DEFERRAL_RATE, SNAPSHOT_COLS, SNAPSHOT_DTYPES
+    EMP_DEFERRAL_RATE, SNAPSHOT_COLS, SNAPSHOT_DTYPES,
+    TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT, CFG
 )
+
+# Add additional constants separately
+NEW_HIRE_TERMINATION_RATE = 'new_hire_termination_rate'
+COLA_PCT = 'cola_pct'
+CFG = 'cfg'
+TERM_RATE = 'term_rate'
+COMP_RAISE_PCT = 'comp_raise_pct'
 
 # Legacy imports for compatibility
 try:
@@ -48,6 +56,16 @@ SNAPSHOT_COLS = [
     EMP_DEFERRAL_RATE, # Was "employee_deferral_rate"
     EMP_TENURE_BAND,   # Snapshot specific for grouping/logic
     EMP_TENURE,      # Standardized tenure column
+    TERM_RATE,
+    COMP_RAISE_PCT,
+    NEW_HIRE_TERM_RATE,
+    COLA_PCT,
+    CFG,
+    NEW_HIRE_TERMINATION_RATE,
+    COLA_PCT,
+    CFG,
+    TERM_RATE,
+    COMP_RAISE_PCT
 ]
 
 # Corresponding Pandas dtypes using nullable types where appropriate
@@ -55,13 +73,23 @@ SNAPSHOT_DTYPES = {
     EMP_ID: pd.StringDtype(),           # Add dtype for EMP_ID
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
-    EMP_LEVEL: pd.StringDtype(),          # Nullable string
+    EMP_LEVEL: pd.Int64Dtype(),          # Nullable string
     EMP_GROSS_COMP: pd.Float64Dtype(),  # Nullable float, was "current_comp"
     EMP_TERM_DATE: "datetime64[ns]",     # Stays datetime, NaT represents null
     "active": pd.BooleanDtype(),         # Nullable boolean - snapshot specific
     EMP_DEFERRAL_RATE: pd.Float64Dtype(),# Was "employee_deferral_rate"
     EMP_TENURE_BAND: pd.StringDtype(),     # Snapshot specific
     EMP_TENURE: 'float64',               # Standardized tenure dtype
+    TERM_RATE: pd.Float64Dtype(),
+    COMP_RAISE_PCT: pd.Float64Dtype(),
+    NEW_HIRE_TERM_RATE: pd.Float64Dtype(),
+    COLA_PCT: pd.Float64Dtype(),
+    CFG: pd.StringDtype(),
+    NEW_HIRE_TERMINATION_RATE: pd.Float64Dtype(),
+    COLA_PCT: pd.Float64Dtype(),
+    CFG: pd.StringDtype(),
+    TERM_RATE: pd.Float64Dtype(),
+    COMP_RAISE_PCT: pd.Float64Dtype()
 }
 
 # --- Helper Functions ---
@@ -105,7 +133,17 @@ def _ensure_columns_and_types(df: pd.DataFrame, columns: list, dtypes: dict) -> 
             elif dtype == pd.BooleanDtype():
                 df[col] = pd.NA
             elif pd.api.types.is_numeric_dtype(dtype):
-                df[col] = np.nan  # Use np.nan for numeric columns
+                # For configuration columns, use default values from config
+                if col == TERM_RATE:
+                    df[col] = 0.15  # Default term rate
+                elif col == COMP_RAISE_PCT:
+                    df[col] = 0.03  # Default comp raise
+                elif col == NEW_HIRE_TERM_RATE:
+                    df[col] = 0.25  # Default new hire term rate
+                elif col == COLA_PCT:
+                    df[col] = 0.02  # Default COLA
+                else:
+                    df[col] = np.nan
             else:
                 df[col] = pd.NA
     df = df[columns]

@@ -91,6 +91,10 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:  # noq
 
     snap = ensure_columns_and_types(snap)
 
+    # Assign job levels based on compensation for employees without levels
+    from .job_levels.utils import assign_levels_to_dataframe
+    snap = assign_levels_to_dataframe(snap, target_level_col=EMP_LEVEL)
+
     # Calculate tenure for active and terminated employees
     as_of = pd.Timestamp(f"{snapshot_year}-12-31")
     

@@ -22,6 +22,25 @@ EMP_ACTIVE      = "active"
 EMP_TENURE_BAND = "tenure_band"
 EMP_LEVEL_SOURCE= "job_level_source"
 EMP_EXITED      = "exited"
+SIMULATION_YEAR = "simulation_year"
+TERM_RATE = "term_rate"
+COMP_RAISE_PCT = "comp_raise_pct"
+NEW_HIRE_TERM_RATE = "new_hire_term_rate"
+COLA_PCT = "cola_pct"
+CFG = "cfg"
+
+# Event log columns
+EVENT_ID = "event_id"
+EVENT_TYPE = "event_type"
+EVENT_TIME = "event_time"
+VALUE_JSON = "value_json"
+META = "meta"
+
+# Event types
+EVT_HIRE = "EVT_HIRE"
+EVT_TERM = "EVT_TERM"
+EVT_CONTRIB = "EVT_CONTRIB"
+EVT_CONTRIB_INCR = "EVT_CONTRIB_INCR"
 
 # Flags
 IS_ELIGIBLE = "is_eligible"

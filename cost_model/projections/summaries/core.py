@@ -10,40 +10,41 @@ import pandas as pd
 from pathlib import Path
 from cost_model.projections.summaries.core import build_core_summary
 from cost_model.projections.summaries.employment import build_employment_summary
+from ..utils.columns import EMP_ID, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE, ACTIVE
 
 # Create sample snapshot data for different years
 snapshots = {}
 
 # Year 1 snapshot
 snapshots[2025] = pd.DataFrame({
-    'employee_id': ['EMP001', 'EMP002', 'EMP003', 'EMP004'],
-    'employee_role': ['Engineer', 'Manager', 'Engineer', 'Analyst'],
-    'employee_gross_compensation': [75000.0, 85000.0, 65000.0, 55000.0],
-    'active': [True, True, True, True],
-    'employee_hire_date': [
-        pd.Timestamp('2024-06-01'),
-        pd.Timestamp('2023-03-15'),
-        pd.Timestamp('2025-01-10'),
-        pd.Timestamp('2024-11-05')
+    EMP_ID: ['EMP001', 'EMP002', 'EMP003', 'EMP004'],
+    EMP_ROLE: ['Engineer', 'Manager', 'Engineer', 'Analyst'],
+    EMP_GROSS_COMP: [75000.0, 85000.0, 65000.0, 55000.0],
+    ACTIVE: [True, True, True, True],
+    EMP_HIRE_DATE: [
+        pd.Timestamp('2025-01-01'),
+        pd.Timestamp('2025-02-01'),
+        pd.Timestamp('2025-03-01'),
+        pd.Timestamp('2025-04-01')
     ],
-    'employee_termination_date': [None, None, None, None]
-}).set_index('employee_id')
+    EMP_TERM_DATE: [None, None, None, None]
+}).set_index(EMP_ID)
 
 # Year 2 snapshot (with some changes)
 snapshots[2026] = pd.DataFrame({
-    'employee_id': ['EMP001', 'EMP002', 'EMP003', 'EMP004', 'EMP005'],
-    'employee_role': ['Engineer', 'Manager', 'Engineer', 'Analyst', 'Engineer'],
-    'employee_gross_compensation': [77250.0, 87550.0, 66950.0, 56650.0, 70000.0],
-    'active': [True, True, False, True, True],
-    'employee_hire_date': [
-        pd.Timestamp('2024-06-01'),
-        pd.Timestamp('2023-03-15'),
-        pd.Timestamp('2025-01-10'),
-        pd.Timestamp('2024-11-05'),
-        pd.Timestamp('2026-02-15')
+    EMP_ID: ['EMP001', 'EMP002', 'EMP003', 'EMP004', 'EMP005'],
+    EMP_ROLE: ['Engineer', 'Manager', 'Engineer', 'Analyst', 'Engineer'],
+    EMP_GROSS_COMP: [77250.0, 87550.0, 66950.0, 56650.0, 70000.0],
+    ACTIVE: [True, True, False, True, True],
+    EMP_HIRE_DATE: [
+        pd.Timestamp('2025-01-01'),
+        pd.Timestamp('2025-02-01'),
+        pd.Timestamp('2025-03-01'),
+        pd.Timestamp('2025-04-01'),
+        pd.Timestamp('2025-05-01')
     ],
-    'employee_termination_date': [None, None, pd.Timestamp('2026-07-15'), None, None]
-}).set_index('employee_id')
+    EMP_TERM_DATE: [None, None, pd.Timestamp('2026-07-15'), None, None]
+}).set_index(EMP_ID)
 
 # Build individual summaries
 employment_summary = build_employment_summary(snapshots)

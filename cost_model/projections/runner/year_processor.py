@@ -1,0 +1,116 @@
+"""
+Handles the processing of each year in the projection.
+"""
+
+from typing import Dict, List, Optional, Tuple, Any
+
+import pandas as pd
+import numpy as np
+from numpy.random import Generator
+from datetime import datetime
+
+from cost_model.state.schema import (
+    EVT_HIRE, EVT_TERM, EVT_COMP, EVT_COLA, EVT_PROMOTION, EVT_RAISE, EVT_CONTRIB
+)
+from cost_model.state.snapshot_update import update
+from cost_model.projections.hazard import build_hazard_table
+from cost_model.engines.run_one_year_engine import run_one_year
+from .constants import EVENT_PRIORITY
+
+
+def process_year(
+    year: int,
+    current_snapshot: pd.DataFrame,
+    cumulative_log: pd.DataFrame,
+    global_params: Dict[str, Any],
+    plan_rules: Dict[str, Any],
+    rng: np.random.Generator,
+    years: List[int],
+    census_path: str,
+    ee_contrib_event_types: List[str]
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[int, pd.DataFrame], Any, pd.DataFrame]:
+    """
+    Process a single year in the projection.
+    
+    Args:
+        year: Current year to process
+        current_snapshot: Current employee snapshot
+        cumulative_log: Cumulative event log
+        global_params: Global simulation parameters
+        plan_rules: Plan rules configuration
+        rng: Random number generator
+        years: List of all simulation years
+        census_path: Path to census template
+        ee_contrib_event_types: Employee contribution event types
+        
+    Returns:
+        Tuple containing:
+        - new_snapshot: Updated snapshot after processing
+        - updated_cumulative_log: Updated cumulative event log
+        - core_summary: Core metrics summary for the year
+        - employment_summary: Employment status summary for the year
+        - year_eoy_rows: End-of-year snapshot rows
+    """
+    # 1. Build hazard table
+    hazard_table = build_hazard_table(
+        [year],  # Pass years as list
+        current_snapshot,
+        global_params,
+        plan_rules
+    )
+    
+    # 2. Run one year simulation
+    year_events, _ = run_one_year(
+        event_log=cumulative_log,
+        prev_snapshot=current_snapshot,
+        year=year,
+        global_params=global_params,
+        plan_rules=plan_rules,
+        hazard_table=hazard_table,
+        rng=rng,
+        census_template_path=census_path,
+        rng_seed_offset=0,
+        deterministic_term=False
+    )
+    
+    # Define event priority order
+    EVENT_PRIORITY = {
+        EVT_HIRE: 10,      # Highest priority - must be processed first
+        EVT_TERM: 9,       # Next highest - terminations should be processed before other events
+        EVT_COMP: 8,       # Compensation changes
+        EVT_COLA: 7,       # Cost of Living Adjustments
+        EVT_PROMOTION: 6,  # Promotions
+        EVT_RAISE: 5,      # Raises
+        EVT_CONTRIB: 4     # Contribution events
+    }
+    
+    # 3. Update snapshot with events
+    new_snapshot = update(
+        current_snapshot,
+        year_events,
+        year
+    )
+    
+    # Convert the DataFrame to a tuple of (DataFrame, None) to match the expected return type
+    new_snapshot = (new_snapshot, None)
+    
+    # 4. Update cumulative log
+    updated_cumulative_log = pd.concat([cumulative_log, year_events])
+    
+    # 5. Compute summaries
+    core_summary, employment_summary = make_yearly_summaries(
+        new_snapshot,
+        year_events,
+        year
+    )
+    
+    # 6. Get end-of-year snapshot rows
+    year_eoy_rows = new_snapshot.copy()
+    
+    return (
+        new_snapshot, 
+        updated_cumulative_log, 
+        core_summary, 
+        employment_summary, 
+        year_eoy_rows
+    )

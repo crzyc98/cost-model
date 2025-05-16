@@ -62,11 +62,6 @@ def cola(
             employee_id=row[EMP_ID],
             event_type=EVT_COLA,
             value_num=row["delta"],
-            value_json=json.dumps({
-                "old_comp": row["old_comp"],
-                "new_comp": row["new_comp"],
-                "pct": cola_pct
-            }),
             meta=f"COLA {cola_pct:.1%}"
         )
 
