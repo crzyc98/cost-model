@@ -1,4 +1,5 @@
 # cost_model/state/schema.py
+# flake8: noqa
 """Centralized schema constants for cost_model state and events.
 
 This module defines event type constants, employee column constants,
@@ -62,12 +63,12 @@ try:
     )
 except ImportError:  # pragma: no cover  – stand-alone import safety
     EMP_ID = "employee_id"
-    EMP_HIRE_DATE = "hire_date"
-    EMP_BIRTH_DATE = "birth_date"
-    EMP_GROSS_COMP = "current_comp"
-    EMP_TERM_DATE = "term_date"
+    EMP_HIRE_DATE = "employee_hire_date"
+    EMP_BIRTH_DATE = "employee_birth_date"
+    EMP_GROSS_COMP = "employee_gross_compensation"
+    EMP_TERM_DATE = "employee_termination_date"
     EMP_DEFERRAL_RATE = "employee_deferral_rate"
-    EMP_TENURE = "tenure_years"
+    EMP_TENURE = "employee_tenure"
     EMP_ACTIVE = "active"
     EMP_TENURE_BAND = "tenure_band"
     EMP_LEVEL = "employee_level"
@@ -76,7 +77,7 @@ except ImportError:  # pragma: no cover  – stand-alone import safety
     SIMULATION_YEAR = "simulation_year"
     TERM_RATE = "term_rate"
     COMP_RAISE_PCT = "comp_raise_pct"
-    NEW_HIRE_TERM_RATE = "new_hire_term_rate"
+    NEW_HIRE_TERM_RATE = "new_hire_termination_rate"
     COLA_PCT = "cola_pct"
     CFG = "cfg"
 

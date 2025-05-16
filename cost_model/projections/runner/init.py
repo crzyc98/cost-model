@@ -57,7 +57,24 @@ def initialize(config_ns: Any,
     if not isinstance(initial_snapshot, pd.DataFrame):
         raise ValueError("initial_snapshot must be a pandas DataFrame")
     
-    # Ensure snapshot has required columns and types
+    # Debug log the actual and expected column names
+    logger.debug(f"Snapshot columns: {initial_snapshot.columns.tolist()}")
+    logger.debug(f"Expected columns: {list(SNAPSHOT_DTYPES.keys())}")
+    
+    # Debug log the actual and expected column names
+    logger.debug(f"Snapshot columns: {initial_snapshot.columns.tolist()}")
+    logger.debug(f"Expected columns: {list(SNAPSHOT_DTYPES.keys())}")
+    
+    # Log detailed column name mismatches
+    for expected_col in SNAPSHOT_DTYPES.keys():
+        if expected_col not in initial_snapshot.columns:
+            logger.warning(f"Missing expected column: {expected_col}")
+        else:
+            actual_col = initial_snapshot[expected_col].name
+            if expected_col != actual_col:
+                logger.warning(f"Column name mismatch: expected '{expected_col}' but found '{actual_col}'")
+    
+    # Check for missing columns
     missing_cols = set(SNAPSHOT_DTYPES.keys()) - set(initial_snapshot.columns)
     if missing_cols:
         raise ValueError(f"Missing required columns in snapshot: {missing_cols}")

@@ -55,6 +55,12 @@ SNAPSHOT_COLS = [
     EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_EXITED,
+    'term_rate',
+    'comp_raise_pct',
+    'new_hire_termination_rate',
+    'cola_pct',
+    'cfg',
+    'simulation_year'
 ]
 
 # Data types for snapshot columns
@@ -72,4 +78,10 @@ SNAPSHOT_DTYPES = {
     EMP_LEVEL: pd.Int64Dtype(),
     EMP_LEVEL_SOURCE: pd.CategoricalDtype(categories=['hire', 'promotion', 'demotion', 'manual'], ordered=True),
     EMP_EXITED: pd.BooleanDtype(),
+    'term_rate': pd.Float64Dtype(),
+    'comp_raise_pct': pd.Float64Dtype(),
+    'new_hire_termination_rate': pd.Float64Dtype(),
+    'cola_pct': pd.Float64Dtype(),
+    'cfg': pd.StringDtype(),
+    'simulation_year': 'int64'
 }
