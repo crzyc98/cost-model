@@ -122,13 +122,13 @@ def run_one_year(
     # —————————————————————————————————————————————
     # Ensure hazard_table is loaded with all required columns
     logger.debug(f"Hazard‐table columns before rename: {hazard_table.columns.tolist()}")
-    if 'simulation_year' not in hazard_table.columns:
+    if SIMULATION_YEAR not in hazard_table.columns:
         if 'year' in hazard_table.columns:
-            hazard_table = hazard_table.rename(columns={'year': 'simulation_year'})
-            logger.debug("Renamed hazard_table.year → hazard_table.simulation_year")
+            hazard_table = hazard_table.rename(columns={'year': SIMULATION_YEAR})
+            logger.debug(f"Renamed hazard_table.year → hazard_table.{SIMULATION_YEAR}")
         else:
             raise KeyError(
-                "Your hazard_table is missing both 'simulation_year' and 'year' columns; "
+                f"Your hazard_table is missing both '{SIMULATION_YEAR}' and 'year' columns; "
                 "cannot project term/comp rates. Columns present: "
                 f"{hazard_table.columns.tolist()}"
             )
@@ -147,11 +147,43 @@ def run_one_year(
     }
     missing = expected - set(hazard_table.columns)
     if missing:
-        raise KeyError(f"Hazard table is missing required columns: {missing}. Columns present: {hazard_table.columns.tolist()}")
+        # Try to map common alternative column names to our standard names
+        rename_map = {}
+        
+        # Common alternative names for term_rate
+        if TERM_RATE not in hazard_table.columns:
+            for alt in ['termination_rate', 'term_rate', 'hazard_rate']:
+                if alt in hazard_table.columns:
+                    rename_map[alt] = TERM_RATE
+                    break
+                    
+        # Common alternative for new_hire_termination_rate
+        if NEW_HIRE_TERM_RATE not in hazard_table.columns:
+            for alt in ['new_hire_rate', 'new_hire_term_rate', 'new_hire_termination_rate']:
+                if alt in hazard_table.columns:
+                    rename_map[alt] = NEW_HIRE_TERM_RATE
+                    break
+        
+        # Apply renames if we found any
+        if rename_map:
+            hazard_table = hazard_table.rename(columns=rename_map)
+            logger.info(f"Renamed hazard table columns: {rename_map}")
+            # Recheck for missing columns after renaming
+            missing = expected - set(hazard_table.columns)
+    
+    if missing:
+        raise KeyError(
+            f"Hazard table is missing required columns: {missing}. "
+            f"Columns present: {hazard_table.columns.tolist()}"
+        )
+    
+    # Ensure we're using the renamed version
+    hazard_table = hazard_table[list(expected)]
     # —————————————————————————————————————————————
 
     # --- 1. Extract the hazard slice for this year ---
-    hazard_slice = hazard_table[hazard_table['simulation_year'] == year]
+    logger.debug(f"Looking for hazard slice for year {year}")
+    hazard_slice = hazard_table[hazard_table[SIMULATION_YEAR] == year]
     # Log unique levels and tenure_bands in hazard_slice and prev_snapshot for this year
     unique_hazard_levels = hazard_slice[EMP_LEVEL].unique().tolist() if EMP_LEVEL in hazard_slice.columns else []
     unique_hazard_tenure = hazard_slice[EMP_TENURE_BAND].unique().tolist() if EMP_TENURE_BAND in hazard_slice.columns else []
@@ -162,15 +194,18 @@ def run_one_year(
     logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot levels: {unique_snap_levels}")
     logger.info(f"[RUN_ONE_YEAR YR={year}] snapshot tenure_bands: {unique_snap_tenure}")
     if hazard_slice.empty:
-        logger.warning(f"[RUN_ONE_YEAR YR={year}] ⚠️ hazard_slice is EMPTY after filtering. "
-                       f"Available years in table: {sorted(hazard_table['simulation_year'].unique())}")
-        hazard_slice = pd.DataFrame([{
-            'simulation_year': year,
-            'term_rate': 0.0,
-            'comp_raise_pct': 0.0,
-            'new_hire_termination_rate': 0.0,
-            'cfg': config
-        }])
+        available_years = sorted(hazard_table[SIMULATION_YEAR].unique())
+        logger.warning(f"No hazard data for year {year}. "
+                     f"Available years in table: {available_years}")
+        return (
+            pd.DataFrame([{
+                'event_type': 'ERROR',
+                'event_time': pd.Timestamp(f"{year}-12-31"),
+                SIMULATION_YEAR: year,
+                'message': f'No hazard data for year {year}. Available years: {available_years}'
+            }]),
+            prev_snapshot  # Return the previous snapshot unchanged
+        )
 
     # Log rates
     log_term_rate = hazard_slice[TERM_RATE].mean()

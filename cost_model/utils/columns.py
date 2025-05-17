@@ -14,14 +14,22 @@ EMP_PLAN_YEAR_COMP = "employee_plan_year_compensation"
 EMP_CAPPED_COMP = "employee_capped_compensation"
 EMP_DEFERRAL_RATE = "employee_deferral_rate"
 EMP_CONTR = "employee_contribution"
+
+# Employer contribution columns
 EMPLOYER_CORE = "employer_core_contribution"
+EMPLOYER_CORE_CONTRIB = "employer_core_contribution"  # Alias for consistency
 EMPLOYER_MATCH = "employer_match_contribution"
+EMPLOYER_MATCH_CONTRIB = "employer_match_contribution"  # Alias for consistency
+
+# Employee and simulation columns
 EMP_ID = "employee_id"
 EMP_LEVEL = "employee_level"    
-EMP_ACTIVE      = "active"
+EMP_ACTIVE = "active"
 EMP_TENURE_BAND = "tenure_band"
-EMP_LEVEL_SOURCE= "job_level_source"
-EMP_EXITED      = "exited"
+EMP_LEVEL_SOURCE = "job_level_source"
+EMP_EXITED = "exited"
+
+# Simulation parameters
 SIMULATION_YEAR = "simulation_year"
 TERM_RATE = "term_rate"
 COMP_RAISE_PCT = "comp_raise_pct"
@@ -79,16 +87,16 @@ SUM_CONTRIB = "total_contributions"
 SUM_PLAN_COMP = "total_plan_year_compensation"
 SUM_CAP_COMP = "total_capped_compensation"
 
-# Hazard table columns
+# Hazard table columns (using constants defined above)
 HazardTable = "hazard_table"
-SIMULATION_YEAR = "simulation_year"
-TERM_RATE = "term_rate"
-COMP_RAISE_PCT = "comp_raise_pct"
-NEW_HIRE_TERM_RATE = "new_hire_termination_rate"
-COLA_PCT = "cola_pct"
-CFG = "cfg"
-
-# Note: EMP_LEVEL is already defined above as "employee_level"
+# Note: Using constants defined above:
+# - SIMULATION_YEAR = "simulation_year"
+# - TERM_RATE = "term_rate"
+# - COMP_RAISE_PCT = "comp_raise_pct"
+# - NEW_HIRE_TERM_RATE = "new_hire_term_rate"
+# - COLA_PCT = "cola_pct"
+# - CFG = "cfg"
+# - EMP_LEVEL = "employee_level" (already defined above)
 
 AVG_DEFERRAL_PART = "avg_deferral_rate_participants"
 AVG_DEFERRAL_TOTAL = "avg_deferral_rate_total"

@@ -13,6 +13,7 @@ from cost_model.utils.columns import (
     EMP_TERM_DATE,
     STATUS_COL,
 )  # Ensure these are correct
+from cost_model.state.schema import TERM_RATE
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +95,8 @@ def sample_terminations(
 
         if n_to_term > 0 and total_valid > 0:
             # — merge in per-row hazard (term_rate) if it’s on df_out —
-            if 'term_rate' in df_out.columns:
-                weights = df_out.loc[valid_idx, 'term_rate'].fillna(0.0)
+            if TERM_RATE in df_out.columns:
+                weights = df_out.loc[valid_idx, TERM_RATE].fillna(0.0)
                 # normalize to sum=1
                 probs_w = weights.div(weights.sum()) if weights.sum() > 0 else None
             else:

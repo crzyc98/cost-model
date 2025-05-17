@@ -124,8 +124,16 @@ def run(
     # Verify we still have the same employees
     assert len(df) == n, f"Employee count mismatch after hazard table merge: {len(df)} != {n}"
     
-    missing_hazard = df[TERM_RATE].isna().sum()
-    logger.info(f"[TERM] Year {year}: {missing_hazard} employees missing hazard/{TERM_RATE} after merge.")
+    # Initialize TERM_RATE with zeros if it doesn't exist
+    if TERM_RATE not in df.columns:
+        logger.warning(f"[TERM] Year {year}: '{TERM_RATE}' column not found in hazard data. Initializing with zeros.")
+        df[TERM_RATE] = 0.0
+    
+    # Fill any NA values with 0
+    df[TERM_RATE] = df[TERM_RATE].fillna(0.0)
+    
+    missing_hazard = (df[TERM_RATE] == 0).sum()
+    logger.info(f"[TERM] Year {year}: {missing_hazard} employees with zero {TERM_RATE} after merge.")
     logger.info(f"[TERM] Year {year}: {TERM_RATE} stats: min={df[TERM_RATE].min()}, max={df[TERM_RATE].max()}, mean={df[TERM_RATE].mean()}, median={df[TERM_RATE].median()}.")
     
     # Decide terminations

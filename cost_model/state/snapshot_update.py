@@ -10,7 +10,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
-from .schema import (
+from cost_model.state.schema import (
     EVT_HIRE,
     EVT_COMP,
     EVT_TERM,
@@ -40,13 +40,13 @@ from .schema import (
     SNAPSHOT_DTYPES,
     EVENT_COLS,
 )
-from .snapshot_utils import (
+from cost_model.state.snapshot_utils import (
     get_first_event,
     get_last_event,
     extract_hire_details,
     ensure_columns_and_types,
 )
-from .tenure import apply_tenure
+from cost_model.state.tenure import apply_tenure
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,9 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     new_df = new_df.merge(last_comp, left_index=True, right_index=True, how="left")
     new_df = new_df.merge(last_term, left_index=True, right_index=True, how="left")
     new_df["active"] = new_df[EMP_TERM_DATE].isna()
+    
+    # Set simulation_year for new hires
+    new_df[SIMULATION_YEAR] = year
 
     # Debug: Verify birth date types before ensure_columns_and_types
     if not pd.api.types.is_datetime64_any_dtype(new_df[EMP_BIRTH_DATE]):

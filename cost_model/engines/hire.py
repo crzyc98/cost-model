@@ -43,7 +43,7 @@ def run(
         logger.warning("[HIRE.RUN] Hazard slice is empty. Cannot determine simulation year or new hire term rates. Returning no hires.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
     
-    simulation_year = hazard_slice['simulation_year'].iloc[0] # Derive simulation_year from hazard_slice
+    simulation_year = int(hazard_slice[SIMULATION_YEAR].iloc[0])  # Use constant and ensure it's an int
     logger.info(f"[HIRE.RUN YR={simulation_year}] Hires to make (passed-in): {hires_to_make}")
     
     # No need to recalculate hires_to_make - the caller has already done this math

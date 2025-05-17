@@ -16,6 +16,7 @@ from cost_model.state.snapshot_update import update
 from cost_model.projections.hazard import build_hazard_table
 from cost_model.engines.run_one_year_engine import run_one_year
 from .constants import EVENT_PRIORITY
+from .summaries import make_yearly_summaries
 
 
 def process_year(
@@ -91,15 +92,12 @@ def process_year(
         year
     )
     
-    # Convert the DataFrame to a tuple of (DataFrame, None) to match the expected return type
-    new_snapshot = (new_snapshot, None)
-    
     # 4. Update cumulative log
     updated_cumulative_log = pd.concat([cumulative_log, year_events])
     
-    # 5. Compute summaries
+    # 5. Compute summaries - pass the DataFrame directly, not the tuple
     core_summary, employment_summary = make_yearly_summaries(
-        new_snapshot,
+        new_snapshot,  # This is still a DataFrame here
         year_events,
         year
     )
@@ -107,8 +105,11 @@ def process_year(
     # 6. Get end-of-year snapshot rows
     year_eoy_rows = new_snapshot.copy()
     
+    # Convert to tuple at the very end if needed by the calling code
+    return_tuple = (new_snapshot, None)
+    
     return (
-        new_snapshot, 
+        return_tuple,  # Return as tuple here to match expected signature
         updated_cumulative_log, 
         core_summary, 
         employment_summary, 

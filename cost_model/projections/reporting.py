@@ -109,17 +109,37 @@ def save_detailed_results(
             on='Projection Year',
             how='left'
         )
+    
     # Rename 'Projection Year' to 'year' if present
     if 'Projection Year' in summary_to_save.columns:
         summary_to_save = summary_to_save.rename(columns={'Projection Year': 'year'})
+    
+    # Convert dictionary columns to strings to avoid parquet serialization issues
+    for col in summary_to_save.columns:
+        if summary_to_save[col].apply(lambda x: isinstance(x, dict)).any():
+            summary_to_save[col] = summary_to_save[col].apply(
+                lambda x: str({str(k): v for k, v in x.items()}) if isinstance(x, dict) else x
+            )
+    
     summary_path = output_path / f"{scenario_name}_summary_statistics.parquet"
     summary_to_save.to_parquet(summary_path, index=False)
     logger.info(f"Summary statistics saved to {summary_path}")
     
     # Save employment status summary
     emp_status_path = output_path / f"{scenario_name}_employment_status_summary.parquet"
-    employment_status_summary_df.to_parquet(emp_status_path, index=False)
-    logger.info(f"Employment status summary saved to {emp_status_path}")
+    
+    # Convert dictionary columns to strings in employment status summary
+    if employment_status_summary_df is not None and not employment_status_summary_df.empty:
+        emp_status_df = employment_status_summary_df.copy()
+        for col in emp_status_df.columns:
+            if emp_status_df[col].apply(lambda x: isinstance(x, dict)).any():
+                emp_status_df[col] = emp_status_df[col].apply(
+                    lambda x: str({str(k): v for k, v in x.items()}) if isinstance(x, dict) else x
+                )
+        emp_status_df.to_parquet(emp_status_path, index=False)
+        logger.info(f"Employment status summary saved to {emp_status_path}")
+    else:
+        logger.warning("No employment status summary data to save")
     
     # Save yearly snapshots if provided
     if yearly_snapshots:

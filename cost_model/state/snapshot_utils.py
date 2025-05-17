@@ -1,64 +1,6 @@
-"""Utility helpers for snapshot build/update flows.
-
-## QuickStart
-
-To use the snapshot utility functions programmatically:
-
-```python
-import pandas as pd
-import json
-from cost_model.state.snapshot_utils import (
-    get_first_event, get_last_event, parse_hire_payload,
-    extract_hire_details, ensure_columns_and_types
-)
-from cost_model.state.schema import EMP_ID, EVT_HIRE, EVT_COMP, EVT_TERM
-
-# Load an event log
-events_df = pd.read_parquet('data/events.parquet')
-
-# Get the first hire event for each employee
-first_hires = get_first_event(events_df, EVT_HIRE)
-print(f"Found {len(first_hires)} unique employee hire events")
-
-# Get the last compensation event for each employee
-last_comp_events = get_last_event(events_df, EVT_COMP)
-print(f"Found {len(last_comp_events)} unique employee compensation events")
-
-# Extract employee details from hire events
-hire_details = extract_hire_details(first_hires)
-print(f"Extracted details for {len(hire_details)} employees")
-print(hire_details.head())
-
-# Parse JSON payload from a hire event
-hire_event = first_hires.iloc[0]
-json_payload = hire_event.get('value_json')
-parsed_data = parse_hire_payload(json_payload)
-print(f"Parsed hire payload: {parsed_data}")
-
-# Create a snapshot and ensure it has the correct schema
-snapshot_df = pd.DataFrame({
-    EMP_ID: ['EMP001', 'EMP002', 'EMP003'],
-    'employee_hire_date': ['2025-01-15', '2025-02-01', '2025-03-10'],
-    'employee_gross_compensation': [75000.0, 85000.0, 65000.0],
-    'active': [True, True, True]
-})
-
-# Ensure the snapshot has all required columns with correct types
-snapshot_df = ensure_columns_and_types(snapshot_df)
-print(f"Snapshot has {len(snapshot_df.columns)} columns with correct schema")
-
-# Filter events by employee ID
-emp_id = 'EMP001'
-employee_events = events_df[events_df[EMP_ID] == emp_id]
-print(f"Employee {emp_id} has {len(employee_events)} events")
-
-# Get events in chronological order
-chronological_events = employee_events.sort_values('event_time')
-for _, event in chronological_events.iterrows():
-    print(f"{event['event_time']}: {event['event_type']} - {event['value_num']}")
-```
-
-This demonstrates how to use the utility functions to work with events and ensure snapshots have the correct schema.
+# cost_model/state/snapshot_utils.py
+"""
+Utility helpers for snapshot build/update flows.
 """
 from __future__ import annotations
 
@@ -69,7 +11,7 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from .schema import (
+from cost_model.state.schema import (
     EMP_ID,
     EMP_LEVEL,
     EMP_BIRTH_DATE,

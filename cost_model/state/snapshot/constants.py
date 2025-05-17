@@ -40,6 +40,12 @@ except ImportError:
     EMP_LEVEL_SOURCE = "job_level_source" 
     EMP_EXITED = "exited"
 
+# Import additional column constants
+from ...utils.columns import (
+    TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, 
+    COLA_PCT, CFG, SIMULATION_YEAR
+)
+
 # Standard columns for snapshots, in preferred order
 SNAPSHOT_COLS = [
     EMP_ID,
@@ -55,12 +61,12 @@ SNAPSHOT_COLS = [
     EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_EXITED,
-    'term_rate',
-    'comp_raise_pct',
-    'new_hire_termination_rate',
-    'cola_pct',
-    'cfg',
-    'simulation_year'
+    TERM_RATE,
+    COMP_RAISE_PCT,
+    NEW_HIRE_TERM_RATE,
+    COLA_PCT,
+    CFG,
+    SIMULATION_YEAR
 ]
 
 # Data types for snapshot columns
@@ -78,10 +84,10 @@ SNAPSHOT_DTYPES = {
     EMP_LEVEL: pd.Int64Dtype(),
     EMP_LEVEL_SOURCE: pd.CategoricalDtype(categories=['hire', 'promotion', 'demotion', 'manual'], ordered=True),
     EMP_EXITED: pd.BooleanDtype(),
-    'term_rate': pd.Float64Dtype(),
-    'comp_raise_pct': pd.Float64Dtype(),
-    'new_hire_termination_rate': pd.Float64Dtype(),
-    'cola_pct': pd.Float64Dtype(),
-    'cfg': pd.StringDtype(),
-    'simulation_year': 'int64'
+    TERM_RATE: pd.Float64Dtype(),
+    COMP_RAISE_PCT: pd.Float64Dtype(),
+    NEW_HIRE_TERM_RATE: pd.Float64Dtype(),
+    COLA_PCT: pd.Float64Dtype(),
+    CFG: pd.StringDtype(),
+    SIMULATION_YEAR: pd.Int64Dtype()  # Make nullable
 }
