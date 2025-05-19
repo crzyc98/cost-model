@@ -30,8 +30,9 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
             age_std: 11.6
         promo_raise_pct: !!python/object/apply:types.SimpleNamespace
           state:
-            1_to_2: 0.05
-            2_to_3: 0.08
+            0_to_1: 0.1
+            1_to_2: 0.1
+            2_to_3: 0.1
             3_to_4: 0.1
     days_into_year_for_cola: 182
     days_into_year_for_promotion: 182

@@ -101,7 +101,16 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
             return '5+'
         
         # Convert initial_data to DataFrame first
-        snapshot_df = pd.DataFrame(initial_data)
+        snapshot_df = pd.DataFrame(initial_data, columns=SNAPSHOT_COL_NAMES)
+        
+        # Ensure all required columns are present and have the correct type
+        for col in SNAPSHOT_COL_NAMES:
+            if col not in snapshot_df.columns:
+                snapshot_df[col] = pd.NA
+        
+        # Convert to the correct dtypes
+        snapshot_df = snapshot_df.astype(SNAPSHOT_DTYPES)
+        
         snapshot_df[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE].apply(get_tenure_band)
         initial_data[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE_BAND].values
     
@@ -302,6 +311,8 @@ def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_pat
     """
     Combine all yearly snapshots into a single parquet file with a 'year' column.
     
+    This function also ensures that unnecessary columns are removed and that simulation_year is properly set.
+    
     Args:
         snapshots_dir: Directory containing yearly snapshot parquet files
         output_path: Path where to save the consolidated parquet file
@@ -309,47 +320,67 @@ def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_pat
     import pandas as pd
     from pathlib import Path
     import re
-    
+    from cost_model.utils.columns import EMP_ID
+
+    # Columns to remove from the final output
+    columns_to_remove = [
+        'term_rate',
+        'comp_raise_pct',
+        'new_hire_term_rate',
+        'cola_pct',
+        'cfg'
+    ]
+
     snapshots_dir = Path(snapshots_dir)
     output_path = Path(output_path)
     
     # Find all parquet files in the directory
-    parquet_files = list(snapshots_dir.glob('*.parquet'))
+    parquet_files = sorted(snapshots_dir.glob('*.parquet'))
     if not parquet_files:
         raise FileNotFoundError(f"No parquet files found in {snapshots_dir}")
-    
-    # Read and concatenate snapshots
+
     all_snapshots = []
     for file in parquet_files:
-        # Extract year from filename using regex (looking for 4 digits)
-        match = re.search(r'\d{4}', file.stem)
-        if match:
-            year = int(match.group(0))
-        else:
-            logger.warning(f"Could not extract year from filename {file.name}, defaulting to 0")
-            year = 0
-        
-        # Read snapshot
+        # 1) extract the year (defaults to 0 if none found)
+        match = re.search(r'(\d{4})', file.stem)
+        year = int(match.group(1)) if match else 0
+        logger.info(f"Reading snapshot {file.name} → setting simulation_year={year}")
+
+        # 2) load
         df = pd.read_parquet(file)
-        
-        # Add year column
+
+        # 3) drop the unwanted fields if they exist
+        to_drop = [c for c in columns_to_remove if c in df.columns]
+        if to_drop:
+            df.drop(columns=to_drop, inplace=True)
+            logger.debug(f"Dropped columns {to_drop} from {file.name}")
+
+        # 4) (re)assign simulation_year unconditionally
+        df['simulation_year'] = year
+
+        # 5) add a separate 'year' column for clarity
         df['year'] = year
-        
-        # Reset index to make employee_id a column
-        df = df.reset_index()
-        
+
+        # 6) bring EMP_ID back as a column (in case it's still the index)
+        if EMP_ID in df.index.names:
+            df = df.reset_index()
+
         all_snapshots.append(df)
-    
-    # Concatenate all snapshots
-    combined = pd.concat(all_snapshots, ignore_index=True)
-    
-    # Sort by year and employee_id
-    combined = combined.sort_values(['year', EMP_ID])
-    
-    # Save to parquet
-    combined.to_parquet(output_path, index=False)
-    
-    logger.info(f"Consolidated {len(all_snapshots)} yearly snapshots into {output_path}")
-    logger.info(f"Final combined snapshot has {len(combined)} records")
-    logger.info(f"Years covered: {sorted(combined['year'].unique())}")
-    logger.info(f"Columns: {combined.columns.tolist()}")
+
+    # concatenate
+    if all_snapshots:  # Only proceed if we have snapshots to concatenate
+        combined = pd.concat(all_snapshots, ignore_index=True)
+
+        # fill any remaining NaNs in simulation_year from the 'year' column
+        combined['simulation_year'] = combined['simulation_year'].fillna(combined['year']).astype(int)
+
+        # final sort & write
+        combined = combined.sort_values(['year', EMP_ID])
+        combined.to_parquet(output_path, index=False)
+
+        logger.info(f"Consolidated {len(parquet_files)} snapshots → {output_path}")
+        logger.info(f"Final combined snapshot has {len(combined)} records")
+        logger.info(f"Years covered: {sorted(combined['year'].unique())}")
+        logger.info(f"simulation_year values: {sorted(combined['simulation_year'].dropna().unique())}")
+    else:
+        logger.warning("No valid snapshots found to consolidate")

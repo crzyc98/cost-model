@@ -34,30 +34,35 @@ def promote(
     merit_pct = rules.get("merit_pct", 0.10)
     raise_time = raise_time or promo_time
 
-    # Build new titles
-    new_titles = promotees[EMP_ROLE].map(next_title_map).fillna("Senior " + promotees[EMP_ROLE].astype(str))
-
-    promotions = pd.DataFrame({
-        "event_time": promo_time,
-        EMP_ID: promotees[EMP_ID],
-        "event_type": EVT_PROMOTION,
-        "value_num": 0.0,  # No numeric value for promotion events
-        "value_json": "{}",  # Empty JSON for compatibility
-        "meta": "Promotion based on eligibility"
-    })
-    # Merit raises
-    raises = pd.DataFrame({
-        "event_time": raise_time,
-        EMP_ID: promotees[EMP_ID],
-        "event_type": EVT_RAISE,
-        "value_num": promotees[EMP_GROSS_COMP] * merit_pct,
-        "value_json": "{}",  # Empty JSON for compatibility
-        "meta": "Merit raise concurrent with promotion"
-    })
-    # Assign event_id if needed, slice to schema
-    for df in (promotions, raises):
-        if "event_id" not in df:
-            df["event_id"] = df.index.map(lambda i: f"evt_{i:06d}")
-    promotions = promotions[EVENT_COLS]
-    raises = raises[EVENT_COLS]
+    # Create promotion events
+    promotions = []
+    raises = []
+    
+    for _, row in promotees.iterrows():
+        # Create promotion event
+        promo_event = create_event(
+            event_time=promo_time,
+            employee_id=row[EMP_ID],
+            event_type=EVT_PROMOTION,
+            value_num=0.0,  # No numeric value for promotion events
+            value_json=json.dumps({"new_role": next_title_map.get(row[EMP_ROLE], f"Senior {row[EMP_ROLE]}")}),
+            meta="Promotion based on eligibility"
+        )
+        promotions.append(promo_event)
+        
+        # Create raise event
+        raise_amount = row[EMP_GROSS_COMP] * merit_pct
+        raise_event = create_event(
+            event_time=raise_time,
+            employee_id=row[EMP_ID],
+            event_type=EVT_RAISE,
+            value_num=raise_amount,
+            value_json=json.dumps({"merit_pct": merit_pct, "previous_comp": row[EMP_GROSS_COMP]}),
+            meta="Merit raise concurrent with promotion"
+        )
+        raises.append(raise_event)
+    
+    # Convert to DataFrames with proper schema
+    promotions_df = pd.DataFrame(promotions, columns=EVENT_COLS) if promotions else pd.DataFrame(columns=EVENT_COLS)
+    raises_df = pd.DataFrame(raises, columns=EVENT_COLS) if raises else pd.DataFrame(columns=EVENT_COLS)
     return [promotions, raises]

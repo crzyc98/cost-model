@@ -90,6 +90,17 @@ def save_detailed_results(
     logger.info(f"Saving detailed results for '{scenario_name}' to {output_path}...")
     output_path.mkdir(parents=True, exist_ok=True)
     
+    # Filter out terminated employees from prior years
+    if 'employee_termination_date' in final_snapshot.columns and 'simulation_year' in final_snapshot.columns:
+        # Keep active employees and those terminated in the current simulation year
+        current_year = final_snapshot['simulation_year'].max()
+        filtered_snapshot = final_snapshot[
+            (final_snapshot['employee_termination_date'].isna()) | 
+            (pd.to_datetime(final_snapshot['employee_termination_date']).dt.year == current_year)
+        ]
+        logger.info(f"Filtered out {len(final_snapshot) - len(filtered_snapshot)} employees terminated in prior years")
+        final_snapshot = filtered_snapshot
+    
     # Save final EOY snapshot
     final_snapshot_path = output_path / f"{scenario_name}_final_eoy_snapshot.parquet"
     final_snapshot.to_parquet(final_snapshot_path, index=False)

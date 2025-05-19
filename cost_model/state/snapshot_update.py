@@ -31,14 +31,10 @@ from cost_model.state.schema import (
     EMP_EXITED,
     EMP_TENURE,
     SIMULATION_YEAR,
-    TERM_RATE,
-    COMP_RAISE_PCT,
-    NEW_HIRE_TERM_RATE,
-    COLA_PCT,
-    CFG,
     SNAPSHOT_COLS,
     SNAPSHOT_DTYPES,
     EVENT_COLS,
+    TERM_RATE,
 )
 from cost_model.state.snapshot_utils import (
     get_first_event,
@@ -165,7 +161,67 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
     if not comp_upd.empty:
         last_comp = comp_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
         current.loc[last_comp[EMP_ID], EMP_GROSS_COMP] = last_comp.set_index(EMP_ID)["value_num"]
+    
+    # COLA updates - apply the COLA amount to the current compensation
+    cola_upd = new_events[new_events["event_type"] == EVT_COLA]
+    if not cola_upd.empty:
+        # Group by employee and get the last COLA for each
+        last_cola = cola_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
+        # Add the COLA amount to the current compensation
+        for emp_id, row in last_cola.set_index(EMP_ID).iterrows():
+            if emp_id in current.index:
+                current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
+    
+    # Raise updates - apply raise amount to current compensation
+    raise_upd = new_events[new_events["event_type"] == EVT_RAISE]
+    if not raise_upd.empty:
+        # Process each raise event
+        for _, row in raise_upd.iterrows():
+            emp_id = row[EMP_ID]
+            if emp_id in current.index:
+                # Try to get raise amount from value_num first
+                if pd.notna(row["value_num"]):
+                    # If value_num is available, use it directly
+                    current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
+                elif pd.notna(row["value_json"]):
+                    # Fall back to value_json if value_num is not available
+                    try:
+                        import json
+                        raise_data = json.loads(row["value_json"])
+                        if "new_comp" in raise_data:
+                            # If new_comp is provided, use it directly
+                            current.at[emp_id, EMP_GROSS_COMP] = float(raise_data["new_comp"])
+                        elif "amount" in raise_data:
+                            # Otherwise, add the raise amount to current comp
+                            current.at[emp_id, EMP_GROSS_COMP] += float(raise_data["amount"])
+                    except (json.JSONDecodeError, (KeyError, ValueError, TypeError)) as e:
+                        logger.warning(f"Error processing raise event for {emp_id}: {e}")
 
+    # Promotion updates - handle employee level changes
+    promo_upd = new_events[new_events["event_type"] == EVT_PROMOTION]
+    if not promo_upd.empty:
+        import json
+        for _, row in promo_upd.iterrows():
+            emp_id = row[EMP_ID]
+            if emp_id in current.index:
+                # Extract to_level from the value_json
+                if not pd.isna(row["value_json"]):
+                    try:
+                        promo_data = json.loads(row["value_json"])
+                        to_level = promo_data.get("to_level")
+                        if to_level is not None:
+                            # Update the employee level
+                            current.at[emp_id, EMP_LEVEL] = to_level
+                            # Update level source if the column exists
+                            if EMP_LEVEL_SOURCE in current.columns:
+                                # Handle categorical column
+                                if pd.api.types.is_categorical_dtype(current[EMP_LEVEL_SOURCE]):
+                                    if 'promotion' not in current[EMP_LEVEL_SOURCE].cat.categories:
+                                        current[EMP_LEVEL_SOURCE] = current[EMP_LEVEL_SOURCE].cat.add_categories(['promotion'])
+                                current.at[emp_id, EMP_LEVEL_SOURCE] = 'promotion'
+                    except (json.JSONDecodeError, AttributeError) as e:
+                        logger.warning(f"Error processing promotion event for {emp_id}: {e}")
+    
     # Termination updates
     term_upd = new_events[new_events["event_type"] == EVT_TERM]
     if not term_upd.empty:
@@ -188,6 +244,9 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
 
     cur = prev_snapshot.copy()
     new_events = new_events.sort_values(["event_time", "event_type"], ascending=[True, True])
+
+    # Set simulation_year for all employees in the snapshot
+    cur[SIMULATION_YEAR] = snapshot_year
 
     cur = _apply_new_hires(cur, new_events, snapshot_year)
     cur = _apply_existing_updates(cur, new_events, snapshot_year)

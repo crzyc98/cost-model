@@ -40,8 +40,12 @@ __all__: List[str] = ["build_full"]
 
 def _empty_snapshot() -> pd.DataFrame:
     """Return an empty, correctly typed snapshot DataFrame."""
-    df = pd.DataFrame(columns=SNAPSHOT_COLS)
-    df = df.astype(SNAPSHOT_DTYPES)
+    # Include simulation_year in the columns and dtypes
+    cols = SNAPSHOT_COLS + ['simulation_year'] if 'simulation_year' not in SNAPSHOT_COLS else SNAPSHOT_COLS
+    dtypes = {**SNAPSHOT_DTYPES, 'simulation_year': 'int64'}
+    
+    df = pd.DataFrame(columns=cols)
+    df = df.astype(dtypes)
     df.index.name = EMP_ID
     return df
 
@@ -128,6 +132,9 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:  # noq
         )
 
     snap[EMP_ID] = snap.index.astype(str)
+    
+    # Add simulation_year to the snapshot
+    snap['simulation_year'] = snapshot_year
 
     logger.info("Full snapshot built (shape=%s)", snap.shape)
     # Defensive: ensure unique index before returning

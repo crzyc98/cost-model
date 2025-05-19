@@ -303,10 +303,12 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
     
     # Ensure EMP_ID is a column for output/export
     snapshot_df[EMP_ID] = snapshot_df.index.astype(str)
+    # Add simulation_year
+    snapshot_df['simulation_year'] = snapshot_year
     # Select final columns in desired order and enforce final dtypes
-    # Add EMP_TENURE to output columns and dtypes
-    output_cols = SNAPSHOT_COLS + [EMP_TENURE]
-    output_dtypes = {**SNAPSHOT_DTYPES, EMP_TENURE: 'float64'}
+    # Add EMP_TENURE and simulation_year to output columns and dtypes
+    output_cols = SNAPSHOT_COLS + [EMP_TENURE, 'simulation_year']
+    output_dtypes = {**SNAPSHOT_DTYPES, EMP_TENURE: 'float64', 'simulation_year': 'int64'}
     snapshot_df = snapshot_df[output_cols]  # Select and order columns
     snapshot_df = snapshot_df.astype(output_dtypes)  # Enforce dtypes
     snapshot_df.index.name = EMP_ID  # Ensure index name is set
@@ -346,6 +348,8 @@ def update(
         f"Updating snapshot ({prev_snapshot.shape}) with {len(new_events)} new events..."
     )
     current_snapshot = prev_snapshot.copy()
+    # Ensure simulation_year is set
+    current_snapshot['simulation_year'] = snapshot_year
 
     # Ensure new events are sorted by time and type
     new_events = new_events.sort_values(by=["event_time", "event_type"], ascending=[True, True])

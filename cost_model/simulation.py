@@ -171,6 +171,8 @@ def run_simulation(
             rng=rng,
             deterministic_term=True
         )
+        # Ensure simulation_year is set in the snapshot
+        snapshot_df['simulation_year'] = year
         yearly_snapshots[year] = snapshot_df.copy()
         # Save snapshot and events for this year
         year_dir = scenario_output_dir / f"year={year}"

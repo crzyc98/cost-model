@@ -144,12 +144,14 @@ def finalize_snapshot(
     """
     Performs final updates and checks on the snapshot.
     
+    Ensures simulation_year is populated and removes unnecessary columns before returning.
+    
     Args:
         snapshot: Current snapshot
         year: Current simulation year
         
     Returns:
-        Finalized snapshot DataFrame
+        Finalized snapshot DataFrame with unnecessary columns removed and simulation_year set
     """
     logger = logging.getLogger(__name__)
     
@@ -166,6 +168,22 @@ def finalize_snapshot(
                 final_snapshot[col] = pd.NaT
             else:
                 logger.error(f"[YR={year}] Required column {col} missing from snapshot")
+    
+    # Ensure simulation_year is populated
+    if 'simulation_year' not in final_snapshot.columns:
+        final_snapshot['simulation_year'] = year
+        logger.debug(f"[YR={year}] Added simulation_year={year} to snapshot")
+    
+    # Remove unnecessary columns if they exist
+    columns_to_remove = [
+        'term_rate', 'comp_raise_pct', 'new_hire_term_rate', 
+        'cola_pct', 'cfg'
+    ]
+    
+    for col in columns_to_remove:
+        if col in final_snapshot.columns:
+            final_snapshot = final_snapshot.drop(columns=[col])
+            logger.debug(f"[YR={year}] Removed column: {col}")
     
     # Log final snapshot statistics
     active_count = final_snapshot[ACTIVE].sum() if ACTIVE in final_snapshot.columns else 0

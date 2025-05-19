@@ -111,16 +111,23 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
             logger.warning(f"Column '{EMP_DEFERRAL_RATE}' not found in snapshot")
             participation_rate = 0.0
         
+        # Calculate employees with compensation > 0
+        employees_with_comp = snapshot[snapshot[EMP_GROSS_COMP] > 0]
+        comp_headcount = len(employees_with_comp)
+        
+        # Calculate average compensation only for those with compensation > 0
+        avg_comp = float(employees_with_comp[EMP_GROSS_COMP].mean() if comp_headcount > 0 else 0.0)
+        
         core_summary = {
             'Projection Year': year,  # Changed from SIMULATION_YEAR to match reporting.py
             SIMULATION_YEAR: year,    # Keep both for backward compatibility
-            "headcount": len(snapshot),
+            "headcount": comp_headcount,  # Only count employees with compensation
             "active_headcount": active_headcount,
             "total_contributions": float(snapshot[EMP_CONTR].sum() if EMP_CONTR in snapshot.columns else 0.0),
             "employer_contributions": float((snapshot[EMPLOYER_CORE_CONTRIB].sum() if EMPLOYER_CORE_CONTRIB in snapshot.columns else 0.0) + 
                                         (snapshot[EMPLOYER_MATCH_CONTRIB].sum() if EMPLOYER_MATCH_CONTRIB in snapshot.columns else 0.0)),
             "total_employee_gross_compensation": float(snapshot[EMP_GROSS_COMP].sum()),
-            "avg_employee_gross_compensation": float(snapshot[EMP_GROSS_COMP].mean() if len(snapshot) > 0 else 0.0),
+            "avg_employee_gross_compensation": avg_comp,  # Average of only employees with compensation
             "avg_deferral_rate": float(snapshot[EMP_DEFERRAL_RATE].mean() if EMP_DEFERRAL_RATE in snapshot.columns else 0.0),
             "participation_rate": participation_rate
         }
@@ -134,12 +141,41 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         raise
     
     # Employment status metrics
+    # Calculate active employees at year end (current snapshot's active employees)
+    actives_at_year_end = active_headcount  # Already calculated above
+    
+    # Calculate hires and terminations
+    hires = len(year_events[year_events[EVENT_TYPE] == EVT_HIRE]) if not year_events.empty else 0
+    terminations = len(year_events[year_events[EVENT_TYPE] == EVT_TERM]) if not year_events.empty else 0
+    
+    # Calculate actives at year start (current actives + terminations - hires)
+    actives_at_year_start = max(0, actives_at_year_end + terminations - hires)
+    
+    # Calculate new hire metrics
+    new_hires = len(year_events[year_events[EVENT_TYPE] == EVT_HIRE]) if not year_events.empty else 0
+    
+    # Check for new hire terminations by looking at the reason in value_json
+    new_hire_terminations = 0
+    if not year_events.empty and 'value_json' in year_events.columns:
+        new_hire_terminations = year_events[
+            (year_events[EVENT_TYPE] == EVT_TERM) &
+            (year_events['value_json'].str.contains('new_hire_termination', na=False))
+        ].shape[0]
+    new_hire_actives = new_hires - new_hire_terminations
+    
+    # Calculate experienced terminations (total terminations - new hire terminations)
+    experienced_terminations = max(0, terminations - new_hire_terminations)
+    
     employment_summary = {
-        'Projection Year': year,  # Changed from SIMULATION_YEAR to match reporting.py
-        SIMULATION_YEAR: year,   # Keep both for backward compatibility
-        "hires": len(year_events[year_events[EVENT_TYPE] == EVT_HIRE]) if not year_events.empty else 0,
-        "terminations": len(year_events[year_events[EVENT_TYPE] == EVT_TERM]) if not year_events.empty else 0,
-        "new_hires": len(year_events[year_events[EVENT_TYPE] == EVT_CONTRIB]) if not year_events.empty else 0,
+        'Projection Year': year,
+        SIMULATION_YEAR: year,
+        "actives_at_year_start": actives_at_year_start,
+        "actives_at_year_end": actives_at_year_end,
+        "terminations": terminations,
+        "new_hires": new_hires,
+        "new_hire_terminations": new_hire_terminations,
+        "new_hire_actives": new_hire_actives,
+        "experienced_terminations": experienced_terminations,
         "by_level": snapshot[EMP_LEVEL].value_counts().to_dict() if not snapshot.empty and EMP_LEVEL in snapshot.columns else {},
         "by_tenure_band": snapshot[EMP_TENURE_BAND].value_counts().to_dict() if not snapshot.empty and EMP_TENURE_BAND in snapshot.columns else {}
     }

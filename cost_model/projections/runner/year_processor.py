@@ -2,12 +2,15 @@
 Handles the processing of each year in the projection.
 """
 
+import logging
 from typing import Dict, List, Optional, Tuple, Any
 
 import pandas as pd
 import numpy as np
 from numpy.random import Generator
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from cost_model.state.schema import (
     EVT_HIRE, EVT_TERM, EVT_COMP, EVT_COLA, EVT_PROMOTION, EVT_RAISE, EVT_CONTRIB
@@ -95,15 +98,22 @@ def process_year(
     # 4. Update cumulative log
     updated_cumulative_log = pd.concat([cumulative_log, year_events])
     
-    # 5. Compute summaries - pass the DataFrame directly, not the tuple
+    # 5. Get end-of-year snapshot rows and filter out prior year terminations
+    year_eoy_rows = new_snapshot.copy()
+    if 'employee_termination_date' in year_eoy_rows.columns:
+        # Keep active employees and those terminated in the current year
+        year_eoy_rows = year_eoy_rows[
+            (year_eoy_rows['employee_termination_date'].isna()) | 
+            (pd.to_datetime(year_eoy_rows['employee_termination_date']).dt.year == year)
+        ]
+        logger.info(f"Filtered out {len(new_snapshot) - len(year_eoy_rows)} employees terminated in prior years from {year} snapshot")
+    
+    # 6. Compute summaries using the filtered snapshot
     core_summary, employment_summary = make_yearly_summaries(
-        new_snapshot,  # This is still a DataFrame here
+        year_eoy_rows,  # Use the filtered snapshot here
         year_events,
         year
     )
-    
-    # 6. Get end-of-year snapshot rows
-    year_eoy_rows = new_snapshot.copy()
     
     # Convert to tuple at the very end if needed by the calling code
     return_tuple = (new_snapshot, None)

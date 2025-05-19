@@ -55,11 +55,7 @@ try:
         EMP_LEVEL_SOURCE,
         EMP_EXITED,
         SIMULATION_YEAR,
-        TERM_RATE,
-        COMP_RAISE_PCT,
-        NEW_HIRE_TERM_RATE,
-        COLA_PCT,
-        CFG,
+        TERM_RATE
     )
 except ImportError:  # pragma: no cover  – stand-alone import safety
     EMP_ID = "employee_id"
@@ -76,10 +72,6 @@ except ImportError:  # pragma: no cover  – stand-alone import safety
     EMP_EXITED = "exited"
     SIMULATION_YEAR = "simulation_year"
     TERM_RATE = "term_rate"
-    COMP_RAISE_PCT = "comp_raise_pct"
-    NEW_HIRE_TERM_RATE = "new_hire_termination_rate"
-    COLA_PCT = "cola_pct"
-    CFG = "cfg"
 
 # -----------------------------------------------------------------------------
 # Snapshot schema definition
@@ -97,12 +89,7 @@ SNAPSHOT_COLS = [
     EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_EXITED,
-    SIMULATION_YEAR,
-    TERM_RATE,
-    COMP_RAISE_PCT,
-    NEW_HIRE_TERM_RATE,
-    COLA_PCT,
-    CFG
+    SIMULATION_YEAR
 ]
 
 SNAPSHOT_DTYPES = {
@@ -118,11 +105,7 @@ SNAPSHOT_DTYPES = {
     EMP_LEVEL: pd.Int64Dtype(),
     EMP_LEVEL_SOURCE: pd.CategoricalDtype(categories=['hire', 'promotion', 'demotion', 'manual'], ordered=True),
     EMP_EXITED: pd.BooleanDtype(),
-    TERM_RATE: pd.Float64Dtype(),
-    COMP_RAISE_PCT: pd.Float64Dtype(),
-    NEW_HIRE_TERM_RATE: pd.Float64Dtype(),
-    COLA_PCT: pd.Float64Dtype(),
-    CFG: pd.StringDtype()
+    SIMULATION_YEAR: pd.Int64Dtype()
 }
 
 __all__ = [
@@ -149,7 +132,6 @@ __all__ = [
     "EMP_LEVEL_SOURCE",
     "EMP_EXITED",
     "SIMULATION_YEAR",
-    "TERM_RATE",
     "COMP_RAISE_PCT",
     "NEW_HIRE_TERM_RATE",
     "COLA_PCT",
@@ -157,4 +139,5 @@ __all__ = [
     # snapshot
     "SNAPSHOT_COLS",
     "SNAPSHOT_DTYPES",
+    "TERM_RATE",
 ]

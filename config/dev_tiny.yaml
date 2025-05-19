@@ -29,12 +29,18 @@ global_parameters:
   
   # Job level configuration moved to root level
 
+  # Workforce dynamics
+  attrition:
+    new_hire_termination_rate: 0.25  # 25% of new hires terminate in their first year
+    experienced_attrition_rate: 0.10  # 10% annual attrition for experienced employees
+
   # Global compensation settings
   compensation:
     COLA_rate: 0.02  # Cost of living adjustment rate
     promo_raise_pct:
-      "1_to_2": 0.05  # 5% raise for promotion from level 1 to 2
-      "2_to_3": 0.08  # 8% raise for promotion from level 2 to 3
+      "0_to_1": 0.10  # 10% raise for promotion from level 0 to 1
+      "1_to_2": 0.10  # 10% raise for promotion from level 1 to 2
+      "2_to_3": 0.10  # 10% raise for promotion from level 2 to 3
       "3_to_4": 0.10  # 10% raise for promotion from level 3 to 4
     
     # Merit distribution by job level ID (1-4)

@@ -46,6 +46,8 @@ def write_snapshots(
 ) -> None:
     """
     Writes yearly snapshot DataFrames to Parquet files.
+    
+    Ensures simulation_year is populated and removes unnecessary columns before saving.
 
     Args:
         yearly_snapshots: Dictionary mapping simulation year (int) to DataFrame.
@@ -62,25 +64,54 @@ def write_snapshots(
     logger.info(f"Writing {len(yearly_snapshots)} yearly snapshots to {output_dir}...")
     output_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
 
+    # Columns to remove if they exist
+    columns_to_remove = [
+        'term_rate', 'comp_raise_pct', 'new_hire_term_rate', 
+        'cola_pct', 'cfg'
+    ]
+
     for year, df in yearly_snapshots.items():
-        # Define output path
-        # Use simulation year from the snapshot data if available, otherwise use dict key
-        sim_year = (
-            df["simulation_year"].iloc[0] if "simulation_year" in df.columns else year
-        )
-        out_path = output_dir / f"{file_prefix}_year{sim_year}.parquet"
+        # Make a copy to avoid modifying the original
+        df = df.copy()
+        
+        # Drop any old simulation_year (in case it was partial or blank),
+        # then force-set it on every row
+        if 'simulation_year' in df.columns:
+            df.drop(columns=['simulation_year'], inplace=True)
+            logger.debug("Dropped existing simulation_year column")
+        df['simulation_year'] = year
+        logger.debug(f"Assigned simulation_year={year} on all rows")
+        logger.debug(f"simulation_year values now: {df['simulation_year'].unique()}")
+        
+        # Sanity check the year value
+        if not isinstance(year, int):
+            logger.warning(f"Unexpected year type: {type(year).__name__} = {year}")
+            try:
+                year = int(year)
+                logger.info(f"Converted year to int: {year}")
+            except (ValueError, TypeError):
+                raise DataWriteError(f"Invalid year value: {year} (type: {type(year).__name__})")
+
+        # Remove unnecessary columns if they exist
+        for col in columns_to_remove:
+            if col in df.columns:
+                df = df.drop(columns=[col])
+                logger.debug(f"Removed column: {col}")
+        
+        # Define output path using the loop's year (always correct)
+        out_path = output_dir / f"{file_prefix}_year{year}.parquet"
+        
         logger.debug(
-            f"Writing snapshot for year {sim_year} to {out_path} ({len(df)} records)"
+            f"Writing snapshot for year {year} to {out_path} ({len(df)} records)"
         )
+        
         try:
-            # Optional: Select/reorder columns before saving
-            # df_to_save = df[COLUMNS_TO_SAVE]
             df.to_parquet(out_path, index=False)
             logger.info(f"Wrote snapshot: {out_path}")
-        except Exception:
+        except Exception as e:
             logger.exception(f"Failed to write snapshot file {out_path}")
-            # Decide if you want to raise error or continue writing others
-            # raise DataWriteError(f"Failed to write snapshot {out_path}") from e
+            # Continue with next file even if one fails
+            continue
 
 
 def write_summary_metrics(

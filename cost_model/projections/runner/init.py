@@ -74,8 +74,9 @@ def initialize(config_ns: Any,
             if expected_col != actual_col:
                 logger.warning(f"Column name mismatch: expected '{expected_col}' but found '{actual_col}'")
     
-    # Check for missing columns
-    missing_cols = set(SNAPSHOT_DTYPES.keys()) - set(initial_snapshot.columns)
+    # Check for missing columns, but exclude configuration parameters that shouldn't be in the snapshot
+    snapshot_cols = set(col for col in SNAPSHOT_DTYPES.keys() if col != 'term_rate')
+    missing_cols = snapshot_cols - set(initial_snapshot.columns)
     if missing_cols:
         raise ValueError(f"Missing required columns in snapshot: {missing_cols}")
     
