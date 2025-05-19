@@ -156,12 +156,25 @@ def run(
         logger.info(f"[TERM] Year {year}: No employees selected for termination (stochastic draw).")
         return [pd.DataFrame(columns=EVENT_COLS)]
         
+    # Ensure we don't have duplicate employee IDs in the termination list
+    if len(losers) > 0:
+        # Convert to set to remove duplicates, then back to list
+        unique_losers = list(set(losers))
+        if len(unique_losers) < len(losers):
+            logger.warning(f"Removed {len(losers) - len(unique_losers)} duplicate employee IDs from termination list")
+        losers = unique_losers
+        
     # Assign random dates and build events
     dates = random_dates_in_year(year, len(losers), rng)
     term_events = []
     comp_events = []
     
     for emp, dt in zip(losers, dates):
+        # Skip if we've already processed this employee
+        if any(e['employee_id'] == emp for e in term_events):
+            logger.warning(f"Skipping duplicate termination for employee {emp}")
+            continue
+            
         # Termination event
         hire_date = snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].iloc[0] if EMP_HIRE_DATE in snapshot.columns and not snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].isna().iloc[0] else None
         tenure_days = int((dt - hire_date).days) if hire_date is not None else None

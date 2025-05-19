@@ -15,7 +15,8 @@ from cost_model.utils.columns import (
 
 def make_yearly_summaries(snapshot: pd.DataFrame, 
                          year_events: pd.DataFrame, 
-                         year: int) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+                         year: int,
+                         start_headcount: int = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Compute yearly summaries for core metrics and employment status.
     
@@ -141,27 +142,42 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         raise
     
     # Employment status metrics
-    # Calculate active employees at year end (current snapshot's active employees)
-    actives_at_year_end = active_headcount  # Already calculated above
+    # Active headcount at year end - count active employees in the filtered snapshot
+    # snapshot here is the filtered year_eoy_rows (active + current-year terms)
+    actives_at_year_end = int(snapshot[EMP_ACTIVE].sum())
     
-    # Calculate hires and terminations
-    hires = len(year_events[year_events[EVENT_TYPE] == EVT_HIRE]) if not year_events.empty else 0
-    terminations = len(year_events[year_events[EVENT_TYPE] == EVT_TERM]) if not year_events.empty else 0
+    # Use the provided start headcount if available, otherwise calculate it
+    if start_headcount is not None:
+        actives_at_year_start = start_headcount
+    else:
+        # Fall back to the original calculation method if start_headcount not provided
+        hires_count = len(year_events[year_events[EVENT_TYPE] == EVT_HIRE]) if not year_events.empty else 0
+        terms_count = len(year_events[year_events[EVENT_TYPE] == EVT_TERM]) if not year_events.empty else 0
+        actives_at_year_start = max(0, actives_at_year_end + terms_count - hires_count)
+        logger.warning(f"start_headcount not provided, calculated as {actives_at_year_start} based on end + terms - hires")
     
-    # Calculate actives at year start (current actives + terminations - hires)
-    actives_at_year_start = max(0, actives_at_year_end + terminations - hires)
+    # Gross hires = every EVT_HIRE event
+    hires = int((year_events[EVENT_TYPE] == EVT_HIRE).sum() if not year_events.empty else 0)
     
-    # Calculate new hire metrics
-    new_hires = len(year_events[year_events[EVENT_TYPE] == EVT_HIRE]) if not year_events.empty else 0
+    # All terminations
+    terminations = int((year_events[EVENT_TYPE] == EVT_TERM).sum() if not year_events.empty else 0)
     
-    # Check for new hire terminations by looking at the reason in value_json
-    new_hire_terminations = 0
-    if not year_events.empty and 'value_json' in year_events.columns:
-        new_hire_terminations = year_events[
-            (year_events[EVENT_TYPE] == EVT_TERM) &
-            (year_events['value_json'].str.contains('new_hire_termination', na=False))
-        ].shape[0]
-    new_hire_actives = new_hires - new_hire_terminations
+    # New hire terminations: check meta field for new-hire mentions
+    mask_new_hire_term = None
+    if not year_events.empty:
+        if 'meta' in year_events.columns:
+            # Look for "new-hire" or "new hire" in the meta field
+            mask_new_hire_term = ((year_events[EVENT_TYPE] == EVT_TERM) & 
+                                  year_events['meta'].str.contains('new[- ]hire', case=False, na=False))
+        elif 'value_json' in year_events.columns:
+            # Fall back to the original method if meta isn't available
+            mask_new_hire_term = ((year_events[EVENT_TYPE] == EVT_TERM) &
+                                 year_events['value_json'].str.contains('new_hire_termination', na=False))
+        
+    new_hire_terminations = int(mask_new_hire_term.sum()) if mask_new_hire_term is not None else 0
+    
+    # How many of our hires survived
+    new_hire_actives = hires - new_hire_terminations
     
     # Calculate experienced terminations (total terminations - new hire terminations)
     experienced_terminations = max(0, terminations - new_hire_terminations)
@@ -172,7 +188,7 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         "actives_at_year_start": actives_at_year_start,
         "actives_at_year_end": actives_at_year_end,
         "terminations": terminations,
-        "new_hires": new_hires,
+        "new_hires": hires,
         "new_hire_terminations": new_hire_terminations,
         "new_hire_actives": new_hire_actives,
         "experienced_terminations": experienced_terminations,

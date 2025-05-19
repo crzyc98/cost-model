@@ -22,21 +22,29 @@ def parse_config(config: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]
     Returns:
         Tuple of (global_params, plan_rules)
     """
-    # Initialize global parameters
+    # Extract global parameters with defaults
+    global_section = config.get("global_parameters", {})
+    
+    # Initialize global parameters with values from global_parameters section
     global_params = SimpleNamespace(
-        seed=config.get("seed", 42),
-        start_year=config.get("start_year", datetime.now().year),
-        num_years=config.get("num_years", 5),
-        new_hire_rate=config.get("new_hire_rate", 0.17),
-        term_rate=config.get("term_rate", 0.15),
-        comp_raise_pct=config.get("comp_raise_pct", 0.03),
-        cola_pct=config.get("cola_pct", 0.02),
-        new_hire_termination_rate=config.get("new_hire_termination_rate", 0.25),
+        seed=global_section.get("random_seed", 42),
+        start_year=global_section.get("start_year", datetime.now().year),
+        num_years=global_section.get("projection_years", 5),
+        target_growth=global_section.get("target_growth", 0.0),
+        annual_growth_rate=global_section.get("target_growth", 0.0),  # Alias for backward compatibility
+        new_hire_rate=global_section.get("attrition", {}).get("new_hire_termination_rate", 0.17),
+        term_rate=global_section.get("attrition", {}).get("experienced_attrition_rate", 0.15),
+        comp_raise_pct=global_section.get("annual_compensation_increase_rate", 0.03),
+        cola_pct=global_section.get("compensation", {}).get("COLA_rate", 0.02),
+        new_hire_termination_rate=global_section.get("attrition", {}).get("new_hire_termination_rate", 0.25),
         compensation=SimpleNamespace(
-            cola_pct=config.get("cola_pct", 0.02),
-            comp_raise_pct=config.get("comp_raise_pct", 0.03)
+            cola_pct=global_section.get("compensation", {}).get("COLA_rate", 0.02),
+            comp_raise_pct=global_section.get("annual_compensation_increase_rate", 0.03)
         )
     )
+    
+    # Log the loaded parameters for debugging
+    logger.debug(f"Loaded global parameters: {vars(global_params)}")
     
     # Extract plan rules configuration
     plan_rules = SimpleNamespace(

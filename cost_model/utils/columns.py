@@ -25,7 +25,7 @@ EMPLOYER_MATCH_CONTRIB = "employer_match_contribution"  # Alias for consistency
 EMP_ID = "employee_id"
 EMP_LEVEL = "employee_level"    
 EMP_ACTIVE = "active"
-EMP_TENURE_BAND = "tenure_band"
+EMP_TENURE_BAND = "employee_tenure_band"
 EMP_LEVEL_SOURCE = "job_level_source"
 EMP_EXITED = "exited"
 

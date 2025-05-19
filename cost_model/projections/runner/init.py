@@ -16,7 +16,7 @@ from cost_model.utils.columns import (
     EVT_TERM,
     EVT_CONTRIB,
 )
-from cost_model.state.schema import SNAPSHOT_DTYPES
+from cost_model.state.schema import SNAPSHOT_DTYPES, EMP_TENURE_BAND
 from cost_model.config.loaders import load_yaml_config
 from cost_model.config.params import parse_config
 
@@ -74,12 +74,22 @@ def initialize(config_ns: Any,
             if expected_col != actual_col:
                 logger.warning(f"Column name mismatch: expected '{expected_col}' but found '{actual_col}'")
     
-    # Check for missing columns, but exclude configuration parameters that shouldn't be in the snapshot
-    snapshot_cols = set(col for col in SNAPSHOT_DTYPES.keys() if col != 'term_rate')
+    # Handle legacy column names for backward compatibility
+    column_mappings = {
+        'tenure_band': EMP_TENURE_BAND
+    }
+    
+    for old_col, new_col in column_mappings.items():
+        if old_col in initial_snapshot.columns and new_col not in initial_snapshot.columns:
+            logger.info(f"Renaming column '{old_col}' to '{new_col}' for compatibility")
+            initial_snapshot[new_col] = initial_snapshot[old_col]
+    
+    # Validate all required snapshot columns
+    snapshot_cols = set(SNAPSHOT_DTYPES.keys())
     missing_cols = snapshot_cols - set(initial_snapshot.columns)
     if missing_cols:
         raise ValueError(f"Missing required columns in snapshot: {missing_cols}")
-    
+
     # Ensure snapshot has unique EMP_IDs
     if not initial_snapshot[EMP_ID].is_unique:
         raise ValueError("initial_snapshot must have unique EMP_IDs")

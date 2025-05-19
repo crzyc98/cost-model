@@ -287,7 +287,7 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
         hire_dates = pd.to_datetime(snapshot_df[EMP_HIRE_DATE], errors="coerce")
         tenure_years = (as_of - hire_dates).dt.days / 365.25
         snapshot_df[EMP_TENURE] = tenure_years.round(3)
-        snapshot_df['tenure_band'] = _calculate_tenure_band(snapshot_df[EMP_TENURE])
+        snapshot_df[EMP_TENURE_BAND] = _calculate_tenure_band(snapshot_df[EMP_TENURE])
         for eid, hd, ty in zip(snapshot_df.index, hire_dates, tenure_years):
             logger.debug(f"[DEBUG tenure] {eid} hired {hd.date()}   as_of {as_of.date()}   years={ty:.2f}")
         def band(tenure):
@@ -296,10 +296,10 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
             elif tenure < 3: return '1-3'
             elif tenure < 5: return '3-5'
             else: return '5+'
-        snapshot_df['tenure_band'] = snapshot_df[EMP_TENURE].map(band).astype(pd.StringDtype())
+        snapshot_df[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE].map(band).astype(pd.StringDtype())
     else:
         snapshot_df[EMP_TENURE] = pd.NA
-        snapshot_df['tenure_band'] = pd.NA
+        snapshot_df[EMP_TENURE_BAND] = pd.NA
     
     # Ensure EMP_ID is a column for output/export
     snapshot_df[EMP_ID] = snapshot_df.index.astype(str)
@@ -394,10 +394,10 @@ def update(
             hire_dates = pd.to_datetime(new_hire_base[EMP_HIRE_DATE], errors="coerce")
             tenure_years = (as_of - hire_dates).dt.days / 365.25
             new_hire_base[EMP_TENURE] = tenure_years.round(3)
-            new_hire_base['tenure_band'] = new_hire_base[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+            new_hire_base[EMP_TENURE_BAND] = new_hire_base[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
         else:
             new_hire_base[EMP_TENURE] = pd.NA
-            new_hire_base['tenure_band'] = pd.NA
+            new_hire_base[EMP_TENURE_BAND] = pd.NA
         new_hire_base[EMP_ID] = new_hire_base.index.astype(str)
         new_hire_rows_df = new_hire_base[SNAPSHOT_COLS].astype(SNAPSHOT_DTYPES)
         dfs = [df for df in [current_snapshot, new_hire_rows_df] if not df.empty]
@@ -412,7 +412,7 @@ def update(
         hire_dates = pd.to_datetime(current_snapshot[EMP_HIRE_DATE], errors='coerce')
         tenure_years = (as_of - hire_dates).dt.days / 365.25
         current_snapshot[EMP_TENURE] = tenure_years.round(3)
-        current_snapshot['tenure_band'] = current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+        current_snapshot[EMP_TENURE_BAND] = current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
 
     # --- 2. Process Updates for Existing Employees ---
     existing_ids_in_batch = new_events[new_events[EMP_ID].isin(prev_snapshot.index)][EMP_ID].unique()
@@ -448,7 +448,7 @@ def update(
         hire_dates = pd.to_datetime(current_snapshot[EMP_HIRE_DATE], errors='coerce')
         tenure_years = (as_of - hire_dates).dt.days / 365.25
         current_snapshot[EMP_TENURE] = tenure_years.round(3)
-        current_snapshot['tenure_band'] = current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+        current_snapshot[EMP_TENURE_BAND] = current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
 
     # Ensure EMP_ID is a column for output/export
     current_snapshot[EMP_ID] = current_snapshot.index.astype(str)
@@ -590,9 +590,9 @@ def update(
                     elif tenure < 3: return '1-3'
                     elif tenure < 5: return '3-5'
                     else: return '5+'
-                new_hire_base['tenure_band'] = new_hire_base[EMP_TENURE].map(band).astype(pd.StringDtype())
+                new_hire_base[EMP_TENURE_BAND] = new_hire_base[EMP_TENURE].map(band).astype(pd.StringDtype())
             else:
-                new_hire_base['tenure_band'] = pd.NA
+                new_hire_base[EMP_TENURE_BAND] = pd.NA
             new_hire_base[EMP_TENURE] = pd.NA
             # Ensure EMP_ID is a column for output/export
             new_hire_base[EMP_ID] = new_hire_base.index.astype(str)
@@ -623,7 +623,7 @@ def update(
                 elif tenure < 3:       return '1-3'
                 elif tenure < 5:       return '3-5'
                 else:                  return '5+'
-            current_snapshot['tenure_band'] = current_snapshot[EMP_TENURE].map(band).astype(pd.StringDtype())
+            current_snapshot[EMP_TENURE_BAND] = current_snapshot[EMP_TENURE].map(band).astype(pd.StringDtype())
 
         # --- 2. Process Updates for Existing Employees ---
         # Find IDs in new_events that existed in the previous snapshot
@@ -703,7 +703,7 @@ def update(
                 return '5-10'
             else:
                 return '10+'
-        current_snapshot['tenure_band'] = tenure_years.map(_band).astype(pd.StringDtype())
+        current_snapshot[EMP_TENURE_BAND] = tenure_years.map(_band).astype(pd.StringDtype())
 
         # Sanity check: ensure no duplicate indices after update
         dupes = current_snapshot.index.duplicated().sum()

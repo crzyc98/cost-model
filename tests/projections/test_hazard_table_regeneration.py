@@ -5,6 +5,7 @@ import logging
 from types import SimpleNamespace
 from cost_model.projections.hazard import build_hazard_table
 from cost_model.utils.columns import EMP_ROLE
+from cost_model.state.schema import EMP_TENURE_BAND
 
 def test_hazard_table_regeneration():
     """Test that hazard table regeneration includes all role/tenure combinations."""
@@ -12,7 +13,7 @@ def test_hazard_table_regeneration():
     snapshot = pd.DataFrame({
         'employee_id': ['EMP1', 'EMP2', 'EMP3'],
         EMP_ROLE: ['Engineer', 'Manager', 'Analyst'],
-        'tenure_band': ['0-1', '1-3', '3-5'],
+        EMP_TENURE_BAND: ['0-1', '1-3', '3-5'],
         'active': [True, True, True]
     })
     
@@ -28,8 +29,8 @@ def test_hazard_table_regeneration():
     hazard_table = build_hazard_table(years, snapshot, global_params, plan_rules_config)
     
     # Verify all role/tenure combinations from snapshot are in hazard table
-    snapshot_combos = set(tuple(x) for x in snapshot[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
-    hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
+    snapshot_combos = set(tuple(x) for x in snapshot[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
+    hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
     
     # All snapshot combinations should be in hazard table
     assert snapshot_combos.issubset(hazard_combos), f"Missing combinations: {snapshot_combos - hazard_combos}"
@@ -43,7 +44,7 @@ def test_hazard_table_warning_on_missing_combo(caplog):
     snapshot = pd.DataFrame({
         'employee_id': ['EMP1', 'EMP2'],
         EMP_ROLE: ['Engineer', 'Manager'],
-        'tenure_band': ['0-1', '1-3'],
+        EMP_TENURE_BAND: ['0-1', '1-3'],
         'active': [True, True]
     })
     
@@ -63,7 +64,7 @@ def test_hazard_table_warning_on_missing_combo(caplog):
         result = orig_build_hazard_table(*args, **kwargs)
         if not result.empty:
             # Remove the Manager/1-3 combination to simulate a missing entry
-            result = result[~((result[EMP_ROLE] == 'Manager') & (result['tenure_band'] == '1-3'))]
+            result = result[~((result[EMP_ROLE] == 'Manager') & (result[EMP_TENURE_BAND] == '1-3'))]
         return result
     
     # Apply the patch
@@ -78,8 +79,8 @@ def test_hazard_table_warning_on_missing_combo(caplog):
             # Create a minimal runner function that just checks for missing combinations
             def check_missing_combos(snapshot, year):
                 hazard_table = mock_build_hazard_table([year], snapshot, global_params, plan_rules_config)
-                snapshot_combos = set(tuple(x) for x in snapshot[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
-                hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, 'tenure_band']].drop_duplicates().values)
+                snapshot_combos = set(tuple(x) for x in snapshot[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
+                hazard_combos = set(tuple(x) for x in hazard_table[[EMP_ROLE, EMP_TENURE_BAND]].drop_duplicates().values)
                 missing_combos = snapshot_combos - hazard_combos
                 if missing_combos:
                     logging.warning(f"[HAZARD TABLE] Year {year}: Missing hazard table entries for combinations: {missing_combos}")

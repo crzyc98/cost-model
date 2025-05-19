@@ -208,6 +208,31 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
     # Ensure all columns and proper dtypes
     current = ensure_columns_and_types(current)
     
+    # After all updates are applied, ensure active flag is in sync with term dates
+    if EMP_TERM_DATE in current.columns:
+        # Set active=False for anyone with a termination date in the past
+        current[EMP_ACTIVE] = current[EMP_TERM_DATE].isna()
+        
+    # Final validation
+    if EMP_ACTIVE in current.columns and EMP_TERM_DATE in current.columns:
+        # Check for inconsistencies
+        active_with_term = current[current[EMP_ACTIVE] & ~current[EMP_TERM_DATE].isna()]
+        if not active_with_term.empty:
+            logger.warning(
+                f"Found {len(active_with_term)} employees with active=True but non-null termination date. "
+                "Fixing inconsistency by setting active=False for these employees."
+            )
+            current.loc[active_with_term.index, EMP_ACTIVE] = False
+            
+        # Also check for terminated employees without a termination date
+        term_without_date = current[~current[EMP_ACTIVE] & current[EMP_TERM_DATE].isna()]
+        if not term_without_date.empty:
+            logger.warning(
+                f"Found {len(term_without_date)} employees with active=False but no termination date. "
+                "Fixing inconsistency by setting active=True for these employees."
+            )
+            current.loc[term_without_date.index, EMP_ACTIVE] = True
+    
     # Set index name
     current.index.name = EMP_ID
     

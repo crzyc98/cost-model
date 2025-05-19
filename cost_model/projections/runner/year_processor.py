@@ -1,3 +1,4 @@
+# /cost_model/projections/runner/year_processor.py
 """
 Handles the processing of each year in the projection.
 """
@@ -109,10 +110,16 @@ def process_year(
         logger.info(f"Filtered out {len(new_snapshot) - len(year_eoy_rows)} employees terminated in prior years from {year} snapshot")
     
     # 6. Compute summaries using the filtered snapshot
+    # Calculate start_headcount as the number of active employees at the start of the year
+    from cost_model.utils.columns import EMP_ACTIVE
+    # current_snapshot *includes* prior-year terminations, so filter to only the still-active folks:
+    start_headcount = int(current_snapshot[EMP_ACTIVE].sum())
+    
     core_summary, employment_summary = make_yearly_summaries(
-        year_eoy_rows,  # Use the filtered snapshot here
+        year_eoy_rows,  # Use the filtered snapshot here (already filtered to active + current-year terms)
         year_events,
-        year
+        year,
+        start_headcount=start_headcount  # Pass the actual start headcount of active employees
     )
     
     # Convert to tuple at the very end if needed by the calling code

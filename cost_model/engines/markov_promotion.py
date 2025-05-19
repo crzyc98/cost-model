@@ -110,8 +110,14 @@ def apply_markov_promotions(
             "3_to_4": 0.10,  # 10% raise for 3→4
             "default": 0.10  # Default 10% for any other promotions
         }
-    # Apply Markov promotions
-    out = apply_promotion_markov(snapshot, rng=rng)
+    
+    # Get the simulation year from the promo_time or the snapshot
+    simulation_year = promo_time.year if hasattr(promo_time, 'year') else None
+    if simulation_year is None and 'simulation_year' in snapshot.columns:
+        simulation_year = snapshot['simulation_year'].iloc[0]
+    
+    # Apply Markov promotions with termination date handling
+    out = apply_promotion_markov(snapshot, rng=rng, simulation_year=simulation_year)
     
     # Create promotion events for level changes
     promoted_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]

@@ -23,7 +23,7 @@ from cost_model.config.loaders import load_config_to_namespace
 from cost_model.engines.run_one_year import run_one_year
 from cost_model.state.event_log import EVENT_COLS
 from cost_model.projections.hazard import build_hazard_table
-from cost_model.utils.columns import EMP_ROLE
+from cost_model.utils.columns import EMP_ROLE, EMP_TENURE_BAND  
 
 # Add skopt for Bayesian optimization
 from skopt import gp_minimize
@@ -93,8 +93,8 @@ def run_simulation_and_penalty(param_values, base_cfg, pid=0):
         set_nested_attr(ns.global_parameters, path, val)
     event_log = pd.DataFrame(columns=EVENT_COLS)
     snapshot = pd.read_parquet(STARTING_SNAPSHOT_PATH)
-    if 'tenure_band' not in snapshot.columns:
-        snapshot['tenure_band'] = 'all'
+    if EMP_TENURE_BAND not in snapshot.columns:
+        snapshot[EMP_TENURE_BAND] = 'all'
     if 'employment_status' not in snapshot.columns:
         snapshot['employment_status'] = 'Active'
     plan_rules_ns = dict_to_namespace(base_cfg["plan_rules"])

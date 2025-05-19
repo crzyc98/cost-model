@@ -141,7 +141,7 @@ def run_simulation(
     # Patch in role and tenure_band if present using standardized names
     col_map = {
         EMP_ROLE: 'role',
-        EMP_TENURE_BAND: 'tenure_band'
+        EMP_TENURE_BAND: EMP_TENURE_BAND
     }
     for std_col, census_col in col_map.items():
         if census_col in census_df.columns:
