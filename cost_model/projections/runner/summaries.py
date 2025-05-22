@@ -1,3 +1,4 @@
+# /cost_model/projections/runner/summaries.py
 """
 Handles computation of various metrics and summaries for the projection.
 """
@@ -89,6 +90,13 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         if col not in snapshot.columns:
             logger.warning(f"Adding missing column '{col}' with default value: {default}")
             snapshot[col] = default
+    
+    # Only look at employees who are actually active today
+    if EMP_ACTIVE in snapshot.columns:
+        active_snapshot = snapshot[snapshot[EMP_ACTIVE].astype(bool)].copy()
+    else:
+        active_snapshot = snapshot.copy()
+    
     # Core metrics with robust DataFrame handling
     try:
         # Debug log the snapshot structure
@@ -96,17 +104,12 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         logger.debug(f"Snapshot dtypes: {snapshot.dtypes}")
         logger.debug(f"Snapshot head (2):\n{snapshot.head(2).to_string()}")
         
-        # Safely calculate active headcount
-        if EMP_ACTIVE in snapshot.columns:
-            active_mask = snapshot[EMP_ACTIVE].astype(bool)
-            active_headcount = int(active_mask.sum())
-        else:
-            logger.warning(f"Column '{EMP_ACTIVE}' not found in snapshot")
-            active_headcount = 0
+        # Active headcount is now simply the number of rows in active_snapshot
+        active_headcount = len(active_snapshot)
         
         # Calculate participation rate safely
-        if EMP_DEFERRAL_RATE in snapshot.columns:
-            participation_rate = (len(snapshot[snapshot[EMP_DEFERRAL_RATE] > 0]) / 
+        if EMP_DEFERRAL_RATE in active_snapshot.columns:
+            participation_rate = (len(active_snapshot[active_snapshot[EMP_DEFERRAL_RATE] > 0]) / 
                                max(1, active_headcount)) * 100  # Avoid division by zero
         else:
             logger.warning(f"Column '{EMP_DEFERRAL_RATE}' not found in snapshot")
@@ -142,9 +145,8 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         raise
     
     # Employment status metrics
-    # Active headcount at year end - count active employees in the filtered snapshot
-    # snapshot here is the filtered year_eoy_rows (active + current-year terms)
-    actives_at_year_end = int(snapshot[EMP_ACTIVE].sum())
+    # Active headcount at year end - only count rows where EMP_ACTIVE is True
+    actives_at_year_end = int(snapshot[snapshot[EMP_ACTIVE]].shape[0])
     
     # Use the provided start headcount if available, otherwise calculate it
     if start_headcount is not None:

@@ -5,7 +5,7 @@ import pytest
 from types import SimpleNamespace # For creating simple config objects in tests
 
 # Import the function to test
-from cost_model.engines.run_one_year_engine import run_one_year
+from cost_model.engines.run_one_year import run_one_year
 
 # Import config models used in the test
 # These should match the actual Pydantic models if your engines expect them

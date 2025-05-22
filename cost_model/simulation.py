@@ -53,7 +53,7 @@ except ImportError as e:
 # Import run_one_year for simulation loop
 def _import_run_one_year():
     try:
-        from cost_model.engines.run_one_year_engine import run_one_year
+        from cost_model.engines.run_one_year import run_one_year
         return run_one_year
     except ImportError:
         raise ImportError("run_one_year could not be imported from cost_model.engines.run_one_year")

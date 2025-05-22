@@ -13,12 +13,12 @@ from cost_model.state.snapshot import update as snapshot_update
 from cost_model.state.schema import EMP_ID
 
 # Import submodules
-from cost_model.engines.run_one_year_engine.validation import ensure_snapshot_cols, validate_and_extract_hazard_slice
-from cost_model.engines.run_one_year_engine.plan_rules import run_all_plan_rules
-from cost_model.engines.run_one_year_engine.comp_term import apply_compensation_and_terminations
-from cost_model.engines.run_one_year_engine.hires import compute_hire_counts, process_new_hires
-from cost_model.engines.run_one_year_engine.finalize import apply_new_hire_terminations, build_full_event_log, finalize_snapshot
-from cost_model.engines.run_one_year_engine.utils import dbg
+from .validation import ensure_snapshot_cols, validate_and_extract_hazard_slice
+from .plan_rules import run_all_plan_rules
+from .comp_term import apply_compensation_and_terminations
+from .hires import compute_hire_counts, process_new_hires
+from .finalize import apply_new_hire_terminations, build_full_event_log, finalize_snapshot
+from .utils import dbg
 
 
 def run_one_year(

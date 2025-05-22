@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 
 from cost_model.state.schema import EMP_ID, EMP_TERM_DATE, EMP_ACTIVE as ACTIVE
-from cost_model.engines.run_one_year_engine.utils import dbg
+from .utils import dbg
 
 
 def apply_new_hire_terminations(

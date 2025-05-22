@@ -1,10 +1,12 @@
 """
-Run One Year package - orchestrates simulation for a single year.
+Run One Year Package
 
-This package breaks down the monolithic run_one_year.py into smaller,
-focused modules with single responsibilities.
+This package contains the implementation of the run_one_year simulation engine,
+which orchestrates a single year of workforce simulation.
 """
 
-from cost_model.engines.run_one_year_engine import run_one_year
+print("Using run_one_year package implementation")
 
-__all__ = ["run_one_year"]
+from .orchestrator import run_one_year
+
+__all__ = ['run_one_year']

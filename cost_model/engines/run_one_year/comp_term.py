@@ -16,7 +16,7 @@ from cost_model.state.schema import (
     EMP_ACTIVE as ACTIVE,
     EVT_COMP, EVT_TERM
 )
-from cost_model.engines.run_one_year_engine.utils import dbg
+from .utils import dbg
 
 
 def apply_compensation_and_terminations(

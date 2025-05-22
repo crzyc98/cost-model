@@ -578,6 +578,31 @@ def run_one_year(
     # Use the unique attrition count to avoid double-counting
     total_attrition = unique_total_attrition
     
+    # Calculate actual survivors after all terminations
+    actual_survivors = start_count - total_attrition
+    logger.debug(f"[YR={year}] Actual survivors after terminations: {actual_survivors}")
+    
+    # Log termination summary
+    logger.info(
+        f"[YR={year}] Termination Summary - "
+        f"Start: {start_count}, "
+        f"Attrition: {total_attrition}, "
+        f"Survivors: {actual_survivors} ({actual_survivors/start_count:.1%} of start)"
+    )
+    
+    # 3) Calculate target headcounts
+    # Get baseline headcount from global params or use the year 1 actual count
+    if hasattr(global_params, 'baseline_headcount'):
+        baseline_headcount = global_params.baseline_headcount
+    else:
+        # If no baseline configured, use a reasonable default or the first year's count
+        baseline_headcount = start_count  # Use current start_count as baseline
+    
+    # Calculate years since projection start (assuming first projection year)
+    # Get the first projection year from global params or assume 2025
+    first_year = getattr(global_params, 'first_projection_year', 2025)
+    years_elapsed = max(0, year - first_year)
+    
     # 3) Calculate target EOY headcount
     target_eoy = math.ceil(start_count * (1 + tgt_growth))
     
@@ -592,9 +617,34 @@ def run_one_year(
     
     # Calculate net hires needed to reach target, accounting for attrition and growth
     # We need to replace the employees who left (total_attrition) plus any growth
-    # The formula is: net_hires = terms + max(0, target_eoy - start_count)
-    # Where target_eoy = ceil(start_count * (1 + growth_rate))
     net_hires = total_attrition + max(0, target_eoy - start_count)
+    
+    # Log the growth calculation inputs - print to console for visibility
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    growth_msg = (
+        f"\n{'='*80}\n"
+        f"[HEADCOUNT GROWTH CALCULATION - {timestamp}]\n"
+        f"[YEAR {year}] - Current Headcount: {start_count:,}, Target Growth: {tgt_growth*100:.1f}%\n"
+        f"{'='*80}\n"
+        f"  CURRENT HEADCOUNT: {start_count:,} employees\n"
+        f"  TARGET ANNUAL GROWTH: {tgt_growth*100:.1f}% of current (target EOY: {target_eoy:,})\n"
+        f"\n  PROJECTED CHANGES:\n"
+        f"  - Projected attrition: {total_attrition:,} employees\n"
+        f"  - Net hires needed: {net_hires:,} (attrition + growth)\n"
+        f"\n  HIRING CALCULATION:\n"
+        f"  - New hire attrition rate: {nh_term_rate*100:.1f}%\n"
+        f"  - Gross hires required: {gross_hires}\n"
+        f"{'='*80}\n"
+    )
+    
+    # Print to stderr to ensure visibility even if stdout is redirected
+    import sys
+    print(growth_msg, file=sys.stderr, flush=True)
+    
+    # Also log normally
+    logger.info(growth_msg)
     
     # For testing purposes, we need to ensure we're returning the net hires needed
     # before accounting for new hire attrition, as that's what the test expects
@@ -612,6 +662,16 @@ def run_one_year(
     # as that's what the test expects to verify
     
     logger.info(f"[YR={year}] Target EOY headcount: {target_eoy}, net hires: {net_hires}, gross hires: {gross_hires}")
+    
+    # High-level summary for INFO level
+    logger.info(
+        f"[YR={year}] Workforce Plan - "
+        f"Start: {start_count}, "
+        f"Attrition: {total_attrition}, "
+        f"Target EOY: {target_eoy}, "
+        f"Net Hires: {net_hires}, "
+        f"Gross Hires: {gross_hires}"
+    )
     
     # Debug logging for hiring calculations
     logger.debug(
@@ -635,11 +695,14 @@ def run_one_year(
     )
 
     # --- 5. Generate new-hire events ---
-    # Pass hires_needed to hire.run which is the net hires needed (before attrition adjustment)
-    # This is what the test expects to verify
+    # Compute gross hires to hit target net hires after NH attrition
+    gross_hires = math.ceil(hires_needed / (1 - nh_term_rate)) if nh_term_rate < 1.0 else hires_needed
+    logger.info(f"[YR={year}] Hiring calculation - net_hires: {hires_needed}, gross_hires: {gross_hires}")
+
+    # Now actually hire that many so you net the required hires after attrition
     hire_events = hire.run(
         temp_snap,
-        hires_needed,  # Pass net hires needed (hire.run will handle the gross-up for attrition)
+        gross_hires,  # Pass gross hires, not net
         hazard_slice,
         year_rng,
         census_template_path,
@@ -867,7 +930,15 @@ def run_one_year(
         event_log = pd.concat([event_log, comp_events_df], ignore_index=True)
 
     # --- 7. New-hire terminations ---
-    nh_term_list = term.run_new_hires(snap_with_hires, hazard_slice, year_rng, year, deterministic_term)
+    # Force deterministic terminations for new hires to ensure we hit exact EOY headcount targets
+    # This ensures we always lose exactly round(gross_hires * nh_term_rate) new hires
+    nh_term_list = term.run_new_hires(
+        snap_with_hires, 
+        hazard_slice, 
+        year_rng, 
+        year, 
+        deterministic=True  # Force deterministic NH attrition
+    )
     nh_term_frames = [df for df in (nh_term_list or []) if isinstance(df, pd.DataFrame) and not df.empty]
     nh_term_frames = [df for df in nh_term_frames if not df.empty and not df.isna().all().all()]
     nh_term_df = pd.concat(nh_term_frames, ignore_index=True) if nh_term_frames else pd.DataFrame(columns=EVENT_COLS)
