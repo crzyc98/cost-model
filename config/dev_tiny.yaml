@@ -30,10 +30,6 @@ global_parameters:
   # Job level configuration moved to root level
 
   # Workforce dynamics
-  attrition:
-    new_hire_termination_rate: 0.25  # 25% of new hires terminate in their first year
-    experienced_attrition_rate: 0.10  # 10% annual attrition for experienced employees
-
   # Global compensation settings
   compensation:
     COLA_rate: 0.02  # Cost of living adjustment rate
@@ -65,8 +61,8 @@ global_parameters:
 
   # Attrition and hiring parameters
   attrition:
-    annual_termination_rate: 0.15
-    new_hire_termination_rate: 0.25
+    annual_termination_rate: 0.15    # Annual attrition for experienced employees
+    new_hire_termination_rate: 0.25  # 25% of new hires terminate in their first year
     use_expected_attrition: false
 
   new_hires:

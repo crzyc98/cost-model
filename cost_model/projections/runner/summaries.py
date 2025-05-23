@@ -10,7 +10,7 @@ from datetime import datetime
 from cost_model.utils.columns import (
     EMP_ACTIVE, EMP_CONTR, EMP_DEFERRAL_RATE, EMP_LEVEL, EMP_TENURE_BAND,
     EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB, EVENT_TYPE,
-    EVT_HIRE, EVT_TERM, EVT_CONTRIB, SIMULATION_YEAR, EMP_GROSS_COMP
+    EVT_HIRE, EVT_TERM, EVT_NEW_HIRE_TERM, EVT_CONTRIB, SIMULATION_YEAR, EMP_GROSS_COMP
 )
 
 
@@ -161,22 +161,11 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
     # Gross hires = every EVT_HIRE event
     hires = int((year_events[EVENT_TYPE] == EVT_HIRE).sum() if not year_events.empty else 0)
     
-    # All terminations
-    terminations = int((year_events[EVENT_TYPE] == EVT_TERM).sum() if not year_events.empty else 0)
-    
-    # New hire terminations: check meta field for new-hire mentions
-    mask_new_hire_term = None
-    if not year_events.empty:
-        if 'meta' in year_events.columns:
-            # Look for "new-hire" or "new hire" in the meta field
-            mask_new_hire_term = ((year_events[EVENT_TYPE] == EVT_TERM) & 
-                                  year_events['meta'].str.contains('new[- ]hire', case=False, na=False))
-        elif 'value_json' in year_events.columns:
-            # Fall back to the original method if meta isn't available
-            mask_new_hire_term = ((year_events[EVENT_TYPE] == EVT_TERM) &
-                                 year_events['value_json'].str.contains('new_hire_termination', na=False))
-        
-    new_hire_terminations = int(mask_new_hire_term.sum()) if mask_new_hire_term is not None else 0
+    # New hire terminations are specifically EVT_NEW_HIRE_TERM
+    new_hire_terminations = int((year_events[EVENT_TYPE] == EVT_NEW_HIRE_TERM).sum() if not year_events.empty else 0)
+
+    # All terminations (includes regular and new hire terms)
+    terminations = int(((year_events[EVENT_TYPE] == EVT_TERM) | (year_events[EVENT_TYPE] == EVT_NEW_HIRE_TERM)).sum() if not year_events.empty else 0)
     
     # How many of our hires survived
     new_hire_actives = hires - new_hire_terminations

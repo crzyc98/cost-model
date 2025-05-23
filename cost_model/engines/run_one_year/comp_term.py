@@ -116,6 +116,11 @@ def apply_compensation_and_terminations(
         logger.debug(f"[YR={year}] Applying comp bump to {len(experienced_df)} rows")
         
         # Apply the compensation bump
+        # First, ensure we don't have NA values in the compensation column
+        if experienced_df[EMP_GROSS_COMP].isna().any():
+            logger.warning(f"[YR={year}] Found {experienced_df[EMP_GROSS_COMP].isna().sum()} NA values in {EMP_GROSS_COMP}, filling with 0")
+            experienced_df[EMP_GROSS_COMP] = experienced_df[EMP_GROSS_COMP].fillna(0.0)
+            
         experienced_df = apply_comp_bump(
             df=experienced_df,
             comp_col=EMP_GROSS_COMP,
@@ -140,17 +145,22 @@ def apply_compensation_and_terminations(
             emp_id = row[EMP_ID]
             after_comp = row[EMP_GROSS_COMP]
             
-            # Get before compensation
-            before_comp = comp_cols_before.loc[
-                comp_cols_before[EMP_ID] == emp_id, 
-                EMP_GROSS_COMP
-            ].values[0] if emp_id in comp_cols_before[EMP_ID].values else 0.0
+            # Get before compensation with proper NA handling
+            before_comp = 0.0
+            if emp_id in comp_cols_before[EMP_ID].values:
+                before_comp = comp_cols_before.loc[
+                    comp_cols_before[EMP_ID] == emp_id, 
+                    EMP_GROSS_COMP
+                ].iloc[0]  # Use iloc[0] to get the scalar value
+                
+                # Convert to float, handling NA/None values
+                if pd.isna(before_comp):
+                    before_comp = 0.0
+                else:
+                    before_comp = float(before_comp)
             
-            # Handle NA values
-            if pd.isna(before_comp):
-                before_comp = 0.0
-            if pd.isna(after_comp):
-                after_comp = 0.0
+            # Ensure after_comp is a float
+            after_comp = 0.0 if pd.isna(after_comp) else float(after_comp)
                 
             # Create event (always log events, regardless of size)
             event = create_event(

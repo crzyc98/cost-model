@@ -28,6 +28,7 @@ try:
         EVT_PROMOTION,
         EVT_RAISE,
         EVT_CONTRIB,
+        EVT_NEW_HIRE_TERM,
     )  # type: ignore
 except ImportError:  # pragma: no cover
     EVT_HIRE = "EVT_HIRE"
@@ -37,16 +38,6 @@ except ImportError:  # pragma: no cover
     EVT_PROMOTION = "EVT_PROMOTION"
     EVT_RAISE = "EVT_RAISE"
     EVT_CONTRIB = "EVT_CONTRIB"
-
-EVENT_COLS: List[str] = [
-    "event_id",
-    "event_time",
-    "employee_id",
-    "event_type",
-    "value_num",
-    "value_json",
-    "meta",
-]
 
 # -----------------------------------------------------------------------------
 # Employee column constants (import from utils.columns where possible)
@@ -81,6 +72,17 @@ except ImportError:  # pragma: no cover
     EMP_EXITED = "exited"
     SIMULATION_YEAR = "simulation_year"
     TERM_RATE = "term_rate"
+
+EVENT_COLS: List[str] = [
+    "event_id",
+    "event_time",
+    "employee_id",
+    "event_type",
+    "value_num",
+    "value_json",
+    "meta",
+    EMP_LEVEL_SOURCE,  # Added to propagate job_level_source for new hires
+]
 
 # Configuration columns for snapshot defaults
 EMP_TENURE_BAND = "employee_tenure_band"

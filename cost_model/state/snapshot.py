@@ -6,7 +6,7 @@ This file maintains backward compatibility while gradually transitioning to the 
 
 import warnings
 import logging
-from typing import Dict, List, Any, Optional, Set, Tuple
+from typing import Dict, List, Any, Optional, Set, Tuple, Union
 import pandas as pd
 import numpy as np
 
@@ -28,7 +28,7 @@ COMP_RAISE_PCT = 'comp_raise_pct'
 
 # Legacy imports for compatibility
 try:
-    from .event_log import EVT_HIRE, EVT_TERM, EVT_COMP, EVENT_COLS
+    from .event_log import EVT_HIRE, EVT_TERM, EVT_COMP, EVT_NEW_HIRE_TERM, EVENT_COLS
 except ImportError:
     # Define fallbacks if run standalone or structure changes
     EVT_HIRE, EVT_TERM, EVT_COMP = "EVT_HIRE", "EVT_TERM", "EVT_COMP"
@@ -94,17 +94,25 @@ SNAPSHOT_DTYPES = {
 
 # --- Helper Functions ---
 
-def _get_first_event(events: pd.DataFrame, event_type: str) -> pd.DataFrame:
+def _get_first_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> pd.DataFrame:
     """
     Returns the first occurrence of the given event_type for each employee.
     """
-    return events[events["event_type"] == event_type].drop_duplicates(subset=EMP_ID, keep="first")
+    if isinstance(event_type, str):
+        events_of_type = events[events["event_type"] == event_type]
+    else: # it's a list
+        events_of_type = events[events["event_type"].isin(event_type)]
+    return events_of_type.drop_duplicates(subset=EMP_ID, keep="first")
 
-def _get_last_event(events: pd.DataFrame, event_type: str) -> pd.DataFrame:
+def _get_last_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> pd.DataFrame:
     """
     Returns the last occurrence of the given event_type for each employee.
     """
-    return events[events["event_type"] == event_type].drop_duplicates(subset=EMP_ID, keep="last")
+    if isinstance(event_type, str):
+        events_of_type = events[events["event_type"] == event_type]
+    else: # it's a list
+        events_of_type = events[events["event_type"].isin(event_type)]
+    return events_of_type.drop_duplicates(subset=EMP_ID, keep="last")
 
 def _assign_tenure_band(tenure: float) -> str:
     """

@@ -1,0 +1,5 @@
+import pandas as pd
+
+file_path = '/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/output_dev/projection_cli_results/projection_cli_summary_statistics.parquet'
+df = pd.read_parquet(file_path)
+print(df.to_string())

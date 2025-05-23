@@ -1,4 +1,5 @@
 import pandas as pd
+from cost_model.state.schema import EVT_NEW_HIRE_TERM as _EVT_NEW_HIRE_TERM_FROM_SCHEMA
 
 # cost_model/utils/columns.py
 
@@ -47,6 +48,7 @@ META = "meta"
 # Event types
 EVT_HIRE = "EVT_HIRE"
 EVT_TERM = "EVT_TERM"
+EVT_NEW_HIRE_TERM = _EVT_NEW_HIRE_TERM_FROM_SCHEMA
 EVT_CONTRIB = "EVT_CONTRIB"
 EVT_CONTRIB_INCR = "EVT_CONTRIB_INCR"
 

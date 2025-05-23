@@ -1,0 +1,13 @@
+import pandas as pd
+
+event_log_path = '/Users/nicholasamaral/Library/Mobile Documents/com~apple~CloudDocs/Development/cost-model/output_dev/projection_cli_results/projection_cli_final_cumulative_event_log.parquet'
+event_df = pd.read_parquet(event_log_path)
+
+# Filter for new hire termination events
+nht_events = event_df[event_df['event_type'] == 'EVT_NEW_HIRE_TERM']
+
+if nht_events.empty:
+    print('No EVT_NEW_HIRE_TERM events found in the log.')
+else:
+    print('Found EVT_NEW_HIRE_TERM events:')
+    print(nht_events.to_string())

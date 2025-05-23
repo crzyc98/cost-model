@@ -308,9 +308,12 @@ def run_dynamics_for_year(
     if maintain_headcount:
         target_eoy_headcount = year_start_headcount_for_calc
     else:  # Growth rate
+        log.info(f"[HIRING DEBUG Year {sim_year}] year_start_headcount_for_calc: {year_start_headcount_for_calc}")
+        log.info(f"[HIRING DEBUG Year {sim_year}] growth_rate (runtime): {growth_rate:.4f}")
         target_eoy_headcount = math.ceil(
             year_start_headcount_for_calc * (1 + growth_rate)
         )
+        log.info(f"[HIRING DEBUG Year {sim_year}] Calculated target_eoy_headcount: {target_eoy_headcount}")
     log.info(
         f"Year {sim_year}: Target EOY headcount (based on active start {year_start_headcount_for_calc} and growth {growth_rate:.2%}) = {target_eoy_headcount}"
     )
@@ -330,7 +333,10 @@ def run_dynamics_for_year(
     # Calculate hires needed, accounting for new hire termination rate
     if net_growth_needed > 0:
         if new_hire_termination_rate < 1.0:
+            log.info(f"[HIRING DEBUG Year {sim_year}] net_growth_needed: {net_growth_needed}")
+            log.info(f"[HIRING DEBUG Year {sim_year}] new_hire_termination_rate: {new_hire_termination_rate:.4f}")
             hires_to_make = math.ceil(net_growth_needed / (1 - new_hire_termination_rate))
+            log.info(f"[HIRING DEBUG Year {sim_year}] Calculated hires_to_make (grossed up): {hires_to_make}")
             log.info(
                 f"Year {sim_year}: Calculated {hires_to_make} hires needed to achieve net growth of {net_growth_needed} (accounting for {new_hire_termination_rate:.2%} new hire terminations via division)"
             )

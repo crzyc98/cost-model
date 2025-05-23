@@ -154,7 +154,7 @@ def run_one_year(
         plan_rule_events=plan_rule_events,
         comp_term_events=comp_term_events,
         hires_events=hires_events,
-        nh_term_events=nh_term_events,
+        new_hire_term_events=nh_term_events,
         year=year
     )
     

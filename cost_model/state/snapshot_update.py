@@ -18,6 +18,7 @@ from cost_model.state.schema import (
     EVT_PROMOTION,
     EVT_RAISE,
     EVT_CONTRIB,
+    EVT_NEW_HIRE_TERM,
     EMP_ID,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
@@ -77,10 +78,22 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     details = extract_hire_details(first_hire)
 
     last_comp = get_last_event(batch, EVT_COMP).set_index(EMP_ID)["value_num"].rename(EMP_GROSS_COMP)
-    last_term = get_last_event(batch, EVT_TERM).set_index(EMP_ID)["event_time"].rename(EMP_TERM_DATE)
+    last_term = get_last_event(batch, [EVT_TERM, EVT_NEW_HIRE_TERM]).set_index(EMP_ID)["event_time"].rename(EMP_TERM_DATE)
 
     new_df = pd.DataFrame(index=pd.Index(new_ids, name=EMP_ID))
     new_df = new_df.merge(first_hire.set_index(EMP_ID)["event_time"].rename(EMP_HIRE_DATE), left_index=True, right_index=True, how="left")
+    if EMP_LEVEL_SOURCE in first_hire.columns:
+        new_df = new_df.merge(
+            first_hire.set_index(EMP_ID)[[EMP_LEVEL_SOURCE]], 
+            left_index=True, 
+            right_index=True, 
+            how="left"
+        )
+        logger.debug(f"Successfully merged EMP_LEVEL_SOURCE from first_hire events.")
+    else:
+        logger.warning(f"'{EMP_LEVEL_SOURCE}' column not found in first_hire events. It will be NaN in new_df.")
+        new_df[EMP_LEVEL_SOURCE] = pd.NA # Ensure column exists for schema consistency
+
     new_df = new_df.merge(details, left_index=True, right_index=True, how="left")
     new_df = new_df.merge(last_comp, left_index=True, right_index=True, how="left")
     new_df = new_df.merge(last_term, left_index=True, right_index=True, how="left")
@@ -88,6 +101,44 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     
     # Set simulation_year for new hires
     new_df[SIMULATION_YEAR] = year
+    logger.debug(f"P1_PRE_CHECK: EMP_LEVEL_SOURCE in new_df.columns: {EMP_LEVEL_SOURCE in new_df.columns}")
+    logger.debug(f"P1_PRE_CHECK: new_df.empty: {new_df.empty}")
+    if not new_df.empty:
+        logger.debug(f"P1_PRE_CHECK: new_df columns: {new_df.columns.tolist()}")
+    # --- Start of new P1 logging block ---
+    p1_unique_values_output = "NOT_COMPUTED"
+    if EMP_LEVEL_SOURCE in new_df.columns and not new_df.empty:
+        try:
+            p1_unique_values_output = str(new_df[EMP_LEVEL_SOURCE].unique().tolist())
+        except Exception as e:
+            p1_unique_values_output = f"ERROR_CALCULATING_UNIQUE: {type(e).__name__} - {e}"
+            logger.error(f"SnapshotUpdate P1: Exception during .unique().tolist() for EMP_LEVEL_SOURCE: {e}", exc_info=True)
+    elif EMP_LEVEL_SOURCE not in new_df.columns:
+        p1_unique_values_output = "COLUMN_MISSING"
+    elif new_df.empty:
+        p1_unique_values_output = "DATAFRAME_EMPTY"
+    logger.debug(f"SnapshotUpdate P1 (after initial merge): new_df job_level_source unique: {p1_unique_values_output}")
+
+    if not new_df.empty:
+        p1_head_output = "NOT_COMPUTED_HEAD"
+        try:
+            if EMP_LEVEL_SOURCE in new_df.columns:
+                p1_head_output = new_df[[EMP_HIRE_DATE, EMP_LEVEL_SOURCE]].head().to_string()
+                logger.debug(f"SnapshotUpdate P1 new_df head (index is EMP_ID):\n{p1_head_output}")
+            else: # EMP_LEVEL_SOURCE is not in columns, but df is not empty
+                p1_head_output = new_df[[EMP_HIRE_DATE]].head().to_string()
+                logger.debug(f"SnapshotUpdate P1 new_df head (EMP_LEVEL_SOURCE missing, index is EMP_ID):\n{p1_head_output}")
+        except Exception as e:
+            p1_head_output = f"ERROR_CALCULATING_HEAD: {type(e).__name__} - {e}"
+            logger.error(f"SnapshotUpdate P1: Exception during .head().to_string(): {e}", exc_info=True)
+            # Log the error placeholder in the original message format if an error occurred
+            if EMP_LEVEL_SOURCE in new_df.columns:
+                 logger.debug(f"SnapshotUpdate P1 new_df head (index is EMP_ID):\n{p1_head_output}")
+            else:
+                 logger.debug(f"SnapshotUpdate P1 new_df head (EMP_LEVEL_SOURCE missing, index is EMP_ID):\n{p1_head_output}")
+    else: # new_df is empty
+        logger.debug("SnapshotUpdate P1: new_df is empty, skipping head display.")
+    # --- End of new P1 logging block ---
 
     # Debug: Verify birth date types before ensure_columns_and_types
     if not pd.api.types.is_datetime64_any_dtype(new_df[EMP_BIRTH_DATE]):
@@ -95,6 +146,14 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
         new_df[EMP_BIRTH_DATE] = pd.to_datetime(new_df[EMP_BIRTH_DATE], errors='coerce')
     
     new_df = ensure_columns_and_types(new_df)
+    logger.debug(
+        f"SnapshotUpdate P2 (after ensure_columns_and_types): new_df job_level_source unique: "
+        f"{new_df[EMP_LEVEL_SOURCE].unique().tolist() if EMP_LEVEL_SOURCE in new_df.columns else 'COLUMN_MISSING'}"
+    )
+    if EMP_LEVEL_SOURCE in new_df.columns and not new_df.empty:
+        logger.debug(f"SnapshotUpdate P2 new_df head (index is EMP_ID):\n{new_df[[EMP_HIRE_DATE, EMP_LEVEL_SOURCE]].head().to_string()}")
+    elif not new_df.empty:
+        logger.debug(f"SnapshotUpdate P2 new_df head (EMP_LEVEL_SOURCE missing, index is EMP_ID):\n{new_df[[EMP_HIRE_DATE]].head().to_string()}")
 
     as_of = pd.Timestamp(f"{year}-12-31")
     new_df = apply_tenure(new_df, EMP_HIRE_DATE, as_of, out_tenure_col=EMP_TENURE, out_band_col="tenure_band")
@@ -117,6 +176,14 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     # 3. Assign job levels to new hires based on compensation
     from .job_levels.utils import assign_levels_to_dataframe
     new_df = assign_levels_to_dataframe(new_df, target_level_col=EMP_LEVEL)
+    logger.debug(
+        f"SnapshotUpdate P3 (after assign_levels): new_df job_level_source unique: "
+        f"{new_df[EMP_LEVEL_SOURCE].unique().tolist() if EMP_LEVEL_SOURCE in new_df.columns else 'COLUMN_MISSING'}"
+    )
+    if EMP_LEVEL_SOURCE in new_df.columns and not new_df.empty:
+        logger.debug(f"SnapshotUpdate P3 new_df head:\n{new_df[[EMP_ID, EMP_HIRE_DATE, EMP_LEVEL_SOURCE]].head().to_string()}")
+    elif not new_df.empty:
+        logger.debug(f"SnapshotUpdate P3 new_df head (EMP_LEVEL_SOURCE missing):\n{new_df[[EMP_ID, EMP_HIRE_DATE]].head().to_string()}")
 
     # 3. Ensure `new_df` only contains IDs not already in `current` (critical for concat)
     overlap = new_df.index.intersection(current.index)
@@ -141,6 +208,14 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     if not final_overlap_check.empty:
         logger.error("CRITICAL DEBUG: Overlap detected IMMEDIATELY before concat despite prior filtering!")
     logger.info("--- End Pre-concat diagnostics ---")
+    logger.debug(
+        f"SnapshotUpdate P4 (before concat): new_df job_level_source unique: "
+        f"{new_df[EMP_LEVEL_SOURCE].unique().tolist() if EMP_LEVEL_SOURCE in new_df.columns else 'COLUMN_MISSING'}"
+    )
+    if EMP_LEVEL_SOURCE in new_df.columns and not new_df.empty:
+        logger.debug(f"SnapshotUpdate P4 new_df head:\n{new_df[[EMP_ID, EMP_HIRE_DATE, EMP_LEVEL_SOURCE]].head().to_string()}")
+    elif not new_df.empty:
+        logger.debug(f"SnapshotUpdate P4 new_df head (EMP_LEVEL_SOURCE missing):\n{new_df[[EMP_ID, EMP_HIRE_DATE]].head().to_string()}")
     # --- END VERBOSE DEBUGGING ---
 
     parts = _nonempty_frames([current, new_df])
@@ -223,7 +298,7 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
                         logger.warning(f"Error processing promotion event for {emp_id}: {e}")
     
     # Termination updates
-    term_upd = new_events[new_events["event_type"] == EVT_TERM]
+    term_upd = new_events[new_events["event_type"].isin([EVT_TERM, EVT_NEW_HIRE_TERM])]
     if not term_upd.empty:
         last_term = term_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
         current.loc[last_term[EMP_ID], EMP_TERM_DATE] = last_term.set_index(EMP_ID)["event_time"]

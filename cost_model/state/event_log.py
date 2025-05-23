@@ -89,12 +89,13 @@ from typing import Dict, Optional, Any
 
 # Attempt to import EMP_ID, define fallback if needed (e.g., for standalone testing)
 try:
-    from ..utils.columns import EMP_ID, SIMULATION_YEAR
+    from .schema import EMP_ID, SIMULATION_YEAR
 except ImportError:
     print(
-        "Warning: Could not import EMP_ID from utils.columns. Defaulting to 'employee_id'."
+        "Warning: Could not import EMP_ID and SIMULATION_YEAR from .schema. Defaulting EMP_ID."
     )
     EMP_ID = "employee_id"
+    SIMULATION_YEAR = "simulation_year"  # Fallback for SIMULATION_YEAR
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ logger = logging.getLogger(__name__)
 # Define standard event types as constants
 EVT_HIRE      = "EVT_HIRE"
 EVT_TERM      = "EVT_TERM"
+EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM" # New Hire Termination event
 EVT_COMP      = "EVT_COMP"
 EVT_CONTRIB   = "EVT_CONTRIB"  # Contribution event type for plan rules/engines
 EVT_COLA      = "EVT_COLA"      # cost-of-living adjustment

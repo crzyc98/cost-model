@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Union, List
 
 import numpy as np
 import pandas as pd
@@ -25,13 +25,21 @@ logger = logging.getLogger(__name__)
 # Event filtering helpers
 # -----------------------------------------------------------------------------
 
-def get_first_event(events: pd.DataFrame, event_type: str) -> pd.DataFrame:  # noqa: N802
+def get_first_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> pd.DataFrame:  # noqa: N802
     """Return first occurrence of *event_type* per employee."""
-    return events[events["event_type"] == event_type].drop_duplicates(subset=EMP_ID, keep="first")
+    if isinstance(event_type, str):
+        events_of_type = events[events["event_type"] == event_type]
+    else:  # it's a list
+        events_of_type = events[events["event_type"].isin(event_type)]
+    return events_of_type.drop_duplicates(subset=EMP_ID, keep="first")
 
-def get_last_event(events: pd.DataFrame, event_type: str) -> pd.DataFrame:  # noqa: N802
+def get_last_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> pd.DataFrame:  # noqa: N802
     """Return last occurrence of *event_type* per employee."""
-    return events[events["event_type"] == event_type].drop_duplicates(subset=EMP_ID, keep="last")
+    if isinstance(event_type, str):
+        events_of_type = events[events["event_type"] == event_type]
+    else:  # it's a list
+        events_of_type = events[events["event_type"].isin(event_type)]
+    return events_of_type.drop_duplicates(subset=EMP_ID, keep="last")
 
 # -----------------------------------------------------------------------------
 # JSON parsing helper for hire events
