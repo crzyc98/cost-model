@@ -8,17 +8,16 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 import pandas as pd
 import numpy as np
 
-from cost_model.engines import cola, promotion, hire, term
+from cost_model.engines import hire
 from cost_model.state.snapshot import update as snapshot_update
 from cost_model.state.schema import EMP_ID
 
 # Import submodules
-from .validation import ensure_snapshot_cols, validate_and_extract_hazard_slice
-from .plan_rules import run_all_plan_rules
-from .comp_term import apply_compensation_and_terminations
-from .hires import compute_hire_counts, process_new_hires
-from .finalize import apply_new_hire_terminations, build_full_event_log, finalize_snapshot
-from .utils import dbg
+from .validation import ensure_snapshot_cols, validate_and_extract_hazard_slice, validate_eoy_snapshot
+from .utils import compute_headcount_targets, dbg
+from cost_model.engines.markov_promotion import apply_markov_promotions
+from cost_model.engines import term
+from cost_model.engines.nh_termination import run_new_hires
 
 
 def run_one_year(
@@ -35,129 +34,112 @@ def run_one_year(
     **kwargs
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Orchestrates simulation for a single year, coordinating:
-    - Compensation changes for experienced employees
-    - Terminations
-    - New hires and their compensation
-    - New hire terminations
-    - Plan rule processing (eligibility, enrollment, contributions)
-    
-    Args:
-        event_log: Cumulative event log from previous years
-        prev_snapshot: Snapshot DataFrame from the previous year
-        year: Current simulation year
-        global_params: Parameters for the simulation
-        plan_rules: Plan rules configuration
-        hazard_table: Hazard table with demographic transition probabilities
-        rng: Random number generator
-        census_template_path: Path to census template (optional)
-        rng_seed_offset: Offset for random seed (default: 0)
-        deterministic_term: Whether to use deterministic terminations
-        random_seed: Random seed for reproducibility
-        
-    Returns:
-        Tuple containing (event_log_df, final_snapshot_df)
+    Orchestrates simulation for a single year, following the new hiring/termination flow:
+      1. Markov promotions/exits (experienced only)
+      2. Hazard-based terminations (experienced only)
+      3. Update snapshot to survivors
+      4. Compute headcount targets (gross/net)
+      5. Generate/apply hires
+      6. Deterministic new-hire terminations
+      7. Final snapshot + validation
     """
     logger = logging.getLogger(__name__)
     logger.info(f"[RUN_ONE_YEAR] Simulating year {year}")
-    
+
     # --- 1. Initialization and validation ---
-    # Set default timestamps
     as_of = pd.Timestamp(f"{year}-01-01")
-    prev_as_of = pd.Timestamp(f"{year-1}-01-01")
-    
-    # Use the provided RNG
-    year_rng = rng
-    
-    # Validate inputs
     prev_snapshot = ensure_snapshot_cols(prev_snapshot)
-    hazard_slice = hazard_table  # Use the hazard table directly as it's already sliced
-    
-    # Get config params from global_params
+    hazard_slice = hazard_table
+    year_rng = rng
     census_template_path = getattr(global_params, "census_template_path", census_template_path)
-    
-    # --- 2. Run plan rules ---
-    plan_rule_events = run_all_plan_rules(
-        prev_snapshot=prev_snapshot,
-        all_events=[event_log] if event_log is not None else [],
-        hazard_cfg=hazard_slice,
-        as_of=as_of,
-        prev_as_of=prev_as_of,
-        year=year
+
+    # --- 2. Markov promotions & exits ---
+    logger.info("[STEP] Markov promotions/exits (experienced only)")
+    promo_time = as_of  # Promotions at SOY
+    promotion_raise_config = getattr(global_params, 'promotion_raise_config', {})
+    promotions_df, raises_df, exited_df, survivors_after_markov = apply_markov_promotions(
+        snapshot=prev_snapshot,
+        rng=year_rng,
+        simulation_year=year,
+        promo_time=promo_time,
+        promotion_raise_config=promotion_raise_config
     )
-    
-    # --- 3. Run COLA and promotion modules ---
-    cola_events = None
-    if hasattr(global_params, "days_into_year_for_cola") and global_params.days_into_year_for_cola > 0:
-        cola_events = cola.run(
-            snapshot=prev_snapshot,
-            year=year,
-            global_params=global_params
-        )
-    
-    promo_events = None
-    if hasattr(global_params, "days_into_year_for_promotion") and global_params.days_into_year_for_promotion > 0:
-        promo_events = promotion.run(
-            snapshot=prev_snapshot,
-            year=year,
-            global_params=global_params
-        )
-    
-    # --- 4. Apply compensation bumps and terminations ---
-    comp_term_events, updated_snapshot = apply_compensation_and_terminations(
-        prev_snapshot=prev_snapshot,
+    logger.info(f"[MARKOV] Promotions: {len(promotions_df)}, Raises: {len(raises_df)}, Exits: {len(exited_df)}")
+
+    # --- 3. Hazard-based terminations (experienced only) ---
+    logger.info("[STEP] Hazard-based terminations (experienced only)")
+    # Only process experienced employees (not new hires)
+    experienced_mask = survivors_after_markov['EMP_HIRE_DATE'] < pd.Timestamp(f"{year}-01-01")
+    experienced = survivors_after_markov[experienced_mask].copy()
+    # Run hazard-based terminations
+    term_event_dfs = term.run(
+        snapshot=experienced,
         hazard_slice=hazard_slice,
-        global_params=global_params,
-        year_rng=year_rng,
-        deterministic_term=deterministic_term,
-        year=year
+        rng=year_rng,
+        deterministic=False
     )
-    
-    # --- 5. Process new hires ---
-    # Calculate number of hires
-    start_count = (prev_snapshot["active"] == True).sum() if "active" in prev_snapshot.columns else len(prev_snapshot)
-    net_hires, gross_hires = compute_hire_counts(
-        start_count=start_count,
-        global_params=global_params,
-        hazard_slice=hazard_slice,
-        year=year
-    )
-    
-    # Process new hires if needed
-    hires_events, snapshot_with_hires = process_new_hires(
-        temp_snapshot=updated_snapshot,
+    term_events = term_event_dfs[0] if term_event_dfs else pd.DataFrame()
+    comp_events = term_event_dfs[1] if len(term_event_dfs) > 1 else pd.DataFrame()
+    logger.info(f"[TERM] Terminations: {len(term_events)}, Prorated comp events: {len(comp_events)}")
+    # Remove terminated employees from survivors
+    terminated_ids = set(term_events['employee_id']) if not term_events.empty else set()
+    survivors_after_term = survivors_after_markov[~survivors_after_markov[EMP_ID].isin(terminated_ids)].copy()
+
+    # --- 4. Update snapshot to survivors ---
+    logger.info("[STEP] Update snapshot to survivors (post-terminations)")
+    snapshot_survivors = survivors_after_term.copy()
+
+    # --- 5. Compute headcount targets ---
+    start_count = snapshot_survivors['active'].sum() if 'active' in snapshot_survivors.columns else len(snapshot_survivors)
+    target_growth = getattr(global_params, 'target_growth', 0.0)
+    nh_term_rate = getattr(global_params, 'new_hire_termination_rate', 0.0)
+    target_eoy, net_hires, gross_hires = compute_headcount_targets(start_count, start_count, target_growth, nh_term_rate)
+    logger.info(f"[DEBUG-HIRE] Start: {start_count}, Net Hires: {net_hires}, Gross Hires: {gross_hires}, Target EOY: {target_eoy}")
+
+    # --- 6. Generate/apply hires ---
+    logger.info("[STEP] Generate/apply hires")
+    hires_events, snapshot_with_hires = hire.process_new_hires(
+        temp_snapshot=snapshot_survivors,
         gross_hires=gross_hires,
         hazard_slice=hazard_slice,
         year_rng=year_rng,
         census_template_path=census_template_path,
         global_params=global_params,
-        term_events=comp_term_events,
+        term_events=term_events,
         year=year
     )
-    
-    # --- 6. Apply new hire terminations ---
-    nh_term_events, final_snapshot = apply_new_hire_terminations(
-        snap_with_hires=snapshot_with_hires,
+
+    # --- 7. Deterministic new-hire terminations ---
+    logger.info("[STEP] Deterministic new-hire terminations")
+    nh_term_event_dfs = run_new_hires(
+        snapshot=snapshot_with_hires,
         hazard_slice=hazard_slice,
-        year_rng=year_rng,
-        year=year
+        rng=year_rng,
+        year=year,
+        deterministic=True
     )
-    
-    # --- 7. Finalize snapshot ---
-    finalized_snapshot = finalize_snapshot(
-        snapshot=final_snapshot,
-        year=year
-    )
-    
-    # --- 8. Build complete event log ---
-    event_log = build_full_event_log(
-        plan_rule_events=plan_rule_events,
-        comp_term_events=comp_term_events,
-        hires_events=hires_events,
-        new_hire_term_events=nh_term_events,
-        year=year
-    )
-    
-    logger.info(f"[RUN_ONE_YEAR] Year {year} simulation complete: {len(event_log)} events, {len(finalized_snapshot)} employees ({finalized_snapshot['active'].sum() if 'active' in finalized_snapshot.columns else 'unknown'} active)")
-    
-    return event_log, finalized_snapshot
+    nh_term_events = nh_term_event_dfs[0] if nh_term_event_dfs else pd.DataFrame()
+    nh_comp_events = nh_term_event_dfs[1] if len(nh_term_event_dfs) > 1 else pd.DataFrame()
+    logger.info(f"[NH_TERM] New-hire terminations: {len(nh_term_events)}, Prorated comp events: {len(nh_comp_events)}")
+    # Remove terminated new hires from snapshot
+    nh_terminated_ids = set(nh_term_events['employee_id']) if not nh_term_events.empty else set()
+    final_snapshot = snapshot_with_hires[~snapshot_with_hires[EMP_ID].isin(nh_terminated_ids)].copy()
+
+    # --- 8. Final snapshot + validation ---
+    logger.info("[STEP] Final snapshot + validation")
+    validate_eoy_snapshot(final_snapshot, target_eoy)
+    # Assert no duplicate EMP_IDs
+    assert not final_snapshot[EMP_ID].duplicated().any(), "Duplicate EMP_IDs detected!"
+
+    # --- 9. Aggregate event log ---
+    logger.info("[STEP] Build event log")
+    event_frames = [
+        promotions_df, raises_df, exited_df,
+        term_events, comp_events,
+        nh_term_events, nh_comp_events
+    ]
+    event_log = pd.concat([df for df in event_frames if df is not None and not df.empty], ignore_index=True, sort=False)
+    logger.info(f"[EVENT_LOG] Total events: {len(event_log)}")
+
+    logger.info(f"[RESULT] EOY={final_snapshot['active'].sum() if 'active' in final_snapshot.columns else 'unknown'} (target={target_eoy})")
+    return event_log, final_snapshot

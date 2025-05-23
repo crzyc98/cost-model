@@ -1,7 +1,16 @@
 """
-Main orchestrator for the projection engine.
-Manages the high-level flow of the projection process.
+[ARCHIVED] Legacy orchestrator for the projection engine.
+Superseded by: cost_model.engines.run_one_year.orchestrator
+
+This file is kept for historical reference only. Do not use in new code.
 """
+
+import warnings
+warnings.warn(
+    "This module is deprecated. Use cost_model.engines.run_one_year.orchestrator instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from typing import Dict, Any, List, Tuple
 import pandas as pd

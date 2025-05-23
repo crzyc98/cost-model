@@ -1,0 +1,103 @@
+"""
+Markov Promotion & Raise Event Logic
+
+This module provides the Markov-based promotion and raise logic for the new hiring/termination flow.
+Migrated from docs/migration_task_update.md as part of the 2025-05 migration.
+"""
+import json
+import numpy as np
+import pandas as pd
+from typing import Tuple, Optional, List
+from cost_model.state.job_levels.sampling import apply_promotion_markov
+from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, create_event
+from cost_model.utils.columns import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP
+
+
+def create_promotion_raise_events(
+    snapshot: pd.DataFrame,
+    promoted: pd.DataFrame,
+    promo_time: pd.Timestamp,
+    promo_raise_config: dict
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Create promotion and raise events for promoted employees with level-specific raise percentages.
+    """
+    promotion_events = []
+    raise_events = []
+    for _, row in promoted.iterrows():
+        emp_id = row[EMP_ID]
+        from_level = int(snapshot.loc[row.name, EMP_LEVEL])
+        to_level = int(row[EMP_LEVEL])
+        current_comp = float(snapshot.loc[row.name, EMP_GROSS_COMP])
+        level_key = f"{from_level}_to_{to_level}"
+        raise_pct = promo_raise_config.get(level_key, 0.10)
+        raise_amount = current_comp * raise_pct
+        promo_event = create_event(
+            event_time=promo_time,
+            employee_id=emp_id,
+            event_type=EVT_PROMOTION,
+            value_json=json.dumps({
+                "from_level": from_level,
+                "to_level": to_level,
+                "previous_comp": current_comp,
+                "raise_pct": raise_pct
+            })
+        )
+        raise_event = create_event(
+            event_time=promo_time,
+            employee_id=emp_id,
+            event_type=EVT_RAISE,
+            value_json=json.dumps({
+                "raise_amount": raise_amount,
+                "raise_pct": raise_pct,
+                "from_level": from_level,
+                "to_level": to_level
+            })
+        )
+        promotion_events.append(promo_event)
+        raise_events.append(raise_event)
+    promotions_df = pd.DataFrame(promotion_events, columns=EVENT_COLS)
+    raises_df = pd.DataFrame(raise_events, columns=EVENT_COLS)
+    return promotions_df, raises_df
+
+
+def apply_markov_promotions(
+    snapshot: pd.DataFrame,
+    rng: np.random.Generator,
+    simulation_year: int,
+    promo_time: pd.Timestamp,
+    promotion_raise_config: dict
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Applies Markov-based promotions and raises to a snapshot.
+    Returns: (promotions_df, raises_df, exited_df, updated_snapshot)
+    """
+    out = apply_promotion_markov(snapshot, rng=rng, simulation_year=simulation_year)
+    promoted_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
+    promoted = out[promoted_mask].copy()
+    if promoted.empty:
+        return (
+            pd.DataFrame(columns=EVENT_COLS),
+            pd.DataFrame(columns=EVENT_COLS),
+            out[out[EMP_EXITED]].copy(),
+            out.copy()
+        )
+    promotions_df, raises_df = create_promotion_raise_events(
+        snapshot, 
+        promoted, 
+        promo_time,
+        promo_raise_config=promotion_raise_config
+    )
+    if not promoted.empty:
+        if EMP_LEVEL_SOURCE in out.columns and pd.api.types.is_categorical_dtype(out[EMP_LEVEL_SOURCE]):
+            if 'markov-promo' not in out[EMP_LEVEL_SOURCE].cat.categories:
+                out[EMP_LEVEL_SOURCE] = out[EMP_LEVEL_SOURCE].cat.add_categories(['markov-promo'])
+        out.loc[promoted.index, EMP_LEVEL_SOURCE] = 'markov-promo'
+    if pd.isna(out[EMP_LEVEL]).any():
+        nan_count = pd.isna(out[EMP_LEVEL]).sum()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Found {nan_count} NaN values in EMP_LEVEL, filling with default level 1")
+        out[EMP_LEVEL] = out[EMP_LEVEL].fillna(1)
+    out[EMP_LEVEL] = out[EMP_LEVEL].astype(int)
+    return promotions_df, raises_df, out[out[EMP_EXITED]].copy(), out.copy()
