@@ -15,6 +15,10 @@ from cost_model.state.schema import (
     EMP_ACTIVE,  # Use the actual constant name
     EMP_EXITED
 )
+from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 from cost_model.utils.columns import EMP_DEFERRAL_RATE, EMP_TENURE
 
 # Required columns with default values for snapshot DataFrame
@@ -128,7 +132,7 @@ def validate_and_extract_hazard_slice(
     return hazard_slice
 
 
-def nonempty_frames(*frames: Union[pd.DataFrame, List[pd.DataFrame]]) -> List[pd.DataFrame]:
+def nonempty_frames(*frames: Union[pd.DataFrame, List[pd.DataFrame]]):
     """
     Filters out empty DataFrames from a list of DataFrames.
     
@@ -140,11 +144,57 @@ def nonempty_frames(*frames: Union[pd.DataFrame, List[pd.DataFrame]]) -> List[pd
     """
     result = []
     for frame in frames:
-        if isinstance(frame, list):
-            # If it's a list, flatten it and filter
-            for subframe in frame:
-                if subframe is not None and not subframe.empty:
-                    result.append(subframe)
-        elif frame is not None and not frame.empty:
-            result.append(frame)
+        if isinstance(frame, pd.DataFrame):
+            if not frame.empty:
+                result.append(frame)
+        elif isinstance(frame, list):
+            result.extend([f for f in frame if isinstance(f, pd.DataFrame) and not f.empty])
     return result
+
+
+def validate_eoy_snapshot(final_snap: pd.DataFrame, target: Optional[int] = None) -> None:
+    """
+    Validates the end-of-year snapshot for consistency and correctness.
+    
+    Args:
+        final_snap: The end-of-year snapshot DataFrame to validate
+        target: Expected number of active employees. If None, skips headcount validation.
+        
+    Raises:
+        AssertionError: If any validation checks fail
+    """
+    logger.info("Validating end-of-year snapshot...")
+    
+    # Check for duplicate employee IDs
+    duplicate_ids = final_snap[EMP_ID].duplicated()
+    if duplicate_ids.any():
+        duplicate_count = duplicate_ids.sum()
+        duplicates = final_snap[final_snap[EMP_ID].duplicated(keep=False)].sort_values(EMP_ID)
+        logger.error(f"Found {duplicate_count} duplicate EMP_IDs in snapshot")
+        logger.error(f"Duplicate IDs:\n{duplicates[[EMP_ID, EMP_ACTIVE, EMP_TERM_DATE]].head(10)}")
+        if len(duplicates) > 10:
+            logger.error(f"... and {len(duplicates) - 10} more")
+        raise ValueError(f"Found {duplicate_count} duplicate EMP_IDs in snapshot")
+    
+    # Check active employee count if target is provided
+    if target is not None:
+        active_count = final_snap[EMP_ACTIVE].sum()
+        if active_count != target:
+            logger.error(
+                f"Active employee count mismatch. Expected: {target}, Actual: {active_count}"
+            )
+            raise ValueError(
+                f"EOY headcount {active_count} does not match target {target}"
+            )
+    
+    # Check for invalid active/terminated states
+    invalid_active = final_snap[final_snap[EMP_ACTIVE] & ~pd.isna(final_snap[EMP_TERM_DATE])]
+    if not invalid_active.empty:
+        logger.error(
+            f"Found {len(invalid_active)} employees marked as both active and terminated"
+        )
+        raise ValueError(
+            f"Found {len(invalid_active)} employees with both active=True and a termination date"
+        )
+    
+    logger.info("End-of-year snapshot validation passed")

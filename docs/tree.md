@@ -109,10 +109,3 @@ cost_model/
     │   └── (rule utilities)
     ├── simulation_utils.py
     ├── status_enums.py
-    └── termination_model_example/
-        ├── census_data.csv
-        ├── example_census_2020.csv
-        ├── example_census_2021.csv
-        ├── example_census_2022.csv
-        ├── example_census_2023.csv
-        └── example_census_2024.csv

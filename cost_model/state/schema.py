@@ -38,6 +38,7 @@ except ImportError:  # pragma: no cover
     EVT_PROMOTION = "EVT_PROMOTION"
     EVT_RAISE = "EVT_RAISE"
     EVT_CONTRIB = "EVT_CONTRIB"
+    EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM"
 
 # -----------------------------------------------------------------------------
 # Employee column constants (import from utils.columns where possible)

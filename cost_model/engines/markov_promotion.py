@@ -83,7 +83,8 @@ def apply_markov_promotions(
     snapshot: pd.DataFrame,
     promo_time: pd.Timestamp,
     rng: Optional[np.random.RandomState] = None,
-    promotion_raise_config: Optional[dict] = None
+    promotion_raise_config: Optional[dict] = None,
+    simulation_year: Optional[int] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Apply Markov-chain based promotions to the workforce with associated raises.
@@ -95,6 +96,7 @@ def apply_markov_promotions(
         promotion_raise_config: Dictionary mapping "{from_level}_to_{to_level}" to raise percentage
                              Example: {"1_to_2": 0.05, "2_to_3": 0.08, "3_to_4": 0.10}
                              If None, uses default 10% for all promotions
+        simulation_year: Optional simulation year for promotions. If not provided, will be inferred from promo_time or snapshot
     
     Returns:
         Tuple of (promotions_df, raises_df, exits_df) where:
@@ -111,10 +113,11 @@ def apply_markov_promotions(
             "default": 0.10  # Default 10% for any other promotions
         }
     
-    # Get the simulation year from the promo_time or the snapshot
-    simulation_year = promo_time.year if hasattr(promo_time, 'year') else None
-    if simulation_year is None and 'simulation_year' in snapshot.columns:
-        simulation_year = snapshot['simulation_year'].iloc[0]
+    # Get the simulation year from the parameter, promo_time, or the snapshot
+    if simulation_year is None:
+        simulation_year = promo_time.year if hasattr(promo_time, 'year') else None
+        if simulation_year is None and 'simulation_year' in snapshot.columns:
+            simulation_year = snapshot['simulation_year'].iloc[0] if not snapshot.empty else None
     
     # Apply Markov promotions with termination date handling
     out = apply_promotion_markov(snapshot, rng=rng, simulation_year=simulation_year)

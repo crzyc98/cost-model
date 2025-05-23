@@ -3,12 +3,17 @@
 import argparse
 import logging
 from pathlib import Path
+
+import pandas as pd
 from datetime import datetime
 
 from cost_model.config.loaders import load_config_to_namespace  # Use robust loader with flattening
 from .snapshot import create_initial_snapshot
 from .event_log import create_initial_event_log
-from .runner import run_projection_engine
+from .runner import run_one_year
+from cost_model.plan_rules import load_plan_rules
+from cost_model.projections.hazard import build_hazard_table
+import numpy as np
 from .reporting import save_detailed_results, plot_projection_results # Assuming plot_projection_results will be implemented
 from .snapshot import consolidate_snapshots_to_parquet
 
@@ -104,14 +109,44 @@ def main():
         logger.info(f"Creating initial event log for start year: {start_year}")
         initial_event_log = create_initial_event_log(start_year)
 
-        # 4. Run Projection Engine
+        # 4. Prepare arguments for run_one_year
+        year = start_year
+        global_params = config_ns.global_parameters
+        plan_rules = load_plan_rules(config_ns) if hasattr(config_ns, 'plan_rules') or hasattr(config_ns, 'plan_rules_path') else {}
+        # Prepare arguments for build_hazard_table
+        projection_years_list = list(range(year, year + global_params.projection_years))
+
+        hazard_table = build_hazard_table(
+            years=projection_years_list,
+            initial_snapshot=initial_snapshot,
+            global_params=global_params,
+            plan_rules_config=plan_rules
+        )
+        seed = getattr(global_params, 'random_seed', 42)
+        rng = np.random.default_rng(seed)
+        census_template_path = getattr(global_params, 'census_template_path', None)
+
+        # 5. Run Projection Engine
         logger.info("Starting projection engine...")
-        yearly_eoy_snapshots, final_eoy_snapshot, final_cumulative_event_log, summary_results_df, employment_status_summary_df = \
-            run_projection_engine(config_ns, initial_snapshot, initial_event_log)
+        final_cumulative_event_log, final_eoy_snapshot = run_one_year(
+            event_log=initial_event_log,
+            prev_snapshot=initial_snapshot,
+            year=year,
+            global_params=global_params,
+            plan_rules=plan_rules,
+            hazard_table=hazard_table,
+            rng=rng,
+            census_template_path=census_template_path
+        )
         logger.info("Projection engine run completed.")
 
         # 5. Reporting & Saving
         logger.info("Saving detailed results...")
+        # Create empty DataFrames for the missing return values
+        summary_results_df = pd.DataFrame()
+        employment_status_summary_df = pd.DataFrame()
+        yearly_eoy_snapshots = {}
+        
         save_detailed_results(
             output_path=output_path,
             scenario_name=args.scenario_name,
