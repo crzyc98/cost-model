@@ -9,7 +9,7 @@ import numpy as np
 import json
 from typing import Optional, Dict, Any
 from cost_model.state.event_log import EVENT_COLS, EVT_RAISE, create_event
-from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_LEVEL, EMP_LEVEL_SOURCE
+from cost_model.state.schema import EMP_ID, EMP_GROSS_COMP, EMP_LEVEL, EMP_LEVEL_SOURCE
 
 def update_salary(
     df: pd.DataFrame,

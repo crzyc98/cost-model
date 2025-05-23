@@ -22,7 +22,7 @@ from .rules.validators import (
 )
 
 # Import constants
-from .columns import STATUS_COL, EMP_TERM_DATE
+from cost_model.state.schema import STATUS_COL, EMP_TERM_DATE
 from .constants import ACTIVE_STATUS, INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)

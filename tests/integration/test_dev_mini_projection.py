@@ -5,7 +5,7 @@ import pandas as pd
 import math
 import yaml
 from cost_model.engines.run_one_year.validation import validate_eoy_snapshot
-from cost_model.utils.columns import EMP_ACTIVE
+from cost_model.state.schema import EMP_ACTIVE
 
 # Paths
 PROJECT = pathlib.Path(__file__).resolve().parents[2]

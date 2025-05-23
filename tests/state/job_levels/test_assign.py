@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 from cost_model.state.job_levels import get_level_by_compensation, assign_levels_to_dataframe
-from cost_model.utils.columns import EMP_GROSS_COMP, EMP_LEVEL
+from cost_model.state.schema import EMP_GROSS_COMP, EMP_LEVEL
 
 @pytest.fixture(autouse=True, scope="module")
 def initialize_job_levels():

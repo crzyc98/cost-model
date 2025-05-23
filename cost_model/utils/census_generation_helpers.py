@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 # --- Generate single employee record ---
-from cost_model.utils.columns import EMP_TENURE
+from cost_model.state.schema import EMP_TENURE
 
 def generate_employee_record(
     year: int,

@@ -89,7 +89,7 @@ def process_year(
         )
     
     # 6. Build summaries
-    from cost_model.utils.columns import EMP_ACTIVE
+    from cost_model.state.schema import EMP_ACTIVE
     start_headcount = int(current_snapshot[EMP_ACTIVE].sum())
     
     core_summary, employment_summary = make_yearly_summaries(

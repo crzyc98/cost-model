@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 import pandas as pd
 
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_DEFERRAL_RATE,
     EMP_HIRE_DATE,
     IS_PARTICIPATING,

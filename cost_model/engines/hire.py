@@ -12,16 +12,16 @@ import numpy as np
 import datetime
 
 from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL, SIMULATION_YEAR
+from cost_model.state.schema import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL, SIMULATION_YEAR
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
 
 logger = logging.getLogger(__name__)
 
-from cost_model.utils.columns import EMP_TENURE
+from cost_model.state.schema import EMP_TENURE
 
 from types import SimpleNamespace
-from cost_model.utils.columns import EMP_BIRTH_DATE
+from cost_model.state.schema import EMP_BIRTH_DATE
 
 def run(
     snapshot: pd.DataFrame,

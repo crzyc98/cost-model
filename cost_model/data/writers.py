@@ -12,7 +12,7 @@ from typing import Dict
 # Attempt to import column constants, provide fallbacks
 try:
     # Assuming column definitions might be useful here too (e.g., for ordering)
-    from cost_model.utils.columns import (
+    from cost_model.state.schema import (
         EMP_BIRTH_DATE,
         EMP_HIRE_DATE,
         EMP_TERM_DATE,  # Example relevant date columns

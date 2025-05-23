@@ -7,7 +7,7 @@ from typing import Optional, Any, Dict
 import logging
 from cost_model.utils.date_utils import calculate_age, calculate_tenure
 from cost_model.utils.constants import ACTIVE_STATUSES
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_BIRTH_DATE,
     EMP_HIRE_DATE,
     ELIGIBILITY_ENTRY_DATE,
@@ -20,7 +20,7 @@ from cost_model.rules.validators import EligibilityRule
 logger = logging.getLogger(__name__)
 
 
-from cost_model.utils.columns import EMP_TENURE
+from cost_model.state.schema import EMP_TENURE
 
 def apply(
     df: pd.DataFrame,

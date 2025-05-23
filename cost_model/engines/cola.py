@@ -11,8 +11,8 @@ from typing import List
 import pandas as pd
 
 from cost_model.state.event_log import EVENT_COLS, EVT_COLA, create_event
-from cost_model.utils.columns import EMP_ID, EMP_TERM_DATE, EMP_ROLE
-from cost_model.utils.columns import EMP_GROSS_COMP  # to read existing salary
+from cost_model.state.schema import EMP_ID, EMP_TERM_DATE, EMP_ROLE
+from cost_model.state.schema import EMP_GROSS_COMP  # to read existing salary
 
 logger = logging.getLogger(__name__)
 

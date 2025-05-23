@@ -162,7 +162,7 @@ def prepare_features_for_prediction(
     if "age_start" in feature_names:
         feats["age_start"] = calculate_age(df[EMP_BIRTH_DATE], reference_date)
 
-    from cost_model.utils.columns import EMP_TENURE
+    from cost_model.state.schema import EMP_TENURE
     if "tenure_start" in feature_names:
         if EMP_TENURE in df.columns:
             feats["tenure_start"] = df[EMP_TENURE]

@@ -4,7 +4,7 @@ import pandas as pd
 from typing import Tuple, Optional, List
 from cost_model.state.job_levels.sampling import apply_promotion_markov
 from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, create_event
-from cost_model.utils.columns import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP
+from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP
 
 
 def create_promotion_raise_events(
@@ -31,15 +31,25 @@ def create_promotion_raise_events(
     
     for _, row in promoted.iterrows():
         emp_id = row[EMP_ID]
-        from_level = int(snapshot.loc[row.name, EMP_LEVEL])
+        import logging
+        # Robustly handle possible duplicate index (row.name)
+        from_level_val = snapshot.loc[row.name, EMP_LEVEL]
+        if isinstance(from_level_val, pd.Series):
+            logging.warning(f"[PROMOTION] Duplicate index for employee {emp_id} (row.name={row.name}); skipping promotion/raise event.")
+            continue
+        from_level = int(from_level_val)
         to_level = int(row[EMP_LEVEL])
-        current_comp = float(snapshot.loc[row.name, EMP_GROSS_COMP])
-        
+        comp_val = snapshot.loc[row.name, EMP_GROSS_COMP]
+        if pd.isna(comp_val) or comp_val is pd.NA:
+            logging.warning(f"[PROMOTION] Employee {emp_id} missing {EMP_GROSS_COMP}; skipping promotion/raise event.")
+            continue
+        current_comp = float(comp_val)
+
         # Get the raise percentage for this promotion level
         level_key = f"{from_level}_to_{to_level}"
         raise_pct = promo_raise_config.get(level_key, 0.10)  # Default to 10% if not specified
         raise_amount = current_comp * raise_pct
-        
+
         # Create promotion event
         promo_event = create_event(
             event_time=promo_time,
@@ -54,7 +64,7 @@ def create_promotion_raise_events(
             meta=f"Promotion from level {from_level} to {to_level} with {raise_pct:.0%} raise"
         )
         promotion_events.append(promo_event)
-        
+
         # Create raise event with all details in value_json
         raise_event = create_event(
             event_time=promo_time + pd.Timedelta(days=1),  # Raise happens day after promotion
@@ -72,6 +82,7 @@ def create_promotion_raise_events(
             meta=f"{raise_pct:.1%} raise for promotion from level {from_level} to {to_level}"
         )
         raise_events.append(raise_event)
+
     
     # Convert to DataFrames with proper schema
     promotions_df = pd.DataFrame(promotion_events, columns=EVENT_COLS) if promotion_events else pd.DataFrame(columns=EVENT_COLS)

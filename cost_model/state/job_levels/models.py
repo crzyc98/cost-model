@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Literal, Dict, Any, Union
 import pandas as pd
 
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_LEVEL,
     EMP_GROSS_COMP,
     EMP_LEVEL_SOURCE,

@@ -2,7 +2,7 @@ from typing import Sequence, Optional, List, Dict, Any, Union
 import pandas as pd
 import logging
 
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_LEVEL,
     EMP_GROSS_COMP,
     EMP_LEVEL_SOURCE,

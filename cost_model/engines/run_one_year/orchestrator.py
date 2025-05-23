@@ -5,9 +5,12 @@ Coordinates the execution of all simulation steps for a single year.
 """
 import json
 import logging
+import uuid
 from typing import Dict, List, Optional, Tuple, Any, Union
 import pandas as pd
 import numpy as np
+
+from cost_model.state.event_log import EVENT_COLS, EVENT_PANDAS_DTYPES
 
 from cost_model.engines import hire
 from cost_model.state.snapshot import update as snapshot_update
@@ -95,18 +98,22 @@ def run_one_year(
     snapshot_survivors = survivors_after_term.copy()
 
     # --- 5. Compute headcount targets ---
-    start_count = snapshot_survivors['active'].sum() if 'active' in snapshot_survivors.columns else len(snapshot_survivors)
+    start_count = prev_snapshot['active'].sum() if 'active' in prev_snapshot.columns else len(prev_snapshot)
+    survivor_count = survivors_after_term['active'].sum() if 'active' in survivors_after_term.columns else len(survivors_after_term)
     target_growth = getattr(global_params, 'target_growth', 0.0)
     nh_term_rate = getattr(global_params, 'new_hire_termination_rate', 0.0)
-    target_eoy, net_hires, gross_hires = compute_headcount_targets(start_count, start_count, target_growth, nh_term_rate)
-    logger.info(f"[DEBUG-HIRE] Start: {start_count}, Net Hires: {net_hires}, Gross Hires: {gross_hires}, Target EOY: {target_eoy}")
+    target_eoy, net_hires, gross_hires = compute_headcount_targets(start_count, survivor_count, target_growth, nh_term_rate)
+    logger.info(f"[DEBUG-HIRE] Start: {start_count}, Survivors: {survivor_count}, Net Hires: {net_hires}, Gross Hires: {gross_hires}, Target EOY: {target_eoy}")
 
     # --- 6. Generate/apply hires ---
     logger.info("[STEP] Generate/apply hires")
+    # Filter hazard table by year to ensure correct matching
+    from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
+    hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
     hires_result = hire.run(
         snapshot=survivors_after_term,
         hires_to_make=gross_hires,  # Use gross_hires to account for expected new hire terminations
-        hazard_slice=hazard_slice,
+        hazard_slice=hz_slice,
         rng=year_rng,
         census_template_path=census_template_path,
         global_params=global_params,
@@ -169,17 +176,14 @@ def run_one_year(
 
     # --- 8. Deterministic new-hire terminations ---
     logger.info("[STEP] Deterministic new-hire terminations")
-    # For now, we'll skip this step as the term module might need to be updated
-    # to work with the current snapshot structure
-    nh_term_events = pd.DataFrame()
-    nh_terminated = pd.DataFrame()
-    logger.info("[NH-TERM] Skipping new hire terminations - not implemented")
+    from cost_model.engines.nh_termination import run_new_hires
+    nh_term_events, nh_term_comp_events = run_new_hires(snapshot_with_hires, hazard_slice, year_rng, year, deterministic=True)
+    terminated_ids = set(nh_term_events['employee_id']) if not nh_term_events.empty else set()
+    final_snapshot = snapshot_with_hires.loc[~snapshot_with_hires.index.isin(terminated_ids)]
+    logger.info(f"[NH-TERM] Terminated {len(terminated_ids)} new hires")
 
     # --- 9. Final snapshot + validation ---
     logger.info("[STEP] Final snapshot + validation")
-    final_snapshot = snapshot_with_hires
-    if not nh_terminated.empty:
-        final_snapshot = snapshot_with_hires[~snapshot_with_hires.index.isin(nh_terminated.index)]
     logger.info(f"[FINAL] Final headcount: {len(final_snapshot)}")
 
     # --- 9. Aggregate event log ---
@@ -190,25 +194,112 @@ def run_one_year(
     
     # Add each event type if it's not empty
     if not promotions_df.empty:
+        logger.info(f"Adding {len(promotions_df)} promotion events")
         events_to_concat.append(promotions_df)
     if not raises_df.empty:
+        logger.info(f"Adding {len(raises_df)} raise events")
         events_to_concat.append(raises_df)
     if not exited_df.empty:
+        logger.info(f"Adding {len(exited_df)} exit events")
         events_to_concat.append(exited_df)
     if not term_events.empty:
+        logger.info(f"Adding {len(term_events)} termination events")
         events_to_concat.append(term_events)
     if not hires_events.empty:
+        logger.info(f"Adding {len(hires_events)} hire events")
         events_to_concat.append(hires_events)
     if not nh_term_events.empty:
+        logger.info(f"Adding {len(nh_term_events)} new hire termination events")
         events_to_concat.append(nh_term_events)
+    if not comp_events.empty:
+        logger.info(f"Adding {len(comp_events)} compensation events")
+        events_to_concat.append(comp_events)
+    if not nh_term_comp_events.empty:
+        logger.info(f"Adding {len(nh_term_comp_events)} new hire compensation events")
+        events_to_concat.append(nh_term_comp_events)
+    if not nh_term_comp_events.empty:
+        events_to_concat.append(nh_term_comp_events)
     
-    # Combine all non-empty event DataFrames
+    # 1. Create this year's new events
     if events_to_concat:
-        all_events = pd.concat(events_to_concat, ignore_index=True)
+        logger.info(f"Concatenating {len(events_to_concat)} event DataFrames for year {year}")
+        new_events = pd.concat(events_to_concat, ignore_index=True)
+        logger.info(f"Created {len(new_events)} new events for year {year}")
     else:
-        all_events = pd.DataFrame()
-
-    logger.info(f"[EVENT_LOG] Total events: {len(all_events)}")
-
+        logger.warning(f"No new events to concatenate for year {year}")
+        new_events = pd.DataFrame(columns=EVENT_COLS)
+    
+    # 2. Ensure all required columns are present in the new events
+    for col in EVENT_COLS:
+        if col not in new_events.columns:
+            new_events[col] = None
+    
+    # 3. Ensure proper data types for new events
+    for col, dtype in EVENT_PANDAS_DTYPES.items():
+        if col in new_events.columns:
+            try:
+                new_events[col] = new_events[col].astype(dtype)
+            except Exception as e:
+                logger.error(f"Failed to cast {col} to {dtype} for new events: {e}")
+    
+    # 4. Ensure event_time is properly set for new events
+    if 'event_time' in new_events.columns and new_events['event_time'].isna().any():
+        logger.warning(f"Found NA values in event_time for new events, filling with current year {year}")
+        new_events['event_time'] = new_events['event_time'].fillna(pd.Timestamp(f"{year}-01-01"))
+    
+    # 5. Ensure event_type is properly set for new events
+    if 'event_type' in new_events.columns and new_events['event_type'].isna().any():
+        logger.warning("Found NA values in event_type for new events, dropping these events")
+        new_events = new_events.dropna(subset=['event_type'])
+    
+    # 6. Ensure employee_id is present for all new events
+    if 'employee_id' in new_events.columns and new_events['employee_id'].isna().any():
+        logger.warning("Found NA values in employee_id for new events, dropping these events")
+        new_events = new_events.dropna(subset=['employee_id'])
+    
+    # 7. Ensure event_id is unique and present for all new events
+    if 'event_id' in new_events.columns:
+        if new_events['event_id'].isna().any():
+            logger.warning("Generating missing event_ids for new events")
+            mask = new_events['event_id'].isna()
+            new_events.loc[mask, 'event_id'] = [str(uuid.uuid4()) for _ in range(mask.sum())]
+    else:
+        logger.warning("event_id column missing in new events, generating new event_ids")
+        new_events['event_id'] = [str(uuid.uuid4()) for _ in range(len(new_events))]
+    
+    # 8. Ensure new events have all required columns in the correct order
+    if not new_events.empty:
+        new_events = new_events[EVENT_COLS]
+    
+    # 9. Append new events to the incoming event log
+    logger.info(f"Appending {len(new_events)} new events to the cumulative event log")
+    if not event_log.empty:
+        logger.info(f"Incoming event log has {len(event_log)} events")
+        cumulative_events = pd.concat([event_log, new_events], ignore_index=True)
+    else:
+        logger.info("No incoming event log, using new events as cumulative")
+        cumulative_events = new_events
+    
+    # 10. Sort all events by timestamp for chronological order
+    if 'event_time' in cumulative_events.columns and not cumulative_events.empty:
+        logger.info("Sorting events chronologically")
+        cumulative_events['event_time'] = pd.to_datetime(cumulative_events['event_time'], errors='coerce')
+        cumulative_events = cumulative_events.sort_values('event_time', ignore_index=True)
+    
+    logger.info(f"[RUN_ONE_YEAR] Year {year} complete. Final headcount: {len(final_snapshot)}, "
+                f"New events: {len(new_events)}, Total events: {len(cumulative_events)}")
+    
+    # Log some statistics about the new events
+    if not new_events.empty:
+        new_event_counts = new_events['event_type'].value_counts()
+        logger.info(f"New event type counts for year {year}:\n{new_event_counts.to_string()}")
+    
+    # Log some statistics about the cumulative events
+    if not cumulative_events.empty:
+        cumulative_event_counts = cumulative_events['event_type'].value_counts()
+        logger.info(f"Cumulative event type counts (all years):\n{cumulative_event_counts.to_string()}")
+    
     logger.info(f"[RESULT] EOY={final_snapshot['active'].sum() if 'active' in final_snapshot.columns else 'unknown'} (target={target_eoy})")
-    return all_events, final_snapshot
+    
+    # Return the cumulative event log and final snapshot
+    return cumulative_events, final_snapshot

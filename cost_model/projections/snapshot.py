@@ -12,7 +12,7 @@ from typing import Union, Dict, Tuple, List
 
 from cost_model.state.snapshot.constants import SNAPSHOT_COLS as SNAPSHOT_COL_NAMES, SNAPSHOT_DTYPES
 from cost_model.state.job_levels.loader import ingest_with_imputation
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
     EMP_GROSS_COMP, EMP_DEFERRAL_RATE, EMP_TENURE_BAND, EMP_TENURE,
     EMP_TERM_DATE, EMP_ACTIVE, EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED
@@ -111,8 +111,17 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         # Convert to the correct dtypes
         snapshot_df = snapshot_df.astype(SNAPSHOT_DTYPES)
         
+        # Compute tenure band using schema constant
         snapshot_df[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE].apply(get_tenure_band)
         initial_data[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE_BAND].values
+        
+        # Remove any stray 'tenure_band' columns (if present)
+        # (No longer needed: all code now uses EMP_TENURE_BAND)
+        if 'tenure_band' in snapshot_df.columns and EMP_TENURE_BAND != 'tenure_band':
+            snapshot_df = snapshot_df.drop(columns=['tenure_band'])
+        # Defensive: ensure only EMP_TENURE_BAND is present, never 'tenure_band'
+        assert 'tenure_band' not in snapshot_df.columns or EMP_TENURE_BAND == 'tenure_band', (
+            f"Stray 'tenure_band' column found. All code should use EMP_TENURE_BAND: {EMP_TENURE_BAND}")
     
     # Set termination dates if they exist in the census
     if has_term_dates:
@@ -320,7 +329,7 @@ def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_pat
     import pandas as pd
     from pathlib import Path
     import re
-    from cost_model.utils.columns import EMP_ID
+    from cost_model.state.schema import EMP_ID
 
     # Columns to remove from the final output
     columns_to_remove = [

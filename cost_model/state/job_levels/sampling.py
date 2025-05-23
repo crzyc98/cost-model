@@ -5,7 +5,7 @@ import pandas as pd
 from .models import JobLevel
 from .init import get_level_by_id
 from .transitions import PROMOTION_MATRIX
-from cost_model.utils.columns import EMP_LEVEL
+from cost_model.state.schema import EMP_LEVEL
 
 
 def sample_new_hire_compensation(

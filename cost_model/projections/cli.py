@@ -10,7 +10,7 @@ from datetime import datetime
 from cost_model.config.loaders import load_config_to_namespace  # Use robust loader with flattening
 from .snapshot import create_initial_snapshot
 from .event_log import create_initial_event_log
-from .runner import run_one_year
+from cost_model.engines.run_one_year.orchestrator import run_one_year
 from cost_model.plan_rules import load_plan_rules
 from cost_model.projections.hazard import build_hazard_table
 import numpy as np
@@ -126,27 +126,67 @@ def main():
         rng = np.random.default_rng(seed)
         census_template_path = getattr(global_params, 'census_template_path', None)
 
-        # 5. Run Projection Engine
-        logger.info("Starting projection engine...")
-        final_cumulative_event_log, final_eoy_snapshot = run_one_year(
-            event_log=initial_event_log,
-            prev_snapshot=initial_snapshot,
-            year=year,
-            global_params=global_params,
-            plan_rules=plan_rules,
-            hazard_table=hazard_table,
-            rng=rng,
-            census_template_path=census_template_path
-        )
-        logger.info("Projection engine run completed.")
-
-        # 5. Reporting & Saving
-        logger.info("Saving detailed results...")
-        # Create empty DataFrames for the missing return values
-        summary_results_df = pd.DataFrame()
-        employment_status_summary_df = pd.DataFrame()
+        # === Refactored Multi-Year Projection Loop ===
+        current_snapshot = initial_snapshot
+        current_event_log = initial_event_log
+        all_core_summaries = []
+        all_employment_summaries = []
         yearly_eoy_snapshots = {}
+        for year in projection_years_list:
+            logger.info(f"Running projection for year {year}...")
+            cumulative_event_log, eoy_snapshot = run_one_year(
+                event_log=current_event_log,
+                prev_snapshot=current_snapshot,
+                year=year,
+                global_params=global_params,
+                plan_rules=plan_rules,
+                hazard_table=hazard_table,
+                rng=rng,
+                census_template_path=census_template_path
+            )
+            logger.info("Projection engine run completed for year %s.", year)
+
+            # Generate summary statistics for this year using the proper functions
+            from cost_model.projections.summaries.employment import make_yearly_status
+            from cost_model.projections.summaries.core import build_core_summary
+            
+            # Generate employment status summary using the more accurate function
+            # This uses the in-memory event log and both start and end snapshots
+            employment_summary = make_yearly_status(
+                current_snapshot,  # Start of year snapshot
+                eoy_snapshot,      # End of year snapshot
+                cumulative_event_log, 
+                year
+            )
+            
+            # Generate core summary with basic metrics
+            active_employees = eoy_snapshot[eoy_snapshot['active']] if 'active' in eoy_snapshot.columns else eoy_snapshot
+            terminations = cumulative_event_log[cumulative_event_log['event_type'] == 'termination']
+            
+            core_summary = {
+                'Projection Year': year,
+                'active_headcount': len(active_employees),
+                'total_terminations': len(terminations),
+                'avg_compensation': active_employees['gross_comp'].mean() if 'gross_comp' in active_employees.columns else 0,
+                'total_compensation': active_employees['gross_comp'].sum() if 'gross_comp' in active_employees.columns else 0,
+                'new_hires': employment_summary.get('new_hire_actives', 0) + employment_summary.get('new_hire_terms', 0)
+            }
+            all_core_summaries.append(core_summary)
+            all_employment_summaries.append(employment_summary)
+            yearly_eoy_snapshots[year] = eoy_snapshot
+            # Update for next year
+            current_snapshot = eoy_snapshot
+            current_event_log = cumulative_event_log
+        # Convert lists to DataFrames
+        summary_results_df = pd.DataFrame(all_core_summaries)
+        employment_status_summary_df = pd.DataFrame(all_employment_summaries)
+        # Set final snapshot and event log for saving
+        final_eoy_snapshot = current_snapshot
+        final_cumulative_event_log = current_event_log
+        # END Refactored Multi-Year Projection Loop
         
+        # 7. Reporting & Saving
+        logger.info("Saving detailed results...")
         save_detailed_results(
             output_path=output_path,
             scenario_name=args.scenario_name,
@@ -164,13 +204,20 @@ def main():
         for p in output_path.rglob("*"):
             logger.info(f"  {p.relative_to(output_path)}")
         
-        # Consolidate all yearly snapshots into a single file
-        logger.info("Consolidating yearly snapshots into a single file...")
-        consolidate_snapshots_to_parquet(
-            snapshots_dir=output_path / "yearly_snapshots",
-            output_path=output_path / "consolidated_snapshots.parquet"
-        )
-        logger.info("Consolidated snapshots created successfully")
+        # Only try to consolidate yearly snapshots if the directory exists and is not empty
+        yearly_snapshots_dir = output_path / "yearly_snapshots"
+        if yearly_snapshots_dir.exists() and any(yearly_snapshots_dir.glob("*.parquet")):
+            logger.info("Consolidating yearly snapshots into a single file...")
+            try:
+                consolidate_snapshots_to_parquet(
+                    snapshots_dir=yearly_snapshots_dir,
+                    output_path=output_path / "consolidated_snapshots.parquet"
+                )
+                logger.info("Consolidated snapshots created successfully")
+            except Exception as e:
+                logger.warning(f"Could not consolidate yearly snapshots: {e}")
+        else:
+            logger.info("No yearly snapshots found to consolidate")
 
         logger.info("Generating and saving plots...")
         plot_projection_results(summary_results_df, output_path) # Assuming plot_projection_results takes summary_df

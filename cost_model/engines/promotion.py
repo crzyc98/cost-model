@@ -8,7 +8,7 @@ import pandas as pd
 import json
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, create_event
-from cost_model.utils.columns import EMP_ID, EMP_ROLE, EMP_GROSS_COMP
+from cost_model.state.schema import EMP_ID, EMP_ROLE, EMP_GROSS_COMP
 
 def promote(
     snapshot: pd.DataFrame,

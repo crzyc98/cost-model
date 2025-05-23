@@ -8,14 +8,7 @@ import numpy as np
 import logging
 
 # Attempt to import column constants, provide fallbacks
-try:
-    from .columns import EMP_HIRE_DATE, EMP_TERM_DATE
-except ImportError:
-    print(
-        "Warning (labels.py): Could not import column constants from .columns. Using string literals."
-    )
-    EMP_HIRE_DATE = "employee_hire_date"
-    EMP_TERM_DATE = "employee_termination_date"
+from cost_model.state.schema import EMP_HIRE_DATE, EMP_TERM_DATE
 
 logger = logging.getLogger(__name__)
 

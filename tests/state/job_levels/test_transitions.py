@@ -6,7 +6,7 @@ import pytest
 
 from cost_model.state.job_levels.transitions import PROMOTION_MATRIX
 from cost_model.state.job_levels.sampling import apply_promotion_markov
-from cost_model.utils.columns import EMP_LEVEL
+from cost_model.state.schema import EMP_LEVEL
 
 @pytest.fixture(autouse=True)
 def seed_rng(monkeypatch):

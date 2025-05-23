@@ -8,7 +8,7 @@ import json  # For value_json
 
 # Modules to test
 from cost_model.state import snapshot, event_log
-from cost_model.utils.columns import EMP_ID  # Make sure this is correct
+from cost_model.state.schema import EMP_ID  # Make sure this is correct
 
 # --- Test Fixtures (Setup) ---
 

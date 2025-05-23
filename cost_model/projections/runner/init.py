@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID, 
     SIMULATION_YEAR,
     EVENT_TYPE,

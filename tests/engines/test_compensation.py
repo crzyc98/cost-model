@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from cost_model.engines.compensation import update_salary
-from cost_model.utils.columns import EMP_GROSS_COMP, EMP_LEVEL
+from cost_model.state.schema import EMP_GROSS_COMP, EMP_LEVEL
 from cost_model.state.event_log import EVT_RAISE
 
 @pytest.fixture

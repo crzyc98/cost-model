@@ -19,7 +19,7 @@ from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
-from cost_model.utils.columns import EMP_DEFERRAL_RATE, EMP_TENURE
+from cost_model.state.schema import EMP_DEFERRAL_RATE, EMP_TENURE
 
 # Required columns with default values for snapshot DataFrame
 # This should match the schema defined in cost_model/state/schema.py

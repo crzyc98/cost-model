@@ -2,7 +2,7 @@ import subprocess, pathlib, yaml, math
 import pytest, pandas as pd
 
 from cost_model.engines.run_one_year.utils import compute_headcount_targets
-from cost_model.utils.columns import EMP_ID, EMP_ACTIVE, EMP_HIRE_DATE
+from cost_model.state.schema import EMP_ID, EMP_ACTIVE, EMP_HIRE_DATE
 from cost_model.state.event_log import EVT_PROMOTION, EVT_TERM, EVT_HIRE
 from cost_model.engines.markov_promotion import apply_markov_promotions
 from cost_model.engines.term import run_new_hires as run_new_hires_deterministic

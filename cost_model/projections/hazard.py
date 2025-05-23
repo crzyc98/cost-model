@@ -7,7 +7,7 @@ QuickStart: see docs/cost_model/projections/hazard.md
 import pandas as pd
 import logging
 from typing import List
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_LEVEL,
     EMP_TENURE_BAND,
     SIMULATION_YEAR,
@@ -28,7 +28,7 @@ def build_hazard_table(
 ) -> pd.DataFrame:
     """Generates the hazard table based on configuration and initial snapshot."""
     logger.info("Generating hazard table...")
-    from cost_model.utils.columns import EMP_TENURE_BAND
+    from cost_model.state.schema import EMP_TENURE_BAND
     if EMP_LEVEL in initial_snapshot.columns and EMP_TENURE_BAND in initial_snapshot.columns:
         unique_levels_tenures = initial_snapshot[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates().to_dict('records')
     else:

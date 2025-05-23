@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 from types import SimpleNamespace
 from cost_model.projections.hazard import build_hazard_table
-from cost_model.utils.columns import EMP_ROLE
+from cost_model.state.schema import EMP_ROLE
 from cost_model.state.schema import EMP_TENURE_BAND
 
 def test_hazard_table_regeneration():

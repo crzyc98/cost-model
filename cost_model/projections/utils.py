@@ -1,5 +1,5 @@
 import pandas as pd
-from cost_model.utils.columns import EMP_TERM_DATE
+from cost_model.state.schema import EMP_TERM_DATE
 
 def assign_employment_status(row, sim_year):
     """Assigns employment status based on hire date, term date, and active flag."""

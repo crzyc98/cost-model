@@ -6,7 +6,7 @@ import yaml
 import numpy as np
 import pandas as pd
 
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID,
     EMP_GROSS_COMP, 
     EMP_LEVEL, 

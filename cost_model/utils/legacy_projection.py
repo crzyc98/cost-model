@@ -30,7 +30,7 @@ from .rules.validators import (
 from .hr_projection import _apply_comp_bump, _apply_turnover, apply_onboarding_bump
 
 # Import constants
-from .columns import STATUS_COL, EMP_TERM_DATE  # Assuming these are needed implicitly
+from cost_model.state.schema import STATUS_COL, EMP_TERM_DATE  # Imported from schema.py for single source of truth
 from .constants import (
     ACTIVE_STATUS,
     INACTIVE_STATUS,

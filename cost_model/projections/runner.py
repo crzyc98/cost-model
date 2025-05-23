@@ -28,7 +28,7 @@ except ImportError:
     EVT_HIRE = 'hire'
 
 # --- State and Utility Imports ---
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_ROLE, EMP_TERM_DATE,
     EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_DEFERRAL_RATE,
     EMP_ACTIVE, EMP_TENURE_BAND,
@@ -136,7 +136,7 @@ def run_projection_engine(
         last_year_active_headcount = 0
         logger.warning("[RUNNER] Initial snapshot is missing or has no 'active' column. First year growth rate might be off.")
 
-    from cost_model.utils.columns import EMP_LEVEL
+    from cost_model.state.schema import EMP_LEVEL
     for yr_idx, current_sim_year in enumerate(projection_sim_years):
         logger.info(f"--- Simulating Year {current_sim_year} (Index {yr_idx}) ---")
         logger.debug(f"SOY {current_sim_year} - Snapshot shape: {current_snapshot.shape}, Active: {current_snapshot[EMP_ACTIVE].sum() if EMP_ACTIVE in current_snapshot else 'N/A'}")

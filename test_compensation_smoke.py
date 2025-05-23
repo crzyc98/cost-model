@@ -5,7 +5,7 @@ import types
 from pathlib import Path
 
 from cost_model.engines.run_one_year import run_one_year
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID,
     EMP_GROSS_COMP,
     EMP_LEVEL,

@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from cost_model.state.job_levels import assign_levels_to_dataframe
 from cost_model.state.job_levels.engine import infer_job_level_by_percentile
-from cost_model.utils.columns import EMP_GROSS_COMP, EMP_LEVEL
+from cost_model.state.schema import EMP_GROSS_COMP, EMP_LEVEL
 
 
 def test_full_pipeline_sets_source():

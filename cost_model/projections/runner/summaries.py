@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Tuple
 import pandas as pd
 from datetime import datetime
 
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ACTIVE, EMP_CONTR, EMP_DEFERRAL_RATE, EMP_LEVEL, EMP_TENURE_BAND,
     EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB, EVENT_TYPE,
     EVT_HIRE, EVT_TERM, EVT_NEW_HIRE_TERM, EVT_CONTRIB, SIMULATION_YEAR, EMP_GROSS_COMP

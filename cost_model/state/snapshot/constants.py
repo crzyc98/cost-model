@@ -34,7 +34,7 @@ except ImportError:
     EMP_TERM_DATE = "employee_termination_date"
     EMP_DEFERRAL_RATE = "employee_deferral_rate"
     EMP_TENURE = "employee_tenure"
-    EMP_TENURE_BAND = "tenure_band"
+    EMP_TENURE_BAND = "employee_tenure_band"
     EMP_ACTIVE = "active"
     EMP_LEVEL = "employee_level"
     EMP_LEVEL_SOURCE = "job_level_source" 

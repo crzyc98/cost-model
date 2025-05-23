@@ -3,7 +3,7 @@ Constants and static mappings used throughout the projection runner.
 """
 
 from typing import Dict, List, Any
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID,
     SIMULATION_YEAR,
     EVENT_TYPE,

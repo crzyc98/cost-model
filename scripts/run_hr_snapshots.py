@@ -28,7 +28,7 @@ import logging
 try:
     # from cost_model.config.validators import PlanRules, ValidationError
     from cost_model.dynamics.engine import run_dynamics_for_year
-    from cost_model.utils.columns import (
+    from cost_model.state.schema import (
         EMP_HIRE_DATE,
         EMP_TERM_DATE,
         EMP_BIRTH_DATE,

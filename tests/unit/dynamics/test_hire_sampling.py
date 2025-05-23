@@ -4,7 +4,7 @@ import pytest
 import json
 from cost_model.engines.hire import run
 from cost_model.state.event_log import EVT_TERM
-from cost_model.utils.columns import EMP_ID, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
+from cost_model.state.schema import EMP_ID, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE
 
 @pytest.fixture
 def dummy_snapshot():
@@ -26,7 +26,7 @@ def term_events():
     ])
 
 from types import SimpleNamespace
-from cost_model.utils.columns import EMP_BIRTH_DATE
+from cost_model.state.schema import EMP_BIRTH_DATE
 
 def test_replacement_hire_from_terms(dummy_snapshot, term_events):
     global_params = SimpleNamespace(replacement_hire_premium=0.05, replacement_hire_age_sd=1)

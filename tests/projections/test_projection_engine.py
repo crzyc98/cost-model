@@ -12,7 +12,7 @@ from typing import Dict, Tuple
 from datetime import datetime, timedelta
 
 from cost_model.projections.runner import run_projection_engine
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, 
     EMP_GROSS_COMP, EMP_DEFERRAL_RATE
 )

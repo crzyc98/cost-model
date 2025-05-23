@@ -106,13 +106,67 @@ def save_detailed_results(
     final_snapshot.to_parquet(final_snapshot_path, index=False)
     logger.info(f"Final EOY snapshot saved to {final_snapshot_path}")
     
-    # Save full event log
+    # Save full event log with enhanced validation
     event_log_path = output_path / f"{scenario_name}_final_cumulative_event_log.parquet"
-    full_event_log.to_parquet(event_log_path, index=False)
-    logger.info(f"Final cumulative event log saved to {event_log_path}")
+    
+    # Ensure we have a DataFrame with the expected columns
+    if full_event_log is None or not isinstance(full_event_log, pd.DataFrame) or full_event_log.empty:
+        logger.warning("No event log data provided or empty event log. Creating an empty event log with expected schema.")
+        from cost_model.state.event_log import EVENT_COLS
+        full_event_log = pd.DataFrame(columns=EVENT_COLS)
+    
+    # Log some statistics about the event log
+    logger.info(f"Saving event log with {len(full_event_log)} events")
+    if not full_event_log.empty:
+        event_counts = full_event_log['event_type'].value_counts()
+        logger.info(f"Event type counts in final log:\n{event_counts.to_string()}")
+        
+        # Check for required columns
+        required_columns = ['event_id', 'event_type', 'event_time', 'employee_id']
+        missing_columns = [col for col in required_columns if col not in full_event_log.columns]
+        if missing_columns:
+            logger.warning(f"Event log is missing required columns: {missing_columns}")
+    
+    # Save the event log
+    try:
+        full_event_log.to_parquet(event_log_path, index=False)
+        logger.info(f"Final cumulative event log saved to {event_log_path} with {len(full_event_log)} events")
+        
+        # Verify the saved file
+        if event_log_path.exists():
+            file_size = event_log_path.stat().st_size
+            logger.info(f"Event log file size: {file_size} bytes")
+            
+            # Read back a small sample to verify
+            try:
+                sample = pd.read_parquet(event_log_path, engine='pyarrow')
+                logger.info(f"Successfully read back event log with {len(sample)} events")
+                if not sample.empty:
+                    logger.info(f"Sample event types: {sample['event_type'].value_counts().to_dict()}")
+            except Exception as e:
+                logger.error(f"Error reading back event log: {e}")
+        else:
+            logger.error("Failed to save event log: file not created")
+    except Exception as e:
+        logger.error(f"Error saving event log: {e}", exc_info=True)
+        raise
     
     # Save summary statistics merging core summary with full employment status counts
     summary_to_save = summary_statistics.copy()
+    import cost_model.state.event_log as schema
+    
+    # Add new_hires and terminated_employees columns using event log
+    if full_event_log is not None and not full_event_log.empty:
+        if 'simulation_year' in full_event_log.columns:
+            hires_per_year = full_event_log.query("event_type == @schema.EVT_HIRE").groupby('simulation_year').size()
+            terms_per_year = full_event_log.query("event_type == @schema.EVT_TERM").groupby('simulation_year').size()
+            summary_to_save['new_hires'] = summary_to_save['year'].map(hires_per_year).fillna(0).astype(int)
+            summary_to_save['terminated_employees'] = summary_to_save['year'].map(terms_per_year).fillna(0).astype(int)
+        else:
+            logger.warning("simulation_year column missing in event log; cannot compute new_hires/terminated_employees by year.")
+    else:
+        logger.warning("Event log missing or empty; cannot compute new_hires/terminated_employees.")
+    
     if employment_status_summary_df is not None and not employment_status_summary_df.empty:
         emp_df = employment_status_summary_df.rename(columns={'Year': 'Projection Year'})
         summary_to_save = summary_to_save.merge(

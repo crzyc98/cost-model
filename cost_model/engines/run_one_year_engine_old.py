@@ -17,7 +17,7 @@ from . import term, hire
 from .cola import cola
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP, EVT_HIRE
 from cost_model.state import snapshot
-from cost_model.utils.columns import (
+from cost_model.state.schema import (
     EMP_ID,
     EMP_LEVEL,
     EMP_LEVEL_SOURCE,
