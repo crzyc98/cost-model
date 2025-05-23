@@ -46,10 +46,13 @@ def build_hazard_table(
     else:
         logger.warning("global_params missing 'annual_compensation_increase_rate'. Using default 0.03. Available attributes: %s", dir(global_params))
         global_comp_raise_pct = 0.03
-    if hasattr(global_params, 'new_hire_termination_rate'):
+    # Look for new_hire_termination_rate in attrition section first, then root level, then use default
+    if hasattr(global_params, 'attrition') and hasattr(global_params.attrition, 'new_hire_termination_rate'):
+        global_nh_term_rate = global_params.attrition.new_hire_termination_rate
+    elif hasattr(global_params, 'new_hire_termination_rate'):
         global_nh_term_rate = global_params.new_hire_termination_rate
     else:
-        logger.warning("global_params missing 'new_hire_termination_rate'. Using default 0.25. Available attributes: %s", dir(global_params))
+        logger.warning("global_params missing 'new_hire_termination_rate' in both root and attrition. Using default 0.25. Available attributes: %s", dir(global_params))
         global_nh_term_rate = 0.25
     logger.info(f"Using global rates: Term={global_term_rate}, CompPct={global_comp_raise_pct}, NH_Term={global_nh_term_rate}")
 

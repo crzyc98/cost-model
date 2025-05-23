@@ -32,47 +32,66 @@ def apply_new_hire_terminations(
     """
     logger = logging.getLogger(__name__)
     
-    # Get the snapshot with hires for processing
-    snapshot = snap_with_hires.copy()
+    # Log the hazard_slice to see what rates we have
+    logger.info(f"[NEW_HIRE_TERM] Year {year}: Hazard slice columns: {hazard_slice.columns.tolist()}")
     
-    # Determine new hire termination rate
-    nh_term_rate = hazard_slice['new_hire_termination_rate'].mean()
+    # Get the new hire termination rate from hazard table
+    if 'new_hire_termination_rate' in hazard_slice.columns:
+        nh_term_rate = hazard_slice['new_hire_termination_rate'].iloc[0]  # Get first value if multiple
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: Found new_hire_termination_rate in hazard_slice: {nh_term_rate}")
+    else:
+        nh_term_rate = 0.0
+        logger.warning(f"[NEW_HIRE_TERM] Year {year}: new_hire_termination_rate not found in hazard_slice, using {nh_term_rate}")
     
-    # Get new hire mask (use job_level_source if available)
-    new_hire_mask = snapshot['job_level_source'] == 'hire' if 'job_level_source' in snapshot.columns else pd.Series(False, index=snapshot.index)
+    # Check if we have the job_level_source column to identify new hires
+    if 'job_level_source' in snap_with_hires.columns:
+        new_hire_mask = snap_with_hires['job_level_source'] == 'hire'
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: Found {new_hire_mask.sum()} new hires via job_level_source='hire'")
+    else:
+        # Fallback: if we don't have job_level_source, look for employees hired this year
+        logger.warning("job_level_source column not found. Falling back to hire date check.")
+        new_hire_mask = snap_with_hires['hire_date'].dt.year == year
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: Found {new_hire_mask.sum()} new hires via hire_date.year == {year}")
+    
     new_hire_count = new_hire_mask.sum()
     
     if new_hire_count == 0:
-        return pd.DataFrame(), snapshot
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: No new hires found to terminate.")
+        return pd.DataFrame(), snap_with_hires
     
-    # Determine number of new hires to terminate
-    nh_term_count = int(new_hire_count * nh_term_rate)
+    # Log some info about new hires
+    if new_hire_count > 0:
+        new_hires = snap_with_hires[new_hire_mask]
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: New hire IDs: {new_hires.index.tolist()}")
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: New hire job levels: {new_hires['job_level'].value_counts().to_dict()}")
+    
+    # Calculate how many new hires to terminate
+    nh_term_count = int(round(new_hire_count * nh_term_rate))
+    
+    logger.info(f"[NEW_HIRE_TERM] Year {year}: Terminating {nh_term_count} of {new_hire_count} new hires (rate={nh_term_rate:.4f}, rounded from {new_hire_count * nh_term_rate:.2f})")
     
     if nh_term_count == 0:
-        return pd.DataFrame(), snapshot
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: No new hires to terminate (nh_term_count=0)")
+        return pd.DataFrame(), snap_with_hires
     
-    # Get new hire subset
-    new_hires = snapshot.loc[new_hire_mask]
+    # Get the new hire indices and randomly select nh_term_count to terminate
+    new_hire_indices = snap_with_hires[new_hire_mask].index
+    term_indices = year_rng.choice(new_hire_indices, size=nh_term_count, replace=False)
     
-    # Randomly select new hires for termination
-    term_indices = year_rng.choice(
-        new_hires.index, 
-        size=nh_term_count, 
-        replace=False
-    )
+    logger.info(f"[NEW_HIRE_TERM] Year {year}: Selected new hires to terminate: {term_indices.tolist()}")
     
     # Create termination events
     term_events = []
     for idx in term_indices:
-        emp_id = snapshot.loc[idx, EMP_ID]
+        emp_id = snap_with_hires.loc[idx, EMP_ID]
         
         # Calculate termination date (randomly during the year)
         days_into_year = year_rng.integers(1, 365)
         term_date = pd.Timestamp(f"{year}-01-01") + pd.Timedelta(days=days_into_year)
         
         # Update snapshot with termination
-        snapshot.loc[idx, EMP_TERM_DATE] = term_date
-        snapshot.loc[idx, ACTIVE] = False
+        snap_with_hires.loc[idx, EMP_TERM_DATE] = term_date
+        snap_with_hires.loc[idx, ACTIVE] = False
         
         # Create termination event
         event = {
@@ -90,7 +109,7 @@ def apply_new_hire_terminations(
     term_events_df = pd.DataFrame(term_events)
     logger.info(f"[RUN_ONE_YEAR YR={year}] New-hire terminations: {len(term_events_df)}")
     
-    return term_events_df, snapshot
+    return term_events_df, snap_with_hires
 
 
 def build_full_event_log(

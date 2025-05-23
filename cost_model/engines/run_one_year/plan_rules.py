@@ -7,6 +7,7 @@ Handles all business logic related to plan rules, including:
 - Contribution rate changes
 """
 import logging
+import uuid
 from typing import Dict, List, Optional, Tuple, Any
 import pandas as pd
 import numpy as np
@@ -41,43 +42,80 @@ def run_all_plan_rules(
     logger = logging.getLogger(__name__)
     logger.info(f"[PLAN_RULES YR={year}] Running all plan rules")
     
-    # Run eligibility checks
-    eligibility_df = eligibility.run(
+    # Get eligibility config from hazard_cfg or use defaults
+    min_age = hazard_cfg.get('min_age', 21)
+    min_service_months = hazard_cfg.get('min_service_months', 0)
+    eligibility_cfg = type('EligibilityConfig', (), {
+        'min_age': min_age,
+        'min_service_months': min_service_months
+    })()
+    
+    # Run eligibility checks - this returns a list of DataFrames with eligibility events
+    eligibility_events = eligibility.run(
         snapshot=prev_snapshot, 
         as_of=as_of,
-        log_level="debug"
+        cfg=eligibility_cfg
     )
     
-    # Create eligibility events if needed
-    eligibility_events_df = eligibility.run_events(
-        eligibility_df=eligibility_df,
-        prev_snapshot=prev_snapshot,
-        as_of=as_of
-    )
+    # Convert the list of DataFrames to a single DataFrame
+    eligibility_events_df = pd.concat(eligibility_events) if eligibility_events else pd.DataFrame()
     
     # Run enrollment
-    enrollment_df = enrollment.run(
-        snapshot=prev_snapshot,
-        eligibility_df=eligibility_df,
-        as_of=as_of
-    )
+    enrollment_df = pd.DataFrame()  # Default to empty DataFrame
+    if not eligibility_events_df.empty:
+        # Convert eligibility_events_df to the format expected by enrollment.run()
+        # The enrollment module expects events with specific columns
+        enrollment_events = []
+        for _, row in eligibility_events_df.iterrows():
+            enrollment_events.append({
+                'event_id': row.get('event_id', str(uuid.uuid4())),
+                'event_time': as_of,
+                'employee_id': row[EMP_ID],
+                'event_type': 'ELIGIBILITY',
+                'value_num': 1.0,
+                'value_json': '{}',
+                'meta': '{}'
+            })
+        
+        enrollment_events_df = pd.DataFrame(enrollment_events) if enrollment_events else pd.DataFrame()
+        
+        if not enrollment_events_df.empty:
+            # Create a default enrollment config if not provided
+            enrollment_cfg = type('EnrollmentConfig', (), {
+                'auto_enroll_enabled': hazard_cfg.get('auto_enroll_enabled', False),
+                'auto_enroll_rate': hazard_cfg.get('auto_enroll_rate', 0.0),
+                'auto_increase_enabled': hazard_cfg.get('auto_increase_enabled', False),
+                'auto_increase_rate': hazard_cfg.get('auto_increase_rate', 0.0)
+            })()
+            
+            enrollment_df = enrollment.run(
+                snapshot=prev_snapshot,
+                events=enrollment_events_df,
+                as_of=as_of,
+                cfg=enrollment_cfg
+            )
     
-    # Process contribution increases
-    contrib_increase_df = contributions.run_increases(
+    # Process contributions
+    # Convert events to DataFrame if it's a list
+    if isinstance(enrollment_df, list):
+        if not enrollment_df:  # If list is empty
+            events_df = pd.DataFrame(columns=[EMP_ID, 'event_type', 'event_time'])
+        else:
+            events_df = pd.concat(enrollment_df, ignore_index=True)
+    else:
+        events_df = enrollment_df if enrollment_df is not None else pd.DataFrame(columns=[EMP_ID, 'event_type', 'event_time'])
+    
+    contrib_events = contributions.run(
         snapshot=prev_snapshot,
-        eligibility_df=eligibility_df,
-        enrollment_df=enrollment_df,
+        events=events_df,
         as_of=as_of,
-        prev_as_of=prev_as_of
+        cfg=hazard_cfg.get('plan_rules', {}).get('contributions', {})
     )
     
-    # Process proactive decreases
-    proactive_decrease_df = contributions.run_proactive_decreases(
-        snapshot=prev_snapshot,
-        eligibility_df=eligibility_df,
-        enrollment_df=enrollment_df,
-        as_of=as_of
-    )
+    # For now, we'll use the same events for both increases and proactive decreases
+    # since the contributions.run() function handles both cases
+    contrib_increase_df = contrib_events
+    proactive_decrease_df = pd.DataFrame(columns=contrib_events.columns) if not contrib_events.empty else contrib_events
     
     # Collect all plan rule events
     plan_rule_events = []

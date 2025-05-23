@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 import pandas as pd
 import numpy as np
 import json
+from cost_model.engines import hire
 
 from cost_model.state.job_levels.sampling import sample_mixed_new_hires
 from cost_model.state.event_log import create_event, EVENT_COLS
@@ -100,19 +101,25 @@ def generate_hire_events(
         return pd.DataFrame()
     
     # Generate hire events using hire.run
-    hire_events_df = hire.run(
-        count=gross_hires,
+    hire_events_dfs = hire.run(
         snapshot=temp_snapshot,
-        year=year,
-        hazard_table=hazard_slice,
+        hires_to_make=gross_hires,
+        hazard_slice=hazard_slice, 
         rng=year_rng,
-        template_path=census_template_path,
+        census_template_path=census_template_path,
         global_params=global_params,
         terminated_events=term_events
     )
     
-    if hire_events_df is None or hire_events_df.empty:
+    # hire.run() returns a list of DataFrames - the first one contains the hire events
+    if not hire_events_dfs or len(hire_events_dfs) == 0:
         logger.warning(f"[YR={year}] No hire events generated")
+        return pd.DataFrame()
+        
+    hire_events_df = hire_events_dfs[0] if len(hire_events_dfs) > 0 else pd.DataFrame()
+    
+    if hire_events_df is None or hire_events_df.empty:
+        logger.warning(f"[YR={year}] No hire events in the result")
         return pd.DataFrame()
     
     logger.info(f"[RUN_ONE_YEAR YR={year}] Generated {len(hire_events_df)} new-hire events")
@@ -334,14 +341,27 @@ def process_new_hires(
     # Apply new hires to snapshot
     snapshot_with_hires = temp_snapshot.copy()
     if not new_hires_df.empty:
+        # Ensure the new_hires_df has the required columns
+        if 'event_type' not in new_hires_df.columns:
+            new_hires_df = new_hires_df.copy()
+            new_hires_df['event_type'] = EVT_HIRE
+            
+        # Ensure the new_hires_df has the 'value_num' column for compensation
+        if 'value_num' not in new_hires_df.columns and EMP_GROSS_COMP in new_hires_df.columns:
+            new_hires_df['value_num'] = new_hires_df[EMP_GROSS_COMP]
+            
+        # Ensure the new_hires_df has the 'event_time' column
+        if 'event_time' not in new_hires_df.columns:
+            new_hires_df['event_time'] = pd.Timestamp(f"{year}-01-01")
+            
         snapshot_with_hires = _apply_new_hires(
             current=snapshot_with_hires,
-            new_df=new_hires_df,
-            as_of=pd.Timestamp(f"{year}-01-01")
+            new_events=new_hires_df,
+            year=year
         )
         
         logger.info(f"[YR={year}] With hires snapshot: {len(snapshot_with_hires[EMP_ID].unique())} unique EMP_IDs, {snapshot_with_hires.shape[0]} rows")
-        dbg(year, "with hires snapshot", snapshot_with_hires)
+        logger.debug(f"[YR={year}] With hires snapshot details: {snapshot_with_hires.head().to_dict()}")
         
         active_count = snapshot_with_hires["active"].sum() if "active" in snapshot_with_hires.columns else 0
         logger.info(f"[YR={year}] After Hires     = {active_count}  (added {len(new_hires_df)} hires)")

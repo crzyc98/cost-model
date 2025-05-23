@@ -57,35 +57,33 @@ def apply_compensation_and_terminations(
     term_events = []
     if experienced_count > 0:
         # Generate termination events for active employees
-        term_events_df = term.run(
+        term_events_list = term.run(
             snapshot=snapshot.loc[experienced_mask],
-            year=year,
             hazard_slice=hazard_slice,
-            deterministic=deterministic_term,
-            global_params=global_params,
-            rng=year_rng
+            rng=year_rng,
+            deterministic=deterministic_term
         )
         
-        if term_events_df is not None and not term_events_df.empty:
-            term_events.append(term_events_df)
-            term_count = len(term_events_df)
+        if term_events_list:
+            # Extend the term_events list with all DataFrames from the returned list
+            for df in term_events_list:
+                if df is not None and not df.empty:
+                    term_events.append(df)
+            
+            # Calculate total number of terminations
+            term_count = sum(len(df) for df in term_events_list if df is not None)
             logger.info(f"[YR={year}] Term events generated: {term_count}")
             
             # Log the terminated employee IDs
-            term_ids = term_events_df[EMP_ID].tolist()
-            logger.info(f"[YR={year}] Term EMP_IDs: {term_ids}")
+            term_ids = []
+            for df in term_events_list:
+                if df is not None and not df.empty and EMP_ID in df.columns:
+                    term_ids.extend(df[EMP_ID].tolist())
             
-            # Update snapshot with terminations
-            for idx, row in term_events_df.iterrows():
-                emp_id = row[EMP_ID]
-                term_date = row["event_time"]
-                
-                # Find the employee in the snapshot
-                emp_idx = snapshot[snapshot[EMP_ID] == emp_id].index
-                if not emp_idx.empty:
-                    # Update termination date and active status
-                    snapshot.loc[emp_idx, EMP_TERM_DATE] = term_date
-                    snapshot.loc[emp_idx, ACTIVE] = False
+            if term_ids:
+                logger.info(f"[YR={year}] Terminated employee IDs: {term_ids}")
+                # Update snapshot with terminations
+                snapshot.loc[snapshot[EMP_ID].isin(term_ids), [ACTIVE, EMP_TERM_DATE]] = [False, pd.Timestamp(f"{year}-12-31")]
             
             # Log post-termination stats
             logger.info(f"[YR={year}] Post-term snapshot: {len(snapshot)} unique EMP_IDs, {snapshot.shape[0]} rows")
@@ -105,7 +103,11 @@ def apply_compensation_and_terminations(
         # Extract rates from hazard slice
         comp_rates = hazard_slice["comp_raise_pct"].unique()
         mean_comp_rate = comp_rates.mean() if len(comp_rates) > 0 else 0.03
-        logger.info(f"[RUN_ONE_YEAR YR={year}] Rates → term={hazard_slice['term_rate'].mean():.3f}, comp={mean_comp_rate:.3f}, nh_term={hazard_slice['new_hire_termination_rate'].mean():.3f}")
+        
+        # Log summary stats
+        term_rate = hazard_slice['term_rate'].mean() if 'term_rate' in hazard_slice else 0.0
+        nh_term_rate = hazard_slice['new_hire_termination_rate'].mean() if 'new_hire_termination_rate' in hazard_slice else 0.0
+        logger.info(f"[RUN_ONE_YEAR YR={year}] Rates → term={term_rate:.3f}, comp={mean_comp_rate:.3f}, nh_term={nh_term_rate:.3f}")
         
         # Apply compensation bump
         comp_cols_before = experienced_df[[EMP_ID, EMP_GROSS_COMP]].copy()

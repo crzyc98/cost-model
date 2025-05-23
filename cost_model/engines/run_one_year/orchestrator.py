@@ -22,15 +22,17 @@ from .utils import dbg
 
 
 def run_one_year(
+    event_log: pd.DataFrame,
     prev_snapshot: pd.DataFrame,
-    hazard_table: pd.DataFrame,
     year: int,
     global_params: Any,
-    as_of: Optional[pd.Timestamp] = None,
-    prev_as_of: Optional[pd.Timestamp] = None,
-    prev_events: Optional[List[pd.DataFrame]] = None,
+    plan_rules: Dict[str, Any],
+    hazard_table: pd.DataFrame,
+    rng: Any,
+    census_template_path: Optional[str] = None,
+    rng_seed_offset: int = 0,
     deterministic_term: bool = False,
-    random_seed: Optional[int] = None
+    **kwargs
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Orchestrates simulation for a single year, coordinating:
@@ -41,13 +43,15 @@ def run_one_year(
     - Plan rule processing (eligibility, enrollment, contributions)
     
     Args:
+        event_log: Cumulative event log from previous years
         prev_snapshot: Snapshot DataFrame from the previous year
-        hazard_table: Hazard table with demographic transition probabilities
         year: Current simulation year
         global_params: Parameters for the simulation
-        as_of: Current simulation date (default: Jan 1 of current year)
-        prev_as_of: Previous simulation date (default: Jan 1 of previous year)
-        prev_events: List of event DataFrames from previous years
+        plan_rules: Plan rules configuration
+        hazard_table: Hazard table with demographic transition probabilities
+        rng: Random number generator
+        census_template_path: Path to census template (optional)
+        rng_seed_offset: Offset for random seed (default: 0)
         deterministic_term: Whether to use deterministic terminations
         random_seed: Random seed for reproducibility
         
@@ -58,26 +62,24 @@ def run_one_year(
     logger.info(f"[RUN_ONE_YEAR] Simulating year {year}")
     
     # --- 1. Initialization and validation ---
-    # Set default timestamps if not provided
-    if as_of is None:
-        as_of = pd.Timestamp(f"{year}-01-01")
-    if prev_as_of is None:
-        prev_as_of = pd.Timestamp(f"{year-1}-01-01")
+    # Set default timestamps
+    as_of = pd.Timestamp(f"{year}-01-01")
+    prev_as_of = pd.Timestamp(f"{year-1}-01-01")
     
-    # Initialize random number generator
-    year_rng = np.random.default_rng(random_seed if random_seed is not None else year)
+    # Use the provided RNG
+    year_rng = rng
     
     # Validate inputs
     prev_snapshot = ensure_snapshot_cols(prev_snapshot)
-    hazard_slice = validate_and_extract_hazard_slice(hazard_table, year)
+    hazard_slice = hazard_table  # Use the hazard table directly as it's already sliced
     
-    # Get config params from hazard slice
-    census_template_path = getattr(global_params, "census_template_path", None)
+    # Get config params from global_params
+    census_template_path = getattr(global_params, "census_template_path", census_template_path)
     
     # --- 2. Run plan rules ---
     plan_rule_events = run_all_plan_rules(
         prev_snapshot=prev_snapshot,
-        all_events=prev_events or [],
+        all_events=[event_log] if event_log is not None else [],
         hazard_cfg=hazard_slice,
         as_of=as_of,
         prev_as_of=prev_as_of,
