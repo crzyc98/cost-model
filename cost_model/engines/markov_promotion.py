@@ -133,6 +133,9 @@ def apply_markov_promotions(
         - raises_df: DataFrame of raise events associated with promotions
         - exits_df: DataFrame of exit events
     """
+    # Set up logger at function start
+    logger = logging.getLogger(__name__)
+    
     # Load promotion matrix dynamically if not provided
     if promotion_matrix is None:
         allow_default = getattr(global_params, "dev_mode", False)
@@ -142,7 +145,7 @@ def apply_markov_promotions(
                 allow_default
             )
         except (FileNotFoundError, ValueError) as e:
-            logging.getLogger("warnings_errors").error(
+            logger.error(
                 "Promotion matrix load/validation failed: %s", e
             )
             sys.exit(1)
@@ -164,9 +167,6 @@ def apply_markov_promotions(
     if missing_comp_mask.any():
         missing_employees = snapshot[missing_comp_mask][[EMP_ID, EMP_HIRE_DATE]].copy()
         missing_employees[EMP_HIRE_DATE] = missing_employees[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
-        
-        import logging
-        logger = logging.getLogger(__name__)
         
         # Log summary
         logger.warning(

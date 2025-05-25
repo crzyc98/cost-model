@@ -159,7 +159,9 @@ def run(
     
     for emp, dt in zip(losers, dates):
         # Skip if we've already processed this employee
-        if any(e['employee_id'] == emp for e in term_events):
+        # Only compare non-NA IDs and use EMP_ID constant
+        valid_events = (e for e in term_events if pd.notna(e[EMP_ID]))
+        if any(e[EMP_ID] == emp for e in valid_events):
             logger.warning(f"Skipping duplicate termination for employee {emp}")
             continue
             

@@ -162,45 +162,6 @@ def sample_mixed_new_hires(
 
 # --- Markov-chain promotion engine ---
 
-def validate_promotion_matrix(matrix: pd.DataFrame) -> None:
-    """
-    Validates that the promotion matrix is properly formatted.
-    
-    Args:
-        matrix: DataFrame representing the Markov transition matrix
-        
-    Raises:
-        ValueError: If the matrix is None, empty, or invalid
-    """
-    if matrix is None:
-        raise ValueError("Promotion transition matrix cannot be None")
-    
-    if not isinstance(matrix, pd.DataFrame):
-        raise ValueError(f"Expected promotion matrix to be a pandas DataFrame, got {type(matrix).__name__}")
-    
-    if matrix.empty:
-        raise ValueError("Promotion transition matrix is empty")
-    
-    # Check that all values are between 0 and 1
-    if (matrix < 0).any().any() or (matrix > 1).any().any():
-        # Find the first invalid value to provide a helpful error message
-        for i, row in matrix.iterrows():
-            for col in matrix.columns:
-                val = row[col]
-                if not (0 <= val <= 1):
-                    raise ValueError(
-                        f"Invalid transition probability {val:.4f} at level={i}, next_state={col}. "
-                        "All probabilities must be between 0 and 1."
-                    )
-    
-    # Check that rows sum to approximately 1.0
-    row_sums = matrix.sum(axis=1)
-    if not np.allclose(row_sums, 1.0, atol=1e-6):
-        raise ValueError(
-            f"Invalid transition matrix: Rows must sum to 1.0. "
-            f"Row sums: {row_sums.to_dict()}"
-        )
-
 
 def apply_promotion_markov(
     df: pd.DataFrame,
@@ -279,8 +240,12 @@ def apply_promotion_markov(
         start_date = pd.Timestamp(f"{simulation_year}-01-01")
         end_date = pd.Timestamp(f"{simulation_year}-12-31")
         days_in_year = (end_date - start_date).days + 1
-        random_days = rng.randint(0, days_in_year, size=len(df))
-        term_dates = [start_date + pd.Timedelta(days=int(days)) for days in random_days]
+        # numpy.random.Generator uses .integers(), older RandomState uses .randint()
+        if hasattr(rng, "integers"):
+            random_days = rng.integers(0, days_in_year, size=len(df))
+        else:
+            random_days = rng.randint(0, days_in_year, size=len(df))
+        term_dates = [start_date + pd.Timedelta(days=int(d)) for d in random_days]
     
     # For each employee, sample their next state
     for i, (_, row) in enumerate(df.iterrows()):
