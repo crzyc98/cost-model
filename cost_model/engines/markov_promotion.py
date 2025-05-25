@@ -2,9 +2,9 @@ import json
 import numpy as np
 import pandas as pd
 from typing import Tuple, Optional, List
-from cost_model.state.job_levels.sampling import apply_promotion_markov
+from cost_model.state.job_levels.sampling import apply_promotion_markov, load_markov_matrix
 from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, create_event
-from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP
+from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP, EMP_HIRE_DATE
 
 
 def create_promotion_raise_events(
@@ -31,7 +31,6 @@ def create_promotion_raise_events(
     
     for _, row in promoted.iterrows():
         emp_id = row[EMP_ID]
-        import logging
         # Robustly handle possible duplicate index (row.name)
         from_level_val = snapshot.loc[row.name, EMP_LEVEL]
         if isinstance(from_level_val, pd.Series):
@@ -39,11 +38,24 @@ def create_promotion_raise_events(
             continue
         from_level = int(from_level_val)
         to_level = int(row[EMP_LEVEL])
-        comp_val = snapshot.loc[row.name, EMP_GROSS_COMP]
-        if pd.isna(comp_val) or comp_val is pd.NA:
-            logging.warning(f"[PROMOTION] Employee {emp_id} missing {EMP_GROSS_COMP}; skipping promotion/raise event.")
+        try:
+            comp_val = snapshot.loc[row.name, EMP_GROSS_COMP]
+            if pd.isna(comp_val) or comp_val is pd.NA:
+                # This should be rare now that we filter at the start, but keep as a safeguard
+                hire_date = snapshot.loc[row.name, EMP_HIRE_DATE]
+                hire_date_str = hire_date.strftime('%Y-%m-%d') if not pd.isna(hire_date) else 'unknown hire date'
+                logging.warning(
+                    f"[PROMOTION] Employee {emp_id} (hired {hire_date_str}) missing {EMP_GROSS_COMP}; "
+                    "promotion/raise event skipped. This should have been caught earlier in the process."
+                )
+                continue
+            current_comp = float(comp_val)
+        except KeyError as e:
+            logging.error(
+                f"[PROMOTION] Error accessing compensation data for employee {emp_id}: {str(e)}. "
+                "This suggests a data integrity issue. Skipping promotion/raise event."
+            )
             continue
-        current_comp = float(comp_val)
 
         # Get the raise percentage for this promotion level
         level_key = f"{from_level}_to_{to_level}"
@@ -90,12 +102,18 @@ def create_promotion_raise_events(
     
     return promotions_df, raises_df
 
+import logging
+import sys
+from cost_model.state.job_levels.sampling import load_markov_matrix
+
 def apply_markov_promotions(
     snapshot: pd.DataFrame,
     promo_time: pd.Timestamp,
     rng: Optional[np.random.RandomState] = None,
     promotion_raise_config: Optional[dict] = None,
-    simulation_year: Optional[int] = None
+    simulation_year: Optional[int] = None,
+    promotion_matrix: Optional[pd.DataFrame] = None,
+    global_params=None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Apply Markov-chain based promotions to the workforce with associated raises.
@@ -115,6 +133,20 @@ def apply_markov_promotions(
         - raises_df: DataFrame of raise events associated with promotions
         - exits_df: DataFrame of exit events
     """
+    # Load promotion matrix dynamically if not provided
+    if promotion_matrix is None:
+        allow_default = getattr(global_params, "dev_mode", False)
+        try:
+            promotion_matrix = load_markov_matrix(
+                getattr(global_params, "promotion_matrix_path", None),
+                allow_default
+            )
+        except (FileNotFoundError, ValueError) as e:
+            logging.getLogger("warnings_errors").error(
+                "Promotion matrix load/validation failed: %s", e
+            )
+            sys.exit(1)
+
     # Set default raise config if not provided
     if promotion_raise_config is None:
         promotion_raise_config = {
@@ -124,6 +156,45 @@ def apply_markov_promotions(
             "default": 0.10  # Default 10% for any other promotions
         }
     
+    # Create a copy to avoid modifying the input
+    snapshot = snapshot.copy()
+    
+    # Check for missing compensation and log details before filtering
+    missing_comp_mask = snapshot[EMP_GROSS_COMP].isna()
+    if missing_comp_mask.any():
+        missing_employees = snapshot[missing_comp_mask][[EMP_ID, EMP_HIRE_DATE]].copy()
+        missing_employees[EMP_HIRE_DATE] = missing_employees[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Log summary
+        logger.warning(
+            f"Found {missing_comp_mask.sum()} employees missing {EMP_GROSS_COMP} in promotion processing. "
+            f"These employees will be excluded from promotion consideration."
+        )
+        
+        # Log first few examples for debugging
+        for _, emp in missing_employees.head(5).iterrows():
+            logger.warning(
+                f"Employee {emp[EMP_ID]} (hired {emp[EMP_HIRE_DATE]}) is missing compensation data; "
+                "skipping promotion consideration."
+            )
+        
+        if len(missing_employees) > 5:
+            logger.warning(f"... and {len(missing_employees) - 5} more employees with missing compensation.")
+        
+        # Filter out employees with missing compensation
+        snapshot = snapshot[~missing_comp_mask].copy()
+        
+        if snapshot.empty:
+            logger.warning("No employees with valid compensation data remaining after filtering.")
+            return (
+                pd.DataFrame(columns=EVENT_COLS),
+                pd.DataFrame(columns=EVENT_COLS),
+                pd.DataFrame(columns=snapshot.columns)
+            )
+    
     # Get the simulation year from the parameter, promo_time, or the snapshot
     if simulation_year is None:
         simulation_year = promo_time.year if hasattr(promo_time, 'year') else None
@@ -131,7 +202,12 @@ def apply_markov_promotions(
             simulation_year = snapshot['simulation_year'].iloc[0] if not snapshot.empty else None
     
     # Apply Markov promotions with termination date handling
-    out = apply_promotion_markov(snapshot, rng=rng, simulation_year=simulation_year)
+    out = apply_promotion_markov(
+        snapshot, 
+        rng=rng, 
+        simulation_year=simulation_year,
+        matrix=promotion_matrix  # Always pass the loaded promotion matrix
+    )
     
     # Create promotion events for level changes
     promoted_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
@@ -168,7 +244,6 @@ def apply_markov_promotions(
     if pd.isna(out[EMP_LEVEL]).any():
         # Log how many NaN values we found
         nan_count = pd.isna(out[EMP_LEVEL]).sum()
-        import logging
         logger = logging.getLogger(__name__)
         logger.warning(f"Found {nan_count} NaN values in EMP_LEVEL, filling with default level 1")
         

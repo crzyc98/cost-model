@@ -84,33 +84,60 @@ def run(
     )
 
     # 2. Merge with many-to-one validation (one hazard row to many employees)
-    df = active.merge(
+    merged_df = active.merge(
         hz,
         on=[EMP_LEVEL, EMP_TENURE_BAND],
         how="left",
         validate="many_to_one"
     )
-    n = len(df)
-    logger.debug(f"[TERM DEBUG] df rows={n}, TERM_RATE nan? {(df[TERM_RATE].isna()).sum()}")
-
-    missing_hazard = (df[TERM_RATE] == 0).sum()
-    logger.info(f"[TERM] Year {year}: {missing_hazard} employees with zero {TERM_RATE} after merge.")
-    logger.info(f"[TERM] Year {year}: {TERM_RATE} stats: min={df[TERM_RATE].min()}, max={df[TERM_RATE].max()}, mean={df[TERM_RATE].mean()}, median={df[TERM_RATE].median()}.")
+    
+    # Validate merge results
+    n = len(merged_df)
+    if n == 0:
+        logger.warning(
+            f"[TERM] Year {year}: No employees matched the hazard table. "
+            f"Check if {EMP_LEVEL} and {EMP_TENURE_BAND} values in snapshot match hazard table."
+        )
+        return [pd.DataFrame(columns=EVENT_COLS)]
+    
+    # Check for missing or zero rates
+    missing_rates = merged_df[TERM_RATE].isna()
+    zero_rates = (merged_df[TERM_RATE] == 0)
+    
+    if missing_rates.any():
+        logger.warning(
+            f"[TERM] Year {year}: {missing_rates.sum()} employees missing {TERM_RATE} after merge. "
+            f"Filling with 0. Check hazard table coverage for all {EMP_LEVEL} and {EMP_TENURE_BAND} combinations."
+        )
+        merged_df[TERM_RATE] = merged_df[TERM_RATE].fillna(0)
+    
+    logger.debug(f"[TERM] Year {year}: {n} employees processed, {zero_rates.sum()} with zero {TERM_RATE} after merge.")
+    logger.info(
+        f"[TERM] Year {year}: {TERM_RATE} stats - "
+        f"min={merged_df[TERM_RATE].min():.4f}, "
+        f"max={merged_df[TERM_RATE].max():.4f}, "
+        f"mean={merged_df[TERM_RATE].mean():.4f}, "
+        f"median={merged_df[TERM_RATE].median():.4f}."
+    )
     
     # Decide terminations
     if deterministic:
-        rate = df[TERM_RATE].fillna(0).mean()
+        rate = merged_df[TERM_RATE].mean()  # Already filled NAs with 0
         k = int(math.ceil(n * rate))
         logger.info(f"[TERM] Year {year}: Deterministic mode, using mean rate {rate:.4f}, selecting {k} for termination.")
         if k == 0:
             logger.info(f"[TERM] Year {year}: No employees selected for termination (k=0).")
             return [pd.DataFrame(columns=EVENT_COLS)]
-        losers = rng.choice(df[EMP_ID], size=k, replace=False)
+        losers = rng.choice(merged_df[EMP_ID], size=k, replace=False)
     else:
-        probs = df[TERM_RATE].fillna(0).values
-        logger.info(f"[TERM] Year {year}: Stochastic mode, min prob={probs.min()}, max prob={probs.max()}.")
-        draw = rng.random(len(df))
-        losers = df.loc[draw < probs, EMP_ID].tolist()
+        probs = merged_df[TERM_RATE].values  # Already filled NAs with 0
+        logger.info(
+            f"[TERM] Year {year}: Stochastic mode - "
+            f"min prob={probs.min():.4f}, max prob={probs.max():.4f}, "
+            f"employees with non-zero prob={(probs > 0).sum()}/{n} ({(probs > 0).mean()*100:.1f}%)"
+        )
+        draw = rng.random(n)  # Use n which is len(merged_df)
+        losers = merged_df.loc[draw < probs, EMP_ID].tolist()
         logger.info(f"[TERM] Year {year}: {len(losers)} employees selected for termination.")
         
     if len(losers) == 0:

@@ -21,34 +21,75 @@ from cost_model.state.schema import (
 logger = logging.getLogger(__name__)
 
 def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> pd.DataFrame:
-    logger.info(f"Creating initial snapshot for start year: {start_year} from {census_path}")
+    """
+    Create the initial employee snapshot from census data.
+    
+    Args:
+        start_year: The starting year for the simulation
+        census_path: Path to the census data file (Parquet format)
+        
+    Returns:
+        DataFrame containing the initial employee snapshot
+        
+    Raises:
+        FileNotFoundError: If the census file doesn't exist
+        ValueError: If the census data is invalid or missing required columns
+    """
+    logger.info("Creating initial snapshot for start year: %d from %s", start_year, str(census_path))
+    
     # Load census data
     try:
-        if isinstance(census_path, str):
-            census_path = Path(census_path)
+        census_path = Path(census_path) if isinstance(census_path, str) else census_path
+        if not census_path.exists():
+            raise FileNotFoundError(f"Census file not found: {census_path}")
+            
+        logger.debug("Reading census data from %s", census_path)
         census_df = pd.read_parquet(census_path)
+        
+        if census_df.empty:
+            logger.warning("Census data is empty. Creating empty snapshot.")
+            return pd.DataFrame(columns=SNAPSHOT_COL_NAMES).astype(SNAPSHOT_DTYPES)
+            
     except Exception as e:
-        logger.error(f"Error reading census Parquet file {census_path}: {e}")
+        logger.error("Error reading census Parquet file %s: %s", str(census_path), str(e), exc_info=True)
         raise
     
-    logger.info(f"Loaded census data with {len(census_df)} records. Columns: {census_df.columns.tolist()}")
-
+    logger.info("Loaded census data with %d records. Columns: %s", len(census_df), census_df.columns.tolist())
+    
+    # Ensure required columns exist
+    required_columns = [EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP]
+    missing_columns = [col for col in required_columns if col not in census_df.columns]
+    if missing_columns:
+        error_msg = f"Census data is missing required columns: {', '.join(missing_columns)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
     # Filter out employees terminated before or at the projection start year
-    # If EMP_TERM_DATE is not present, treat as not terminated
     from ..utils.columns import EMP_TERM_DATE
     term_col = EMP_TERM_DATE if EMP_TERM_DATE in census_df.columns else None
+    
     if term_col:
+        # Convert termination dates to datetime, coercing errors to NaT
         census_df[term_col] = pd.to_datetime(census_df[term_col], errors='coerce')
+        
         # Only include employees with no termination date or termination after Jan 1 of the start year
         before_filter = len(census_df)
         census_df = census_df[
-            census_df[term_col].isna() |
+            census_df[term_col].isna() | 
             (census_df[term_col] > pd.Timestamp(f'{start_year}-01-01'))
         ]
         after_filter = len(census_df)
-        logger.info(f"Filtered out {before_filter - after_filter} employees terminated before or at {start_year}-01-01. Remaining: {after_filter}")
+        
+        logger.info(
+            "Filtered out %d employees terminated before or at %d-01-01. Remaining: %d",
+            before_filter - after_filter, start_year, after_filter
+        )
     else:
-        logger.info(f"No {EMP_TERM_DATE} column found in census. Assuming all employees are active.")
+        logger.info("No '%s' column found in census. Assuming all employees are active.", EMP_TERM_DATE)
+    
+    # Always add simulation_year column at creation
+    census_df["simulation_year"] = start_year
+    logger.debug("Set simulation_year=%d for all employees", start_year)
 
     # Data for the snapshot at the beginning of the start_year
     # First, check if the census has termination dates

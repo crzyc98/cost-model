@@ -16,6 +16,10 @@ from __future__ import annotations
 import pandas as pd
 from typing import List
 
+# Core identifier and simulation constants
+EMP_ID = "employee_id"
+SIMULATION_YEAR = "simulation_year"
+
 # -----------------------------------------------------------------------------
 # Event type constants (re-export from event_log so there is a single source)
 # -----------------------------------------------------------------------------
@@ -188,8 +192,7 @@ except ImportError:  # pragma: no cover
     EVT_CONTRIB = "EVT_CONTRIB"
     EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM"
 
-    # Define all column constants as fallback
-    EMP_ID = "employee_id"
+    # Define remaining column constants as fallback
     EMP_HIRE_DATE = "employee_hire_date"
     EMP_BIRTH_DATE = "employee_birth_date"
     EMP_GROSS_COMP = "employee_gross_compensation"
@@ -200,7 +203,6 @@ except ImportError:  # pragma: no cover
     EMP_LEVEL_SOURCE = "job_level_source"
     EMP_ACTIVE = "active"
     EMP_EXITED = "exited"
-    SIMULATION_YEAR = "simulation_year"
     TERM_RATE = "term_rate"
 
 EVENT_COLS: List[str] = [

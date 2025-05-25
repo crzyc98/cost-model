@@ -1,0 +1,2 @@
+promotion_matrix_path: path/to/prod_matrix.yaml
+dev_mode: false

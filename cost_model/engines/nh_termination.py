@@ -9,6 +9,7 @@ import json
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
 from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
+from cost_model.state.schema import NEW_HIRE_TERM_RATE
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,20 +45,39 @@ def run_new_hires(
     if df_nh.empty:
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
     # Get termination rate
-    nh_term_rate = hazard_slice['new_hire_termination_rate'].iloc[0] if 'new_hire_termination_rate' in hazard_slice else 0.0
+    nh_term_rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hazard_slice.columns else 0.0
     n = len(df_nh)
-    k = int(round(n * nh_term_rate))
+    k = min(int(round(n * nh_term_rate)), n)  # Ensure k is not larger than n
+    
+    # Create a mapping of employee IDs to their row indices for safer lookups
+    if k <= 0:
+        return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
+    
+    # Select k employees to terminate
     if deterministic:
-        exit_ids = df_nh[EMP_ID].iloc[:k].values
+        # For deterministic, select the first k rows
+        selected_indices = df_nh.index[:k]
     else:
-        exit_ids = rng.choice(df_nh[EMP_ID], size=k, replace=False)
-    loser_hire_dates = [df_nh.loc[df_nh[EMP_ID] == emp, EMP_HIRE_DATE].iloc[0] for emp in exit_ids]
+        # For stochastic, randomly select k indices
+        selected_indices = rng.choice(df_nh.index, size=k, replace=False)
+    
+    # Get the employee IDs and hire dates for the selected employees
+    selected_employees = df_nh.loc[selected_indices]
+    exit_ids = selected_employees[EMP_ID].values
+    loser_hire_dates = selected_employees[EMP_HIRE_DATE].values
     dates = random_dates_between(loser_hire_dates, end_of_year, rng)
     term_events = []
     comp_events = []
-    for emp, hire_date, term_date in zip(exit_ids, loser_hire_dates, dates):
+    # Create a DataFrame for selected employees with all the data we need
+    selected_df = selected_employees.copy()
+    selected_df['term_date'] = dates
+    
+    for i, row in selected_df.iterrows():
+        emp = row[EMP_ID]
+        hire_date = row[EMP_HIRE_DATE]
+        term_date = row['term_date']
         tenure_days = int((term_date - hire_date).days)
-        comp = df_nh.loc[df_nh[EMP_ID] == emp, EMP_GROSS_COMP].iloc[0] if EMP_GROSS_COMP in df_nh.columns else None
+        comp = row[EMP_GROSS_COMP] if EMP_GROSS_COMP in selected_df.columns else None
         days_worked = (term_date - hire_date).days + 1
         prorated = comp * (days_worked / 365.25) if comp is not None else None
         term_events.append(create_event(

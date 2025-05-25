@@ -1,0 +1,375 @@
+# Configuration Classes
+
+This document details the configuration classes used throughout the Workforce Simulation & Cost Model system.
+
+## Table of Contents
+- [Core Configuration](#core-configuration)
+  - [MainConfig](#mainconfig)
+  - [GlobalParameters](#globalparameters)
+  - [ScenarioDefinition](#scenariodefinition)
+- [Plan Rules](#plan-rules)
+  - [PlanRules](#planrules)
+  - [ContributionRules](#contributionrules)
+  - [EligibilityConfig](#eligibilityconfig)
+  - [EnrollmentConfig](#enrollmentconfig)
+  - [AutoEnrollmentConfig](#autoenrollmentconfig)
+  - [AutoIncreaseConfig](#autoincreaseconfig)
+  - [ContributionConfig](#contributionconfig)
+  - [ProactiveDecreaseConfig](#proactivedecreaseconfig)
+- [Compensation & Benefits](#compensation--benefits)
+  - [CompensationParams](#compensationparams)
+  - [IRSYearLimits](#irsyearlimits)
+  - [MatchTier](#matchtier)
+  - [EmployerMatchRules](#employermatchrules)
+- [Employee Behavior](#employee-behavior)
+  - [BehavioralParams](#behavioralparams)
+  - [AutoEnrollOutcomeDistribution](#autoenrolloutcomedistribution)
+- [Onboarding & Tenure](#onboarding--tenure)
+  - [OnboardingConfig](#onboardingconfig)
+  - [OnboardingBumpRules](#onboardingbumprules)
+- [Hazard Models](#hazard-models)
+  - [HazardModelParams](#hazardmodelparams)
+
+## Core Configuration
+
+### MainConfig
+
+- **Location**: `config.models.MainConfig`
+- **Description**: The root model for the entire configuration file
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `global_parameters`: Global simulation parameters (GlobalParameters)
+  - `scenarios`: Dictionary of scenario definitions (Dict[str, ScenarioDefinition])
+- **Validation**:
+  - Ensures at least a 'baseline' scenario is defined
+
+### GlobalParameters
+
+- **Location**: `config.models.GlobalParameters`
+- **Description**: Core simulation parameters
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `start_year`: First year of simulation
+  - `projection_years`: Number of years to project
+  - `random_seed`: Optional random seed for reproducibility
+  - `annual_compensation_increase_rate`: Base compensation increase rate
+  - `annual_termination_rate`: Base termination rate
+  - `new_hire_termination_rate`: Termination rate for new hires
+  - `use_expected_attrition`: Whether to use expected attrition
+  - `new_hire_start_salary`: Optional override for new hire salary
+  - `new_hire_average_age`: Optional override for new hire age
+  - `role_distribution`: Distribution of employees across job roles
+  - `onboarding`: Configuration for onboarding process
+  - `plan_rules`: Plan-specific rules and parameters
+
+### ScenarioDefinition
+
+- **Location**: `config.models.ScenarioDefinition`
+- **Description**: Defines a single scenario with parameter overrides
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `name`: Scenario name (required)
+  - All attributes from GlobalParameters can be overridden
+  - `plan_rules`: Optional override for plan rules
+  - `onboarding`: Optional override for onboarding config
+
+## Plan Rules
+
+### PlanRules
+
+- **Location**: `config.models.PlanRules`
+- **Description**: Container for all plan rule configurations
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `eligibility`: Eligibility rules configuration
+  - `onboarding_bump`: Onboarding compensation bump rules
+  - `auto_enrollment`: Auto-enrollment settings
+  - `auto_increase`: Automatic contribution increase settings
+  - `employer_match`: Employer matching rules
+  - `irs_limits`: Dictionary of IRS limits by year
+  - `behavioral_params`: Employee behavior parameters
+  - `contributions`: General contribution rules
+  - `proactive_decrease`: Proactive decrease rules
+  - `contribution_increase`: Contribution increase rules
+
+### ContributionRules
+
+- **Location**: `config.models.ContributionRules`
+- **Description**: General contribution rules
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `enabled`: Whether contributions are calculated
+
+### EligibilityConfig
+
+- **Location**: `config.plan_rules.EligibilityConfig`
+- **Description**: Eligibility criteria for plan participation
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `min_age`: Minimum participation age (default: 21)
+  - `min_service_months`: Minimum service in months (default: 12)
+
+### EnrollmentConfig
+
+- **Location**: `config.plan_rules.EnrollmentConfig`
+- **Description**: Plan enrollment settings
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `window_days`: Enrollment window in days (default: 30)
+  - `allow_opt_out`: Whether opt-out is allowed (default: True)
+  - `default_rate`: Default contribution rate (default: 0.05)
+  - `auto_enrollment`: Auto-enrollment configuration
+  - `voluntary_enrollment_rate`: Base rate of voluntary enrollment
+
+### AutoEnrollmentConfig
+
+- **Location**: `config.plan_rules.AutoEnrollmentConfig`
+- **Description**: Auto-enrollment settings
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `enabled`: Whether auto-enrollment is active (default: False)
+  - `default_rate`: Default contribution rate (default: 0.03)
+  - `window_days`: Auto-enrollment window in days (default: 90)
+
+### AutoIncreaseConfig
+
+- **Location**: `config.plan_rules.AutoIncreaseConfig`
+- **Description**: Automatic contribution increase settings
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `increase_pct`: Percentage increase (default: 0.01)
+  - `cap`: Maximum contribution rate (default: 0.10)
+  - `frequency_years`: Years between increases (default: 1)
+
+### ContributionConfig
+
+- **Location**: `config.plan_rules.ContributionConfig`
+- **Description**: Default contribution settings
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `default_deferral_rate`: Default employee deferral rate (default: 0.06)
+  - `max_deferral_rate`: Maximum allowed deferral rate (default: 0.15)
+  - `employer_match_pct`: Employer match percentage (default: 0.5)
+
+### ProactiveDecreaseConfig
+
+- **Location**: `config.plan_rules.ProactiveDecreaseConfig`
+- **Description**: Rules for proactive contribution decreases
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `lookback_months`: Lookback period in months (default: 12)
+  - `threshold_pct`: Decrease threshold percentage (default: 0.05)
+  - `event_type`: Event type identifier (default: "EVT_PROACTIVE_DECREASE")
+
+## Compensation & Benefits
+
+### CompensationParams
+
+- **Location**: `config.models.CompensationParams`
+- **Description**: Generic compensation parameters
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `comp_base_salary`: Base salary amount
+  - `comp_std`: Standard deviation (optional)
+  - `comp_increase_per_age_year`: Annual increase per year of age
+  - `comp_increase_per_tenure_year`: Annual increase per year of tenure
+  - `comp_log_mean_factor`: Log mean factor (default: 1.0)
+  - `comp_spread_sigma`: Salary spread sigma (default: 0.3)
+  - `comp_min_salary`: Minimum salary threshold
+
+### IRSYearLimits
+
+- **Location**: `config.models.IRSYearLimits`
+- **Description**: IRS limits for retirement plans by year
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `compensation_limit`: Annual compensation limit (e.g., 401(a)(17))
+  - `deferral_limit`: Elective deferral limit (e.g., 402(g))
+  - `catchup_limit`: Catch-up contribution limit for age 50+
+  - `catchup_eligibility_age`: Age for catch-up eligibility (default: 50)
+
+### MatchTier
+
+- **Location**: `config.models.MatchTier`
+- **Description**: Tier in employer matching formula
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `match_rate`: Employer match rate (e.g., 0.5 for 50%)
+  - `cap_deferral_pct`: Maximum deferral percentage for this tier
+
+### EmployerMatchRules
+
+- **Location**: `config.models.EmployerMatchRules`
+- **Description**: Employer matching contribution rules
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `match_formula`: Match formula description
+  - `match_tiers`: List of MatchTier objects
+  - `max_match_pct`: Maximum match percentage
+  - `requires_employee_contribution`: Whether employee contribution is required
+
+## Employee Behavior
+
+### BehavioralParams
+
+- **Location**: `config.models.BehavioralParams`
+- **Description**: Employee behavior parameters
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `voluntary_enrollment_rate`: Base voluntary enrollment rate
+  - `voluntary_default_deferral`: Default deferral rate for voluntary enrollment
+  - `voluntary_window_days`: Enrollment window in days (default: 180)
+  - `voluntary_change_probability`: Probability of voluntary change
+  - `prob_increase_given_change`: Probability of increase given change
+  - `prob_decrease_given_change`: Probability of decrease given change
+  - `prob_stop_given_change`: Probability of stopping contributions
+  - `voluntary_increase_amount`: Amount of voluntary increase
+  - `voluntary_decrease_amount`: Amount of voluntary decrease
+
+### AutoEnrollOutcomeDistribution
+
+- **Location**: `config.models.AutoEnrollOutcomeDistribution`
+- **Description**: Probability distribution for auto-enrollment outcomes
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `prob_opt_out`: Probability of opting out
+  - `prob_stay_default`: Probability of staying at default rate
+  - `prob_opt_down`: Probability of opting to a lower rate
+  - `prob_increase_to_match`: Probability of increasing to match rate
+  - `prob_increase_high`: Probability of increasing to a higher rate
+- **Validation**: Probabilities must sum to 1.0
+
+## Onboarding & Tenure
+
+### OnboardingConfig
+
+- **Location**: `config.models.OnboardingConfig`
+- **Description**: Early tenure dynamics configuration
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `enabled`: Whether onboarding is active (default: False)
+  - `early_tenure_months`: Early tenure period in months (default: 6)
+  - `hazard_multiplier`: Hazard rate multiplier (default: 1.0)
+  - `productivity_curve`: Optional productivity curve
+
+### OnboardingBumpRules
+
+- **Location**: `config.models.OnboardingBumpRules`
+- **Description**: Compensation bump rules for new hires
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `enabled`: Whether bumps are active
+  - `method`: Bump method ('flat_rate' or 'sample_plus_rate')
+  - `rate`: Bump rate or amount
+  - `applicable_months`: Months after hire when bump applies
+
+## Hazard Models
+
+### HazardModelParams
+
+- **Location**: `config.models.HazardModelParams`
+- **Description**: Reference to external hazard model parameters
+- **Inherits from**: `pydantic.BaseModel`
+- **Key Attributes**:
+  - `file`: Path to hazard model parameters file
+
+## Configuration Example
+
+```yaml
+# Example configuration
+global_parameters:
+  start_year: 2025
+  projection_years: 10
+  random_seed: 42
+  annual_compensation_increase_rate: 0.03
+  annual_termination_rate: 0.15
+  new_hire_termination_rate: 0.25
+  use_expected_attrition: true
+  
+  # Compensation parameters
+  new_hire_compensation_params:
+    comp_base_salary: 75000
+    comp_std: 20000
+    comp_increase_per_age_year: 0.01
+    comp_increase_per_tenure_year: 0.02
+    comp_min_salary: 40000
+
+  # Role distribution
+  role_distribution:
+    engineer: 0.4
+    manager: 0.3
+    executive: 0.1
+    support: 0.2
+
+  # Onboarding configuration
+  onboarding:
+    enabled: true
+    early_tenure_months: 6
+    hazard_multiplier: 1.5
+
+# Plan rules
+plan_rules:
+  eligibility:
+    min_age: 21
+    min_service_months: 12
+  
+  enrollment:
+    window_days: 30
+    allow_opt_out: true
+    default_rate: 0.05
+    
+    auto_enrollment:
+      enabled: true
+      default_rate: 0.03
+      window_days: 90
+  
+  contributions:
+    default_deferral_rate: 0.06
+    max_deferral_rate: 0.15
+    employer_match_pct: 0.5
+  
+  employer_match:
+    match_formula: "100% of first 3%, 50% of next 2%"
+    match_tiers:
+      - match_rate: 1.0
+        cap_deferral_pct: 0.03
+      - match_rate: 0.5
+        cap_deferral_pct: 0.05
+    max_match_pct: 0.04
+    requires_employee_contribution: true
+  
+  auto_increase:
+    enabled: true
+    increase_pct: 0.01
+    cap: 0.10
+    frequency_years: 1
+  
+  proactive_decrease:
+    lookback_months: 12
+    threshold_pct: 0.05
+    event_type: "EVT_PROACTIVE_DECREASE"
+
+# Define scenarios
+scenarios:
+  baseline:
+    name: "Baseline"
+    
+  optimistic:
+    name: "Optimistic Growth"
+    annual_compensation_increase_rate: 0.04
+    annual_termination_rate: 0.10
+    
+  conservative:
+    name: "Conservative"
+    annual_compensation_increase_rate: 0.02
+    annual_termination_rate: 0.20
+    plan_rules:
+      employer_match:
+        max_match_pct: 0.03
+```
+
+## Related Documentation
+
+- [Class Inventory](../02_class_inventory.md) - Complete list of all classes
+- [State Management](../07_state_schema.md) - How configuration integrates with state management
+- [Plan Rules Implementation](../06_ml_plan_rules.md) - Implementation details for plan rules

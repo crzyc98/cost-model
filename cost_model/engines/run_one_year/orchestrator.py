@@ -66,7 +66,8 @@ def run_one_year(
         promo_time=promo_time,
         rng=year_rng,
         promotion_raise_config=promotion_raise_config,
-        simulation_year=year
+        simulation_year=year,
+        global_params=global_params        # <-- pass through so dev_mode is honoured
     )
     logger.info(f"[MARKOV] Promotions: {len(promotions_df)}, Raises: {len(raises_df)}, Exits: {len(exited_df)}")
     
@@ -79,10 +80,15 @@ def run_one_year(
     # Only process experienced employees (not new hires)
     experienced_mask = survivors_after_markov['employee_hire_date'] < pd.Timestamp(f"{year}-01-01")
     experienced = survivors_after_markov[experienced_mask].copy()
+    
+    # Filter hazard table by year for termination engines
+    from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
+    hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
+    
     # Run hazard-based terminations
     term_event_dfs = term.run(
         snapshot=experienced,
-        hazard_slice=hazard_slice,
+        hazard_slice=hz_slice,
         rng=year_rng,
         deterministic=False
     )
@@ -177,7 +183,7 @@ def run_one_year(
     # --- 8. Deterministic new-hire terminations ---
     logger.info("[STEP] Deterministic new-hire terminations")
     from cost_model.engines.nh_termination import run_new_hires
-    nh_term_events, nh_term_comp_events = run_new_hires(snapshot_with_hires, hazard_slice, year_rng, year, deterministic=True)
+    nh_term_events, nh_term_comp_events = run_new_hires(snapshot_with_hires, hz_slice, year_rng, year, deterministic=True)
     terminated_ids = set(nh_term_events['employee_id']) if not nh_term_events.empty else set()
     final_snapshot = snapshot_with_hires.loc[~snapshot_with_hires.index.isin(terminated_ids)]
     logger.info(f"[NH-TERM] Terminated {len(terminated_ids)} new hires")

@@ -1,11 +1,109 @@
-from typing import Dict, Tuple, Optional
+import logging
+from typing import Optional, Dict, Tuple
 import numpy as np
 import pandas as pd
+import yaml
+import os
+
+# Centralized warnings_errors logger for all error reporting
+logger = logging.getLogger("warnings_errors")
 
 from .models import JobLevel
 from .init import get_level_by_id
 from .transitions import PROMOTION_MATRIX
 from cost_model.state.schema import EMP_LEVEL
+
+
+def validate_promotion_matrix(matrix: pd.DataFrame) -> None:
+    """
+    Validates that the promotion matrix is properly formatted.
+    
+    Args:
+        matrix: DataFrame representing the Markov transition matrix
+        
+    Raises:
+        ValueError: If the matrix is None, empty, or invalid
+    """
+    if matrix is None:
+        raise ValueError("Promotion transition matrix cannot be None")
+    
+    if not isinstance(matrix, pd.DataFrame):
+        raise ValueError(f"Expected promotion matrix to be a pandas DataFrame, got {type(matrix).__name__}")
+    
+    if matrix.empty:
+        raise ValueError("Promotion transition matrix is empty")
+    
+    # Check that all values are between 0 and 1
+    if (matrix < 0).any().any() or (matrix > 1).any().any():
+        # Find the first invalid value to provide a helpful error message
+        for i, row in matrix.iterrows():
+            for col in matrix.columns:
+                val = row[col]
+                if not (0 <= val <= 1):
+                    raise ValueError(
+                        f"Invalid transition probability {val:.4f} at level={i}, next_state={col}. "
+                        "All probabilities must be between 0 and 1."
+                    )
+    
+    # Check that rows sum to approximately 1.0
+    row_sums = matrix.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-6):
+        raise ValueError(
+            f"Invalid transition matrix: Rows must sum to 1.0. "
+            f"Row sums: {row_sums.to_dict()}"
+        )
+
+
+def load_markov_matrix(path: Optional[str] = None, allow_default: bool = False) -> pd.DataFrame:
+    """
+    Load a Markov transition matrix from YAML (path) or use the canonical PROMOTION_MATRIX if allowed.
+
+    Args:
+      path: Path to the YAML file. If None and allow_default=True, returns PROMOTION_MATRIX.
+      allow_default: Whether to fall back to PROMOTION_MATRIX when path is None.
+
+    Returns:
+      A square DataFrame of transition probabilities (rows sum to 1).
+
+    Raises:
+      FileNotFoundError: If path is provided but file is missing.
+      ValueError: If path is None and allow_default=False, or if the loaded matrix is invalid.
+    """
+    # 1) Dev‐mode default
+    if path is None:
+        if allow_default:
+            logger.info("No promotion_matrix_path provided; using full default PROMOTION_MATRIX")
+            df = PROMOTION_MATRIX.copy()
+            validate_promotion_matrix(df)
+            return df.astype(float)
+        raise ValueError(
+            "Promotion transition matrix path must be specified or enable dev_mode to use default."
+        )
+
+    # 2) Load from YAML file
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Promotion matrix file not found: {path}")
+
+    logger.info(f"Loading promotion matrix from: {path}")
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+
+    # Build DataFrame
+    if isinstance(data, list) and all(isinstance(r, list) for r in data):
+        df = pd.DataFrame(data)
+    else:
+        df = pd.DataFrame(data)
+
+    # Basic shape checks
+    if df.shape[0] == 0 or df.shape[1] == 0:
+        raise ValueError(f"Promotion matrix is empty in {path}")
+    if df.shape[0] != df.shape[1]:
+        raise ValueError(f"Matrix must be square (got {df.shape}).")
+
+    # Validate contents
+    validate_promotion_matrix(df)
+    logger.info(f"Successfully loaded promotion matrix with shape {df.shape}")
+    return df.astype(float)
 
 
 def sample_new_hire_compensation(
@@ -62,8 +160,47 @@ def sample_mixed_new_hires(
     return pd.concat(results, ignore_index=True)
 
 
-# --- New: Markov-chain promotion engine ---
-import numpy as np
+# --- Markov-chain promotion engine ---
+
+def validate_promotion_matrix(matrix: pd.DataFrame) -> None:
+    """
+    Validates that the promotion matrix is properly formatted.
+    
+    Args:
+        matrix: DataFrame representing the Markov transition matrix
+        
+    Raises:
+        ValueError: If the matrix is None, empty, or invalid
+    """
+    if matrix is None:
+        raise ValueError("Promotion transition matrix cannot be None")
+    
+    if not isinstance(matrix, pd.DataFrame):
+        raise ValueError(f"Expected promotion matrix to be a pandas DataFrame, got {type(matrix).__name__}")
+    
+    if matrix.empty:
+        raise ValueError("Promotion transition matrix is empty")
+    
+    # Check that all values are between 0 and 1
+    if (matrix < 0).any().any() or (matrix > 1).any().any():
+        # Find the first invalid value to provide a helpful error message
+        for i, row in matrix.iterrows():
+            for col in matrix.columns:
+                val = row[col]
+                if not (0 <= val <= 1):
+                    raise ValueError(
+                        f"Invalid transition probability {val:.4f} at level={i}, next_state={col}. "
+                        "All probabilities must be between 0 and 1."
+                    )
+    
+    # Check that rows sum to approximately 1.0
+    row_sums = matrix.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-6):
+        raise ValueError(
+            f"Invalid transition matrix: Rows must sum to 1.0. "
+            f"Row sums: {row_sums.to_dict()}"
+        )
+
 
 def apply_promotion_markov(
     df: pd.DataFrame,
@@ -71,16 +208,39 @@ def apply_promotion_markov(
     matrix: pd.DataFrame = PROMOTION_MATRIX,
     rng: Optional[np.random.RandomState] = None,
     term_date_col: str = 'employee_termination_date',
-    simulation_year: Optional[int] = None
+    simulation_year: Optional[int] = None,
+    logger: Optional[logging.Logger] = None
 ) -> pd.DataFrame:
     """
     For each employee, sample next-level (or exit) according to the Markov matrix.
-    Returns a new DataFrame where:
-      - level_col is updated to the new level (0-4), or NaN for exit
-      - a new column 'exited' == True if they left
-      - term_date_col is set to a date within the simulation year if exited
+    
+    Args:
+        df: Input DataFrame containing employee data
+        level_col: Column name containing the current job level
+        matrix: Markov transition matrix as a DataFrame
+        rng: Random number generator instance
+        term_date_col: Column name for termination date (if employee exits)
+        simulation_year: Current simulation year
+        logger: Optional logger instance for debug/info messages
+        
+    Returns:
+        DataFrame with updated levels and exit status
+        
+    Raises:
+        ValueError: If the promotion matrix is invalid or missing required columns
     """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+    
+    # Validate the promotion matrix before proceeding
+    try:
+        validate_promotion_matrix(matrix)
+    except ValueError as e:
+        logger.error("Invalid promotion matrix: %s", str(e))
+        raise
+    
     rng = rng or np.random
+    
     # Create a copy of the input DataFrame to avoid modifying the original
     df = df.copy()
     
@@ -94,50 +254,115 @@ def apply_promotion_markov(
     prob_matrix = matrix.values
     idx_map = {lvl: i for i, lvl in enumerate(matrix.index)}
     
+    # Log matrix info for debugging
+    logger.debug("Using promotion matrix with states: %s", states)
+    logger.debug("Matrix shape: %s, Index: %s", prob_matrix.shape, matrix.index.tolist())
+    logger.debug("Matrix columns: %s", matrix.columns.tolist())
+    
+    # Validate that all current levels in the data exist in the matrix
+    unique_levels = df[level_col].dropna().unique()
+    missing_levels = set(unique_levels) - set(matrix.index)
+    if missing_levels:
+        error_msg = f"Levels {missing_levels} exist in data but not in the promotion matrix"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
     # Initialize arrays with the same length as the dataframe
     new_levels = [np.nan] * len(df)
     exited = [False] * len(df)
     
-    # Generate a random day within the simulation year for each employee
-    if simulation_year is None:
-        # Try to get the year from the DataFrame if not provided
-        if 'simulation_year' in df.columns:
-            simulation_year = df['simulation_year'].iloc[0]
-        else:
-            # Default to current year if we can't determine it
-            simulation_year = pd.Timestamp.now().year
+    # Log the number of employees being processed
+    logger.debug("Processing %d employees for promotion/termination", len(df))
     
-    # Generate random termination dates for all employees first (we'll only use them for those who exit)
-    start_date = pd.Timestamp(f"{simulation_year}-01-01")
-    end_date = pd.Timestamp(f"{simulation_year}-12-31")
-    days_in_year = (end_date - start_date).days + 1
-    random_days = rng.integers(0, days_in_year, size=len(df))
-    term_dates = [start_date + pd.Timedelta(days=int(days)) for days in random_days]
+    if simulation_year is not None:
+        # Generate a random day in the simulation year for terminations
+        start_date = pd.Timestamp(f"{simulation_year}-01-01")
+        end_date = pd.Timestamp(f"{simulation_year}-12-31")
+        days_in_year = (end_date - start_date).days + 1
+        random_days = rng.randint(0, days_in_year, size=len(df))
+        term_dates = [start_date + pd.Timedelta(days=int(days)) for days in random_days]
     
-    for idx, (_, row) in enumerate(df.iterrows()):
-        curr = row[level_col]
-        if pd.isna(curr):
-            new_levels[idx] = np.nan
-            exited[idx] = True
+    # For each employee, sample their next state
+    for i, (_, row) in enumerate(df.iterrows()):
+        current_level = row[level_col]
+        
+        # Skip if no current level (shouldn't happen for active employees)
+        if pd.isna(current_level):
+            logger.debug("Employee at index %d has no current level, skipping", i)
             continue
             
-        row_i = idx_map[curr]
-        probs = prob_matrix[row_i]
-        choice = rng.choice(states, p=probs)
+        # Get the row index in the transition matrix
+        row_idx = idx_map.get(current_level)
+        if row_idx is None:
+            # If level not in matrix, keep them at the same level
+            logger.warning(
+                "Employee at index %d has level %s which is not in the promotion matrix. "
+                "Keeping at current level.", i, current_level
+            )
+            new_levels[i] = current_level
+            continue
+            
+        # Get transition probabilities for the current level
+        probs = prob_matrix[row_idx]
         
-        if choice == 'exit':
-            new_levels[idx] = np.nan
-            exited[idx] = True
-            # Set the termination date for this employee
-            df.at[idx, term_date_col] = term_dates[idx]
-        else:
-            new_levels[idx] = int(choice)
-            exited[idx] = False
+        # Log transition probabilities for debugging
+        logger.debug("Employee %d (level %s) transition probs: %s", 
+                    i, current_level, 
+                    dict(zip(states, [f"{p:.2f}" for p in probs])))
+        
+        try:
+            # Sample the next state based on transition probabilities
+            next_state_idx = rng.choice(len(states), p=probs)
+            next_state = states[next_state_idx]
+            
+            logger.debug("Employee %d (level %s) transitioning to: %s", 
+                        i, current_level, next_state)
+            
+            if next_state == 'exit':
+                # Employee is terminated
+                exited[i] = True
+                if simulation_year is not None:
+                    # Set termination date to a random day in the simulation year
+                    term_date = start_date + pd.Timedelta(days=int(random_days[i]))
+                    df.at[i, term_date_col] = term_date
+                    logger.debug("Employee %d terminated on %s", i, term_date)
+            else:
+                # Employee stays or gets promoted
+                new_levels[i] = next_state
+                if next_state > current_level:
+                    logger.debug("Employee %d promoted from level %s to %s", 
+                                i, current_level, next_state)
+                elif next_state < current_level:
+                    logger.warning("Employee %d demoted from level %s to %s", 
+                                 i, current_level, next_state)
+        except ValueError as e:
+            logger.error(
+                "Error sampling next state for employee %d (level %s). "
+                "Probabilities: %s. Error: %s", 
+                i, current_level, probs, str(e)
+            )
+            # In case of error, keep employee at current level
+            new_levels[i] = current_level
     
-    # Update the DataFrame with new levels and exited status
+    # Update the DataFrame
     df[level_col] = new_levels
     df['exited'] = exited
     
-    # Restore the original index before returning
+    # Log summary statistics
+    num_exits = sum(exited)
+    num_promotions = sum(1 for new, old in zip(new_levels, df[level_col]) 
+                        if not pd.isna(new) and not pd.isna(old) and new > old)
+    num_demotions = sum(1 for new, old in zip(new_levels, df[level_col]) 
+                       if not pd.isna(new) and not pd.isna(old) and new < old)
+    
+    logger.info(
+        "Promotion/termination summary - Total: %d, Promotions: %d, "
+        "Demotions: %d, Exits: %d (%.1f%%)",
+        len(df), num_promotions, num_demotions, num_exits, 
+        (num_exits / len(df) * 100) if len(df) > 0 else 0
+    )
+    
+    # Restore the original index
     df.index = original_index
+    
     return df

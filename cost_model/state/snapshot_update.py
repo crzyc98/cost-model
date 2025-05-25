@@ -67,21 +67,53 @@ def _nonempty_frames(dfs: List[pd.DataFrame]) -> List[pd.DataFrame]:
     return good
 
 def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int) -> pd.DataFrame:
+    """
+    Apply new hire events to the current snapshot.
+    
+    Args:
+        current: Current snapshot DataFrame
+        new_events: DataFrame containing new events
+        year: Current simulation year
+        
+    Returns:
+        Updated DataFrame with new hires included
+    """
+    logger.debug("Starting _apply_new_hires for year %d", year)
+    
+    # Get all unique new hire IDs that aren't already in current snapshot
     hires = get_first_event(new_events, EVT_HIRE)
+    if hires.empty:
+        logger.debug("No hire events found in new_events")
+        return current
+        
     new_ids = hires[~hires[EMP_ID].isin(current.index)][EMP_ID].unique()
     if len(new_ids) == 0:
+        logger.debug("No new hires to add (all IDs already exist in current snapshot)")
         return current
 
-    logger.debug("%d new hires to append", len(new_ids))
+    logger.info("Adding %d new hires to snapshot for year %d", len(new_ids), year)
+    
+    # Process new hires
     batch = new_events[new_events[EMP_ID].isin(new_ids)]
     first_hire = get_first_event(batch, EVT_HIRE)
     details = extract_hire_details(first_hire)
 
+    # Get last compensation and termination events for new hires
     last_comp = get_last_event(batch, EVT_COMP).set_index(EMP_ID)["value_num"].rename(EMP_GROSS_COMP)
     last_term = get_last_event(batch, [EVT_TERM, EVT_NEW_HIRE_TERM]).set_index(EMP_ID)["event_time"].rename(EMP_TERM_DATE)
 
+    # Initialize new hires DataFrame
     new_df = pd.DataFrame(index=pd.Index(new_ids, name=EMP_ID))
-    new_df = new_df.merge(first_hire.set_index(EMP_ID)["event_time"].rename(EMP_HIRE_DATE), left_index=True, right_index=True, how="left")
+    
+    # Merge hire date and level source
+    new_df = new_df.merge(
+        first_hire.set_index(EMP_ID)["event_time"].rename(EMP_HIRE_DATE), 
+        left_index=True, 
+        right_index=True, 
+        how="left"
+    )
+    
+    # Handle EMP_LEVEL_SOURCE
     if EMP_LEVEL_SOURCE in first_hire.columns:
         new_df = new_df.merge(
             first_hire.set_index(EMP_ID)[[EMP_LEVEL_SOURCE]], 
@@ -89,18 +121,20 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
             right_index=True, 
             how="left"
         )
-        logger.debug(f"Successfully merged EMP_LEVEL_SOURCE from first_hire events.")
+        logger.debug("Successfully merged EMP_LEVEL_SOURCE from first_hire events.")
     else:
-        logger.warning(f"'{EMP_LEVEL_SOURCE}' column not found in first_hire events. It will be NaN in new_df.")
-        new_df[EMP_LEVEL_SOURCE] = pd.NA # Ensure column exists for schema consistency
+        logger.warning("'%s' column not found in first_hire events. It will be NaN in new_df.", EMP_LEVEL_SOURCE)
+        new_df[EMP_LEVEL_SOURCE] = pd.NA  # Ensure column exists for schema consistency
 
+    # Merge other details
     new_df = new_df.merge(details, left_index=True, right_index=True, how="left")
     new_df = new_df.merge(last_comp, left_index=True, right_index=True, how="left")
     new_df = new_df.merge(last_term, left_index=True, right_index=True, how="left")
-    new_df["active"] = new_df[EMP_TERM_DATE].isna()
     
-    # Set simulation_year for new hires
+    # Set active status and simulation year
+    new_df["active"] = new_df[EMP_TERM_DATE].isna()
     new_df[SIMULATION_YEAR] = year
+    logger.debug("Set simulation_year=%d for %d new hires", year, len(new_df))
     logger.debug(f"P1_PRE_CHECK: EMP_LEVEL_SOURCE in new_df.columns: {EMP_LEVEL_SOURCE in new_df.columns}")
     logger.debug(f"P1_PRE_CHECK: new_df.empty: {new_df.empty}")
     if not new_df.empty:
@@ -231,11 +265,35 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
 
 
 def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, year: int) -> pd.DataFrame:
+    """
+    Apply updates to existing employees in the current snapshot.
+    
+    Args:
+        current: Current snapshot DataFrame
+        new_events: DataFrame containing update events
+        year: Current simulation year
+        
+    Returns:
+        Updated DataFrame with applied changes
+    """
+    logger.debug("Starting _apply_existing_updates for year %d", year)
+    
+    # Make a copy to avoid modifying the original
+    current = current.copy()
+    
+    # Update simulation_year for all existing employees
+    current[SIMULATION_YEAR] = year
+    logger.debug("Updated simulation_year=%d for %d existing employees", year, len(current))
+    
     # Compensation updates
     comp_upd = new_events[new_events["event_type"] == EVT_COMP]
     if not comp_upd.empty:
         last_comp = comp_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
-        current.loc[last_comp[EMP_ID], EMP_GROSS_COMP] = last_comp.set_index(EMP_ID)["value_num"]
+        # Only update employees that exist in current
+        valid_emp_ids = last_comp[last_comp[EMP_ID].isin(current.index)][EMP_ID]
+        if not valid_emp_ids.empty:
+            current.loc[valid_emp_ids, EMP_GROSS_COMP] = last_comp.set_index(EMP_ID).loc[valid_emp_ids, "value_num"]
+            logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
     
     # COLA updates - apply the COLA amount to the current compensation
     cola_upd = new_events[new_events["event_type"] == EVT_COLA]
@@ -243,39 +301,49 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
         # Group by employee and get the last COLA for each
         last_cola = cola_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
         # Add the COLA amount to the current compensation
+        updated_count = 0
         for emp_id, row in last_cola.set_index(EMP_ID).iterrows():
             if emp_id in current.index:
                 current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
+                updated_count += 1
+        if updated_count > 0:
+            logger.debug("Applied COLA updates to %d employees", updated_count)
     
     # Raise updates - apply raise amount to current compensation
     raise_upd = new_events[new_events["event_type"] == EVT_RAISE]
     if not raise_upd.empty:
-        # Process each raise event
+        updated_count = 0
         for _, row in raise_upd.iterrows():
             emp_id = row[EMP_ID]
             if emp_id in current.index:
-                # Try to get raise amount from value_num first
-                if pd.notna(row["value_num"]):
-                    # If value_num is available, use it directly
-                    current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
-                elif pd.notna(row["value_json"]):
-                    # Fall back to value_json if value_num is not available
-                    try:
+                try:
+                    # Try to get raise amount from value_num first
+                    if pd.notna(row["value_num"]):
+                        # If value_num is available, use it directly
+                        current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
+                        updated_count += 1
+                    elif pd.notna(row["value_json"]):
+                        # Fall back to value_json if value_num is not available
                         import json
                         raise_data = json.loads(row["value_json"])
                         if "new_comp" in raise_data:
                             # If new_comp is provided, use it directly
                             current.at[emp_id, EMP_GROSS_COMP] = float(raise_data["new_comp"])
+                            updated_count += 1
                         elif "amount" in raise_data:
                             # Otherwise, add the raise amount to current comp
                             current.at[emp_id, EMP_GROSS_COMP] += float(raise_data["amount"])
-                    except (json.JSONDecodeError, (KeyError, ValueError, TypeError)) as e:
-                        logger.warning(f"Error processing raise event for {emp_id}: {e}")
+                            updated_count += 1
+                except (json.JSONDecodeError, (KeyError, ValueError, TypeError)) as e:
+                    logger.warning("Error processing raise event for %s: %s", emp_id, str(e))
+        if updated_count > 0:
+            logger.debug("Processed raise events for %d employees", updated_count)
 
     # Promotion updates - handle employee level changes
     promo_upd = new_events[new_events["event_type"] == EVT_PROMOTION]
     if not promo_upd.empty:
         import json
+        updated_count = 0
         for _, row in promo_upd.iterrows():
             emp_id = row[EMP_ID]
             if emp_id in current.index:
@@ -294,18 +362,32 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
                                     if 'promotion' not in current[EMP_LEVEL_SOURCE].cat.categories:
                                         current[EMP_LEVEL_SOURCE] = current[EMP_LEVEL_SOURCE].cat.add_categories(['promotion'])
                                 current.at[emp_id, EMP_LEVEL_SOURCE] = 'promotion'
+                            updated_count += 1
+                            logger.debug("Promoted employee %s to level %s", emp_id, to_level)
                     except (json.JSONDecodeError, AttributeError) as e:
-                        logger.warning(f"Error processing promotion event for {emp_id}: {e}")
+                        logger.warning("Error processing promotion event for %s: %s", emp_id, str(e))
+        if updated_count > 0:
+            logger.info("Processed %d promotion events", updated_count)
     
     # Termination updates
     term_upd = new_events[new_events["event_type"].isin([EVT_TERM, EVT_NEW_HIRE_TERM])]
     if not term_upd.empty:
         last_term = term_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
-        current.loc[last_term[EMP_ID], EMP_TERM_DATE] = last_term.set_index(EMP_ID)["event_time"]
-        current["active"] = current[EMP_TERM_DATE].isna()
+        # Only update employees that exist in current
+        valid_emp_ids = last_term[last_term[EMP_ID].isin(current.index)][EMP_ID]
+        if not valid_emp_ids.empty:
+            current.loc[valid_emp_ids, EMP_TERM_DATE] = last_term.set_index(EMP_ID).loc[valid_emp_ids, "event_time"]
+            current["active"] = current[EMP_TERM_DATE].isna()
+            logger.info("Processed termination events for %d employees", len(valid_emp_ids))
 
+    # Update tenure for all employees
     as_of = pd.Timestamp(f"{year}-12-31")
     current = apply_tenure(current, EMP_HIRE_DATE, as_of, out_tenure_col=EMP_TENURE, out_band_col="tenure_band")
+    
+    # Ensure all required columns exist and have correct types
+    current = ensure_columns_and_types(current)
+    
+    logger.debug("Completed _apply_existing_updates for year %d", year)
     return current
 
 # -----------------------------------------------------------------------------
@@ -313,26 +395,62 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
 # -----------------------------------------------------------------------------
 
 def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:  # noqa: D401
-    """Return a new snapshot by applying *new_events* to *prev_snapshot*."""
+    """
+    Return a new snapshot by applying new_events to prev_snapshot.
+    
+    Args:
+        prev_snapshot: Previous snapshot DataFrame
+        new_events: DataFrame containing new events to apply
+        snapshot_year: Current simulation year
+        
+    Returns:
+        New snapshot DataFrame with updates applied
+    """
+    logger.debug("Starting snapshot update for year %d", snapshot_year)
+    
+    # Handle empty events case efficiently
     if new_events.empty:
-        return prev_snapshot.astype(SNAPSHOT_DTYPES)
-
+        logger.debug("No new events to apply, returning copy of previous snapshot")
+        snapshot = prev_snapshot.copy()
+        snapshot[SIMULATION_YEAR] = snapshot_year
+        return snapshot.astype(SNAPSHOT_DTYPES)
+    
+    # Ensure we don't modify the input
     cur = prev_snapshot.copy()
+    
+    # Sort events by time and type for consistent processing
     new_events = new_events.sort_values(["event_time", "event_type"], ascending=[True, True])
-
-    # Set simulation_year for all employees in the snapshot
-    cur[SIMULATION_YEAR] = snapshot_year
-
-    cur = _apply_new_hires(cur, new_events, snapshot_year)
-    cur = _apply_existing_updates(cur, new_events, snapshot_year)
-
-    cur[EMP_ID] = cur.index.astype(str)
-    # SNAPSHOT_COLS already contains EMP_TENURE, so avoid duplication
-    cur = cur[SNAPSHOT_COLS].astype(SNAPSHOT_DTYPES)
-    cur.index.name = EMP_ID
     
-    from pandas import CategoricalDtype
-    if isinstance(cur['job_level_source'].dtype, CategoricalDtype):
-        cur['job_level_source'] = cur['job_level_source'].astype("category")
-    
-    return cur
+    # Process new hires and updates
+    try:
+        # Process new hires first
+        cur = _apply_new_hires(cur, new_events, snapshot_year)
+        
+        # Then process updates to existing employees
+        cur = _apply_existing_updates(cur, new_events, snapshot_year)
+        
+        # Ensure EMP_ID is properly set as string and is the index
+        cur[EMP_ID] = cur.index.astype(str)
+        cur.index = cur[EMP_ID]  # Ensure index is set to EMP_ID
+        
+        # Ensure all required columns exist with correct types
+        for col in SNAPSHOT_COLS:
+            if col not in cur.columns:
+                if col in SNAPSHOT_DTYPES:
+                    cur[col] = pd.NA
+        
+        # Convert to final types and select only required columns
+        result = cur[SNAPSHOT_COLS].astype(SNAPSHOT_DTYPES)
+        result.index.name = EMP_ID
+        
+        # Handle categorical columns
+        from pandas import CategoricalDtype
+        if 'job_level_source' in result.columns and isinstance(result['job_level_source'].dtype, CategoricalDtype):
+            result['job_level_source'] = result['job_level_source'].astype("category")
+        
+        logger.debug("Successfully updated snapshot for year %d. Shape: %s", snapshot_year, str(result.shape))
+        return result
+        
+    except Exception as e:
+        logger.error("Error updating snapshot for year %d: %s", snapshot_year, str(e), exc_info=True)
+        raise

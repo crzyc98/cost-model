@@ -12,15 +12,8 @@ import uuid
 from pathlib import Path
 from typing import Dict, Optional, Any
 
-# Attempt to import EMP_ID, define fallback if needed (e.g., for standalone testing)
-try:
-    from .schema import EMP_ID, SIMULATION_YEAR
-except ImportError:
-    print(
-        "Warning: Could not import EMP_ID and SIMULATION_YEAR from .schema. Defaulting EMP_ID."
-    )
-    EMP_ID = "employee_id"
-    SIMULATION_YEAR = "simulation_year"  # Fallback for SIMULATION_YEAR
+# Import schema constants directly - these are required
+from cost_model.state.schema import EMP_ID, SIMULATION_YEAR
 
 logger = logging.getLogger(__name__)
 
