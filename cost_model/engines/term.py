@@ -92,7 +92,21 @@ def run(
     )
     
     # Validate merge results
-    n = len(merged_df)
+    # Preventative fix: Drop rows with NA EMP_ID from merged_df before termination selection
+    if EMP_ID in merged_df.columns and merged_df[EMP_ID].isna().any():
+        na_ids_count = merged_df[EMP_ID].isna().sum()
+        logger.warning(
+            f"[TERM] Year {year}: Found {na_ids_count} employees with NA {EMP_ID} in merged_df "
+            f"before termination selection. These will be excluded."
+        )
+        merged_df = merged_df.dropna(subset=[EMP_ID])
+        if merged_df.empty:
+            logger.warning(
+                f"[TERM] Year {year}: No employees remaining in merged_df after removing NA {EMP_ID}s."
+            )
+            return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
+
+    n = len(merged_df) # Number of candidates
     if n == 0:
         logger.warning(
             f"[TERM] Year {year}: No employees matched the hazard table. "
@@ -169,6 +183,14 @@ def run(
         hire_date = snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].iloc[0] if EMP_HIRE_DATE in snapshot.columns and not snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].isna().iloc[0] else None
         tenure_days = int((dt - hire_date).days) if hire_date is not None else None
         
+        # Safeguard: Skip processing if emp is NA (should ideally be caught by merged_df cleaning)
+        if pd.isna(emp):
+            logger.warning(
+                f"[TERM] Year {year}: Skipping termination processing for an entry with NA employee ID ('{emp}') "
+                f"within the main processing loop (safeguard)."
+            )
+            continue
+
         # Prorate comp for days worked in year
         if EMP_GROSS_COMP in snapshot.columns:
             comp = snapshot.loc[snapshot[EMP_ID] == emp, EMP_GROSS_COMP].iloc[0]

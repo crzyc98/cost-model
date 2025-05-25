@@ -53,6 +53,22 @@ def run_one_year(
     # --- 1. Initialization and validation ---
     as_of = pd.Timestamp(f"{year}-01-01")
     prev_snapshot = ensure_snapshot_cols(prev_snapshot)
+
+    # Validate EMP_ID in prev_snapshot
+    if EMP_ID in prev_snapshot.columns and prev_snapshot[EMP_ID].isna().any():
+        na_count = prev_snapshot[EMP_ID].isna().sum()
+        logger.warning(
+            f"[RUN_ONE_YEAR] Year {year}: Input snapshot (prev_snapshot) contains {na_count} "
+            f"records with NA {EMP_ID}. These records will be dropped."
+        )
+        prev_snapshot = prev_snapshot.dropna(subset=[EMP_ID]).copy()
+        if prev_snapshot.empty:
+            logger.error(
+                f"[RUN_ONE_YEAR] Year {year}: prev_snapshot is empty after dropping NA {EMP_ID}s. "
+                "This may lead to issues downstream or indicate a significant data problem."
+            )
+            # Depending on desired behavior, could raise an error or return empty results.
+            # For now, allowing it to proceed with an empty snapshot.
     hazard_slice = hazard_table
     year_rng = rng
     census_template_path = getattr(global_params, "census_template_path", census_template_path)
@@ -180,6 +196,32 @@ def run_one_year(
     else:
         snapshot_with_hires = survivors_after_term
 
+    # Ensure we don't have any NA or invalid employee IDs in the snapshot
+    def is_valid_employee_id(emp_id):
+        try:
+            return emp_id is not None and not pd.isna(emp_id) and str(emp_id).strip() != ''
+        except Exception:
+            return False
+            
+    # Ensure EMP_ID is a column and not part of the index
+    if EMP_ID in snapshot_with_hires.index.names and EMP_ID not in snapshot_with_hires.columns:
+        snapshot_with_hires = snapshot_with_hires.reset_index(level=EMP_ID)
+    
+    # Create a mask for valid employee IDs
+    valid_mask = snapshot_with_hires[EMP_ID].apply(is_valid_employee_id)
+    invalid_count = len(snapshot_with_hires) - sum(valid_mask)
+    
+    if invalid_count > 0:
+        logger.warning(
+            f"Found {invalid_count} records with invalid employee IDs in snapshot_with_hires. "
+            f"Filtering them out. Sample of invalid IDs: {snapshot_with_hires[~valid_mask][EMP_ID].head(5).tolist()}"
+        )
+        snapshot_with_hires = snapshot_with_hires[valid_mask].copy()
+        
+        if snapshot_with_hires.empty:
+            logger.error("No valid employee records left after filtering invalid employee IDs")
+            raise ValueError("No valid employee records with valid employee IDs found after filtering")
+
     # --- 8. Deterministic new-hire terminations ---
     logger.info("[STEP] Deterministic new-hire terminations")
     from cost_model.engines.nh_termination import run_new_hires
@@ -226,14 +268,24 @@ def run_one_year(
     if not nh_term_comp_events.empty:
         events_to_concat.append(nh_term_comp_events)
     
-    # 1. Create this year's new events
-    if events_to_concat:
-        logger.info(f"Concatenating {len(events_to_concat)} event DataFrames for year {year}")
-        new_events = pd.concat(events_to_concat, ignore_index=True)
-        logger.info(f"Created {len(new_events)} new events for year {year}")
+    # 1. Filter out empty DataFrames before concatenation
+    non_empty_events = [df for df in events_to_concat if not df.empty]
+    
+    # 2. Create this year's new events
+    if non_empty_events:
+        logger.info(f"Concatenating {len(non_empty_events)} non-empty event DataFrames for year {year}")
+        try:
+            new_events = pd.concat(non_empty_events, ignore_index=True)
+            logger.info(f"Successfully created {len(new_events)} new events for year {year}")
+        except Exception as e:
+            logger.error(f"Error concatenating events for year {year}: {e}")
+            logger.debug(f"Event DataFrames being concatenated: {[df.shape for df in non_empty_events]}")
+            raise
     else:
-        logger.warning(f"No new events to concatenate for year {year}")
-        new_events = pd.DataFrame(columns=EVENT_COLS)
+        logger.warning(f"No non-empty event DataFrames to concatenate for year {year}")
+        # Create an empty DataFrame with the correct columns and dtypes
+        new_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object) 
+                                 for col, t in EVENT_PANDAS_DTYPES.items()})
     
     # 2. Ensure all required columns are present in the new events
     for col in EVENT_COLS:

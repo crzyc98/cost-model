@@ -222,10 +222,6 @@ COMP_RAISE_PCT = "comp_raise_pct"
 NEW_HIRE_TERM_RATE = "new_hire_term_rate"
 COLA_PCT = "cola_pct"
 CFG = "cfg"
-COMP_RAISE_PCT = "comp_raise_pct"
-NEW_HIRE_TERM_RATE = "new_hire_term_rate"
-COLA_PCT = "cola_pct"
-CFG = "cfg"
 
 # -----------------------------------------------------------------------------
 # Snapshot schema definition
@@ -244,7 +240,7 @@ SNAPSHOT_COLS: List[str] = [
     EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_EXITED,
-    SIMULATION_YEAR,
+    SIMULATION_YEAR,  # Ensure simulation_year is included in all snapshots
 ]
 
 SNAPSHOT_DTYPES: dict[str, object] = {
@@ -263,7 +259,7 @@ SNAPSHOT_DTYPES: dict[str, object] = {
         ordered=True,
     ),
     EMP_EXITED: pd.BooleanDtype(),
-    SIMULATION_YEAR: pd.Int64Dtype(),
+    SIMULATION_YEAR: 'int64',  # Use standard int64 for simulation year
 }
 
 __all__ = [

@@ -10,7 +10,7 @@ import pyarrow as pa  # Recommended for explicit Parquet schema handling
 import pyarrow.parquet as pq
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Union
 
 # Import schema constants directly - these are required
 from cost_model.state.schema import EMP_ID, SIMULATION_YEAR
@@ -210,29 +210,110 @@ def save_log(log: pd.DataFrame, path: Path) -> None:
 
 def create_event(
     event_time: pd.Timestamp,
-    employee_id: str,
+    employee_id: Union[str, pd.NA, None],
     event_type: str,
     value_num: Optional[float] = None,
-    value_json: Optional[str] = None,
-    meta: Optional[str] = None,
-) -> Dict[str, Any]:
+    value_json: Optional[Union[Dict, str]] = None,
+    meta: Optional[Union[Dict, str]] = None,
+) -> Dict:
     """
     Helper to create a single event dictionary with a new UUID.
     Ensures variant strategy (only one value_* is non-null).
+    
+    Args:
+        event_time: Timestamp when the event occurred
+        employee_id: String identifier for the employee (must not be None, empty, or NA)
+        event_type: Type of the event (e.g., EVT_HIRE, EVT_TERM)
+        value_num: Optional numeric value for the event
+        value_json: Optional JSON-serializable value for the event
+        meta: Optional metadata for the event
+        
+    Returns:
+        A dictionary representing the event with all required fields
+        
+    Raises:
+        ValueError: If employee_id is None, empty string, NA, or otherwise invalid
     """
-    if value_num is not None and value_json is not None:
-        raise ValueError("Only one of value_num or value_json should be provided.")
+    # Safely check for None, pd.NA, or empty string after conversion
+    try:
+        # First check for pd.NA or None using pandas' isna() which handles pd.NA properly
+        if pd.isna(employee_id):
+            error_msg = f"Invalid employee_id: cannot be NA or None. Event type: {event_type}, Time: {event_time}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+            
+        # Convert to string and check if it's empty or just whitespace
+        try:
+            emp_id_str = str(employee_id).strip()
+            if not emp_id_str:
+                error_msg = f"Invalid employee_id: cannot be empty or whitespace. Value: '{employee_id}', Event type: {event_type}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+        except Exception as e:
+            error_msg = f"Failed to process employee_id: {str(e)}. Value: {employee_id}, Type: {type(employee_id).__name__}"
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
+    except Exception as e:
+        # Catch any other unexpected errors during validation
+        error_msg = f"Unexpected error validating event data: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise ValueError(error_msg) from e
+            
+    # Validate event_type is not empty
+    if not event_type or not isinstance(event_type, str):
+        error_msg = f"Event type must be a non-empty string, got {event_type}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
-    return {
+    # Ensure only one of value_num or value_json is provided
+    if value_num is not None and value_json is not None:
+        error_msg = f"Only one of value_num or value_json can be provided. Event type: {event_type}, Employee ID: {employee_id}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+        
+    # Convert value_json to string if it's a dictionary
+    if isinstance(value_json, dict):
+        try:
+            value_json = json.dumps(value_json)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Could not serialize value_json to JSON: {e}")
+            value_json = str(value_json)
+    
+    # Convert meta to string if it's a dictionary
+    if isinstance(meta, dict):
+        try:
+            meta = json.dumps(meta)
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Could not serialize meta to JSON: {e}")
+            meta = str(meta)
+    
+    # Convert meta to string if it's not None
+    meta_str = str(meta) if meta is not None else None
+    
+    # Ensure only one value field is populated
+    if value_num is not None and value_json is not None:
+        logger.warning(
+            f"Both value_num and value_json provided for employee_id={employee_id}, "
+            f"event_type={event_type}. Using value_num."
+        )
+        value_json = None
+    
+    # Generate event with simulation year if event_time is valid
+    event = {
         "event_id": str(uuid.uuid4()),
         "event_time": event_time,
-        EMP_ID: str(employee_id),  # Ensure EMP_ID is string
+        EMP_ID: str(employee_id).strip(),  # Ensure string type and trim whitespace
         "event_type": event_type,
-        "value_num": value_num,
+        "value_num": float(value_num) if value_num is not None else None,
         "value_json": value_json,
         "meta": meta,
-        SIMULATION_YEAR: int(event_time.year) if not pd.isna(event_time) else None
     }
+    
+    # Add simulation year if event_time is valid
+    if not pd.isna(event_time):
+        event[SIMULATION_YEAR] = int(event_time.year)
+    
+    return event
 
 
 # Example usage within another module:

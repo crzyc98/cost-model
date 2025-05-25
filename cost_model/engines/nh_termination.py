@@ -1,3 +1,4 @@
+# cost_model/engines/nh_termination.py
 """
 Deterministic New-Hire Termination Logic
 
@@ -72,34 +73,89 @@ def run_new_hires(
     selected_df = selected_employees.copy()
     selected_df['term_date'] = dates
     
+    # Filter out any rows with NA employee IDs before processing
+    original_count = len(selected_df)
+    
+    # First, ensure EMP_ID is a column and not part of the index
+    if EMP_ID in selected_df.index.names and EMP_ID not in selected_df.columns:
+        selected_df = selected_df.reset_index(level=EMP_ID)
+    
+    # Filter out NA and invalid employee IDs
+    selected_df = selected_df[~selected_df[EMP_ID].isna()].copy()
+    
+    # Additional check for valid string representation
+    def is_valid_employee_id(emp_id):
+        try:
+            return emp_id is not None and str(emp_id).strip() != ''
+        except Exception:
+            return False
+            
+    valid_mask = selected_df[EMP_ID].apply(is_valid_employee_id)
+    invalid_count = len(selected_df) - sum(valid_mask)
+    selected_df = selected_df[valid_mask].copy()
+    
+    if invalid_count > 0 or len(selected_df) < original_count:
+        logger.warning(
+            f"Filtered out {original_count - len(selected_df) + invalid_count} records with invalid employee IDs "
+            f"({original_count - len(selected_df)} NA, {invalid_count} invalid format)"
+        )
+    
+    if selected_df.empty:
+        logger.warning("No valid employee records to process after filtering NA employee IDs")
+        return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
+    
     for i, row in selected_df.iterrows():
-        emp = row[EMP_ID]
-        hire_date = row[EMP_HIRE_DATE]
-        term_date = row['term_date']
-        tenure_days = int((term_date - hire_date).days)
-        comp = row[EMP_GROSS_COMP] if EMP_GROSS_COMP in selected_df.columns else None
-        days_worked = (term_date - hire_date).days + 1
-        prorated = comp * (days_worked / 365.25) if comp is not None else None
-        term_events.append(create_event(
-            event_time=term_date,
-            employee_id=emp,
-            event_type=EVT_TERM,
-            value_num=None,
-            value_json=json.dumps({
-                "reason": "new_hire_termination",
-                "tenure_days": tenure_days
-            }),
-            meta=f"New-hire termination for {emp} in {year}"
-        ))
-        if prorated is not None:
-            comp_events.append(create_event(
+        try:
+            emp = row[EMP_ID]
+            hire_date = row[EMP_HIRE_DATE]
+            term_date = row['term_date']
+            
+            # Skip if we have any NA values in required fields
+            if pd.isna(emp) or pd.isna(hire_date) or pd.isna(term_date):
+                logger.warning(f"Skipping record with missing required fields: emp_id={emp}")
+                continue
+                
+            tenure_days = int((term_date - hire_date).days)
+            comp = row.get(EMP_GROSS_COMP)  # Use .get() to avoid KeyError
+            days_worked = (term_date - hire_date).days + 1
+            prorated = comp * (days_worked / 365.25) if comp is not None and not pd.isna(comp) else None
+            
+            # Create termination event
+            term_events.append(create_event(
                 event_time=term_date,
                 employee_id=emp,
-                event_type=EVT_COMP,
-                value_num=prorated,
-                value_json=None,
-                meta=f"Prorated comp for {emp} ({days_worked} days from hire to term)"
+                event_type=EVT_TERM,
+                value_num=None,
+                value_json=json.dumps({
+                    "reason": "new_hire_termination",
+                    "tenure_days": tenure_days
+                }),
+                meta=f"New-hire termination for {emp} in {year}"
             ))
-    df_term = pd.DataFrame(term_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
-    df_comp = pd.DataFrame(comp_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
+            
+            # Create compensation event if prorated comp is available
+            if prorated is not None:
+                comp_events.append(create_event(
+                    event_time=term_date,
+                    employee_id=emp,
+                    event_type=EVT_COMP,
+                    value_num=prorated,
+                    value_json=None,
+                    meta=f"Prorated comp for {emp} ({days_worked} days from hire to term)"
+                ))
+                
+        except Exception as e:
+            logger.error(f"Error processing termination for employee {emp if 'emp' in locals() else 'unknown'}: {str(e)}")
+            continue
+            
+    # Create DataFrames for the events
+    df_term = pd.DataFrame(term_events, columns=EVENT_COLS) if term_events else pd.DataFrame(columns=EVENT_COLS)
+    df_comp = pd.DataFrame(comp_events, columns=EVENT_COLS) if comp_events else pd.DataFrame(columns=EVENT_COLS)
+    
+    # Sort by event time if there are events
+    if not df_term.empty:
+        df_term = df_term.sort_values("event_time", ignore_index=True)
+    if not df_comp.empty:
+        df_comp = df_comp.sort_values("event_time", ignore_index=True)
+        
     return [df_term, df_comp]
