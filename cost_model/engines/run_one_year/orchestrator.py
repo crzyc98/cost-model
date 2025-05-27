@@ -203,13 +203,36 @@ def run_one_year(
         else: # For other dtypes, just ensure string conversion
             employee_ids_for_new_hires = employee_ids_for_new_hires.astype(str)
         
+        # Extract compensation from value_json if available
+        compensation_values = []
+        for idx, row in hires_events.iterrows():
+            # First try to get compensation from value_num (which might be None)
+            comp_value = row.get('value_num')
+            
+            # If value_num is None, try to extract compensation from value_json
+            if pd.isna(comp_value) and 'value_json' in row:
+                try:
+                    # Parse the JSON string if it's a string
+                    if isinstance(row['value_json'], str):
+                        value_json = json.loads(row['value_json'])
+                    else:
+                        value_json = row['value_json']  # Might already be a dict
+                        
+                    # Extract compensation from the parsed JSON
+                    if isinstance(value_json, dict) and 'compensation' in value_json:
+                        comp_value = float(value_json['compensation'])
+                except (json.JSONDecodeError, TypeError, ValueError) as e:
+                    logger.warning(f"Failed to extract compensation from value_json for hire event {row.get(EMP_ID, 'unknown')}: {str(e)}")
+            
+            compensation_values.append(comp_value)
+        
         # Construct the new_hires DataFrame for the snapshot
         new_hires_data = {
             EMP_ID: employee_ids_for_new_hires, # Use the sanitized Series
             'employee_hire_date': pd.to_datetime(hires_events['event_time']),
             'employee_birth_date': pd.to_datetime('1990-01-01'),  # Default date
             'employee_role': 'UNKNOWN',  # Default role
-            EMP_GROSS_COMP: hires_events['value_num'],
+            EMP_GROSS_COMP: compensation_values,  # Use the extracted compensation values
             'employee_termination_date': pd.NaT,
             'active': True,
             'employee_deferral_rate': 0.0,  # Default value, adjust as needed

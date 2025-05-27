@@ -33,22 +33,32 @@ Verification and User Approval
 
 Our Current Focus
 
-Our immediate priority is ensuring robust compensation handling and validation throughout the workforce simulation. This includes:
+Our immediate priority is ensuring robust data handling and validation throughout the workforce simulation. This includes:
 
-1. **Compensation Validation**
-   - All employees must have valid compensation values in the snapshot
-   - Default compensation is assigned when missing, with appropriate logging
-   - Compensation validation occurs during hiring and in the final snapshot
+1. **Data Format Support**
+   - Support for both Parquet and CSV census file formats
+   - Automatic detection of file format based on extension
+   - Consistent handling of different file formats with appropriate error messages
 
-2. **Error Handling**
-   - Proper handling of pandas NA/NaN values in event creation
-   - Comprehensive logging of missing compensation data
-   - Graceful fallbacks for missing configuration values
+2. **Column Name Standardization**
+   - Automatic mapping of common column name variations (e.g., `employee_ssn` to `employee_id`)
+   - Validation of required columns in input data
+   - Clear error messages for missing or incorrectly named columns
 
-3. **Documentation**
-   - Maintaining clear documentation of compensation handling logic
+3. **DataFrame Merging**
+   - Robust handling of duplicate column names during merges
+   - Creation of clean DataFrames with guaranteed unique column names
+   - Comprehensive logging of merge operations for debugging
+
+4. **Error Handling**
+   - Proper handling of pandas NA/NaN values in all operations
+   - Comprehensive logging of data validation issues
+   - Graceful fallbacks for missing or malformed data
+
+5. **Documentation**
+   - Maintaining clear documentation of data handling logic
    - Ensuring all changes are properly reflected in project documentation
-   - Updating validation rules as needed
+   - Updating validation rules and error handling as needed
 
 ⸻
 

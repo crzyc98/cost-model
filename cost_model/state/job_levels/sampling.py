@@ -85,20 +85,54 @@ def load_markov_matrix(path: Optional[str] = None, allow_default: bool = False) 
         raise FileNotFoundError(f"Promotion matrix file not found: {path}")
 
     logger.info(f"Loading promotion matrix from: {path}")
-    with open(path, "r") as f:
-        data = yaml.safe_load(f)
+    try:
+        with open(path, "r") as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        raise ValueError(f"Error loading YAML from {path}: {str(e)}")
 
+    # Check if this looks like a summary DataFrame rather than a promotion matrix
+    # by detecting common summary column names
+    suspect_columns = ['year', 'active_headcount', 'terminations', 'new_hires', 
+                      'total_compensation', 'avg_compensation']
+    
     # Build DataFrame
-    if isinstance(data, list) and all(isinstance(r, list) for r in data):
-        df = pd.DataFrame(data)
-    else:
-        df = pd.DataFrame(data)
-
-    # Basic shape checks
-    if df.shape[0] == 0 or df.shape[1] == 0:
-        raise ValueError(f"Promotion matrix is empty in {path}")
-    if df.shape[0] != df.shape[1]:
-        raise ValueError(f"Matrix must be square (got {df.shape}).")
+    try:
+        if isinstance(data, list) and all(isinstance(r, list) for r in data):
+            df = pd.DataFrame(data)
+        else:
+            df = pd.DataFrame(data)
+            
+        # Pre-validation checks
+        # 1. Check for duplicate column names
+        if len(df.columns) != len(set(df.columns)):
+            duplicates = [col for col in df.columns if list(df.columns).count(col) > 1]
+            raise ValueError(f"Duplicate column names found: {duplicates}. This does not look like a valid promotion matrix.")
+            
+        # 2. Check if this appears to be a summary file instead of a promotion matrix
+        common_suspect_cols = [col for col in suspect_columns if col in df.columns]
+        if common_suspect_cols:
+            raise ValueError(f"File contains columns typical of summary data ({common_suspect_cols}), not a promotion matrix. "
+                           f"Please check your promotion_matrix_path configuration. Expected format is a square matrix "
+                           f"of transition probabilities between job levels.")
+            
+        # Basic shape checks
+        if df.shape[0] == 0 or df.shape[1] == 0:
+            raise ValueError(f"Promotion matrix is empty in {path}")
+        if df.shape[0] != df.shape[1]:
+            raise ValueError(f"Matrix must be square (got {df.shape} with {df.shape[0]} rows and {df.shape[1]} columns). "
+                           f"A promotion matrix should have the same states as both rows and columns.")
+            
+        # Try to ensure numeric values
+        try:
+            df = df.astype(float)
+        except ValueError:
+            non_numeric = [col for col in df.columns if not pd.to_numeric(df[col], errors='coerce').notnull().all()]
+            raise ValueError(f"Non-numeric values found in columns: {non_numeric}. A promotion matrix must contain only probabilities.")
+            
+    except Exception as e:
+        logger.error(f"Failed to process file as promotion matrix: {str(e)}")
+        raise ValueError(f"File at {path} is not a valid promotion matrix: {str(e)}")
 
     # Validate contents
     validate_promotion_matrix(df)

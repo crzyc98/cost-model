@@ -160,24 +160,170 @@ def save_detailed_results(
         if 'simulation_year' in full_event_log.columns:
             hires_per_year = full_event_log.query("event_type == @schema.EVT_HIRE").groupby('simulation_year').size()
             terms_per_year = full_event_log.query("event_type == @schema.EVT_TERM").groupby('simulation_year').size()
-            summary_to_save['new_hires'] = summary_to_save['year'].map(hires_per_year).fillna(0).astype(int)
-            summary_to_save['terminated_employees'] = summary_to_save['year'].map(terms_per_year).fillna(0).astype(int)
+            
+            # Check if 'year' column exists in summary_to_save
+            if 'year' not in summary_to_save.columns:
+                # Try to use simulation_year if available in summary_statistics
+                if 'simulation_year' in summary_to_save.columns:
+                    logger.info("Using 'simulation_year' as 'year' for event mapping")
+                    summary_to_save['year'] = summary_to_save['simulation_year']
+                # If we have Projection Year, it might have been used instead
+                elif 'Projection Year' in summary_to_save.columns:
+                    logger.info("Using 'Projection Year' as 'year' for event mapping")
+                    summary_to_save['year'] = summary_to_save['Projection Year']
+                else:
+                    # Create year column from available years in event log
+                    logger.warning("No year column found in summary. Creating one from event log years.")
+                    event_years = sorted(full_event_log['simulation_year'].unique())
+                    if len(event_years) > 0:
+                        if not summary_to_save.empty and len(summary_to_save) == len(event_years):
+                            summary_to_save['year'] = event_years
+                        else:
+                            logger.warning("Cannot create year column: summary rows don't match event years.")
+                            # Create placeholder to prevent further errors
+                            summary_to_save['year'] = summary_to_save.index
+                    else:
+                        logger.warning("No simulation years found in event log.")
+                        # Create placeholder to prevent further errors
+                        summary_to_save['year'] = summary_to_save.index
+            
+            # Now we can safely map the hires and terminations
+            if 'year' in summary_to_save.columns:
+                summary_to_save['new_hires'] = summary_to_save['year'].map(hires_per_year).fillna(0).astype(int)
+                summary_to_save['terminated_employees'] = summary_to_save['year'].map(terms_per_year).fillna(0).astype(int)
+            else:
+                logger.error("Failed to create 'year' column in summary_to_save. Cannot map hires/terminations.")
+                # Add default values to avoid further errors
+                summary_to_save['new_hires'] = 0
+                summary_to_save['terminated_employees'] = 0
         else:
             logger.warning("simulation_year column missing in event log; cannot compute new_hires/terminated_employees by year.")
     else:
         logger.warning("Event log missing or empty; cannot compute new_hires/terminated_employees.")
     
     if employment_status_summary_df is not None and not employment_status_summary_df.empty:
-        emp_df = employment_status_summary_df.rename(columns={'Year': 'Projection Year'})
-        summary_to_save = summary_to_save.merge(
-            emp_df,
-            on='Projection Year',
-            how='left'
-        )
+        logger.info("Merging employment status summary with main summary statistics")
+        
+        # Create completely new DataFrames with guaranteed unique columns
+        # This works around any internal pandas column representation issues
+        
+        # First, create a clean copy of summary_to_save with guaranteed unique columns
+        summary_clean = pd.DataFrame()
+        summary_cols_seen = set()
+        for col in summary_to_save.columns:
+            # Create a unique column name if this one already exists
+            col_clean = col
+            count = 1
+            while col_clean in summary_cols_seen:
+                col_clean = f"{col}_{count}"
+                count += 1
+            summary_cols_seen.add(col_clean)
+            summary_clean[col_clean] = summary_to_save[col].copy()
+        
+        # Now create a clean copy of the employment status DataFrame
+        emp_clean = pd.DataFrame()
+        emp_cols_seen = set()
+        for col in employment_status_summary_df.columns:
+            # If this column would conflict with summary, prefix it
+            if col in summary_cols_seen and col.lower() not in ['year', 'projection year', 'simulation_year']:
+                col_clean = f"emp_status_{col}"
+            else:
+                col_clean = col
+            
+            # Make sure the name is unique
+            count = 1
+            while col_clean in emp_cols_seen:
+                col_clean = f"{col_clean}_{count}"
+                count += 1
+            
+            emp_cols_seen.add(col_clean)
+            emp_clean[col_clean] = employment_status_summary_df[col].copy()
+        
+        # Now identify the year columns for merging
+        year_columns = ['Year', 'Projection Year', 'year', 'simulation_year']
+        
+        # Find year column in summary_clean
+        summary_year_col = None
+        for col in year_columns:
+            if col in summary_clean.columns:
+                summary_year_col = col
+                break
+        
+        # Find year column in emp_clean
+        emp_year_col = None
+        for col in year_columns:
+            if col in emp_clean.columns:
+                emp_year_col = col
+                break
+        
+        # If either DataFrame is missing a year column, create one
+        if summary_year_col is None:
+            logger.warning("No year column found in summary. Creating index-based year column.")
+            summary_clean['year'] = range(len(summary_clean))
+            summary_year_col = 'year'
+        
+        if emp_year_col is None:
+            logger.warning("No year column found in employment status. Creating index-based year column.")
+            emp_clean['year'] = range(len(emp_clean))
+            emp_year_col = 'year'
+        
+        # Standardize to a common year column name if needed
+        if summary_year_col != emp_year_col:
+            # Choose 'year' as the standard
+            standard_year_col = 'year'
+            
+            # Rename in summary if needed
+            if summary_year_col != standard_year_col:
+                summary_clean[standard_year_col] = summary_clean[summary_year_col].copy()
+                summary_clean = summary_clean.drop(columns=[summary_year_col])
+                logger.info(f"Created standard '{standard_year_col}' column in summary from '{summary_year_col}'")
+            
+            # Rename in employment status if needed
+            if emp_year_col != standard_year_col:
+                emp_clean[standard_year_col] = emp_clean[emp_year_col].copy()
+                emp_clean = emp_clean.drop(columns=[emp_year_col])
+                logger.info(f"Created standard '{standard_year_col}' column in employment status from '{emp_year_col}'")
+                
+            # Set the merge column to our standard
+            merge_col = standard_year_col
+        else:
+            # If they already match, use that as the merge column
+            merge_col = summary_year_col
+        
+        logger.info(f"Will merge DataFrames on column: {merge_col}")
+        
+        # Now perform the merge with our clean DataFrames
+        try:
+            # Convert the merge column to the same type in both DataFrames to avoid merge issues
+            summary_clean[merge_col] = summary_clean[merge_col].astype(str)
+            emp_clean[merge_col] = emp_clean[merge_col].astype(str)
+            
+            merged_df = summary_clean.merge(
+                emp_clean,
+                on=merge_col,
+                how='left'
+            )
+            
+            logger.info(f"Successfully merged summary and employment status data with {len(merged_df)} rows")
+            logger.debug(f"Merged columns ({len(merged_df.columns)}): {sorted(merged_df.columns.tolist())}")
+            
+            # Replace our working copy with the merged result
+            summary_to_save = merged_df
+        except Exception as e:
+            logger.error(f"Error during merge: {e}")
+            logger.warning("Using only summary statistics without employment status data")
+            # Keep just the summary data if merge fails
+            summary_to_save = summary_clean
     
     # Rename 'Projection Year' to 'year' if present
     if 'Projection Year' in summary_to_save.columns:
-        summary_to_save = summary_to_save.rename(columns={'Projection Year': 'year'})
+        # Check if 'year' already exists to avoid creating duplicate columns
+        if 'year' not in summary_to_save.columns:
+            summary_to_save = summary_to_save.rename(columns={'Projection Year': 'year'})
+        else:
+            # If both exist, keep 'year' and drop 'Projection Year'
+            logger.warning("Both 'year' and 'Projection Year' found in summary. Keeping 'year' column.")
+            summary_to_save = summary_to_save.drop('Projection Year', axis=1)
     
     # Convert dictionary columns to strings to avoid parquet serialization issues
     for col in summary_to_save.columns:

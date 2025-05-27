@@ -306,18 +306,20 @@ def run(
             if isinstance(co, (np.integer, np.floating)):
                 co = int(co) if isinstance(co, np.integer) else float(co)
                 
+            # Include compensation in the JSON payload to avoid providing both value_num and value_json
             payload = {
                 'role': role,
                 'birth_date': bd_str,
-                'clone_of': str(co) if co is not None else ''
+                'clone_of': str(co) if co is not None else '',
+                'compensation': float(starting_comps[i])  # Include compensation in the payload
             }
             
             hire_events.append(create_event(
                 event_time=dt,
                 employee_id=eid,
                 event_type=EVT_HIRE,
-                value_num=starting_comps[i],  # Use the sampled compensation value
-                value_json=json.dumps(payload),
+                value_num=None,  # Setting to None as we're using value_json
+                value_json=payload,  # Let create_event handle the JSON serialization
                 meta=f"Hire event for {eid} in {simulation_year}"
             ))
         except Exception as e:

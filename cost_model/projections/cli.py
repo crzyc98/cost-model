@@ -354,12 +354,30 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
         logger.info(f"Projection run for scenario '{args.scenario_name}' completed successfully.")
         logger.info(f"All outputs saved in: {output_path}")
 
-    except (FileNotFoundError, ValueError) as e:
-        warnings_logger = logging.getLogger("warnings_errors")
-        warnings_logger.error("Promotion matrix load/validation failed: %s", e)
-        sys.exit(1)
     except Exception as e:
-        logger.error(f"An unexpected error occurred during the projection run: {e}", exc_info=True)
+        warnings_logger = logging.getLogger("warnings_errors")
+        
+        # Check if the error message contains specific patterns to provide better diagnostics
+        error_str = str(e)
+        if "Duplicate column names found" in error_str:
+            warnings_logger.error(
+                "DataFrame error in save_detailed_results: %s\n" 
+                "This is likely due to duplicate column names in summary_to_save after merging employment status summary. " 
+                "Check for column name conflicts in summary and employment_status DataFrames.", e
+            )
+        elif "must specify a string key" in error_str and "Dict" in error_str:
+            warnings_logger.error(
+                "Dict serialization error in save_detailed_results: %s\n"
+                "This may be due to non-string keys in dictionary columns being saved to parquet.", e
+            )
+        elif "promotion matrix" in error_str.lower() or "markov" in error_str.lower():
+            warnings_logger.error("Promotion matrix load/validation failed: %s", e)
+        else:
+            warnings_logger.error(
+                "Error during results saving: %s\n"
+                "Check DataFrame operations in save_detailed_results for potential issues.", e, 
+                exc_info=True
+            )
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from cost_model.state.job_levels.loader import ingest_with_imputation
 from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE, 
     EMP_GROSS_COMP, EMP_DEFERRAL_RATE, EMP_TENURE_BAND, EMP_TENURE,
-    EMP_TERM_DATE, EMP_ACTIVE, EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED
+    EMP_TERM_DATE, EMP_ACTIVE, EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED, SIMULATION_YEAR
 ) # Import all required column constants
 
 logger = logging.getLogger(__name__)
@@ -44,28 +44,85 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
             raise FileNotFoundError(f"Census file not found: {census_path}")
             
         logger.debug("Reading census data from %s", census_path)
-        census_df = pd.read_parquet(census_path)
+        
+        # Try to read the file as Parquet first, fall back to CSV if that fails
+        try:
+            # Try reading as Parquet first
+            census_df = pd.read_parquet(census_path)
+            logger.info("Successfully loaded census data from Parquet file")
+        except Exception as parquet_error:
+            # If Parquet read fails, try CSV
+            try:
+                logger.info("Parquet read failed, attempting to read as CSV")
+                file_extension = census_path.suffix.lower()
+                
+                if file_extension == '.csv':
+                    census_df = pd.read_csv(census_path)
+                    logger.info("Successfully loaded census data from CSV file")
+                else:
+                    # If not a recognized format, raise the original Parquet error
+                    logger.error("Census file is neither a valid Parquet nor a CSV file.")
+                    raise parquet_error
+            except Exception as csv_error:
+                logger.error("Failed to read census file as either Parquet or CSV: %s", str(csv_error), exc_info=True)
+                raise csv_error
         
         if census_df.empty:
             logger.warning("Census data is empty. Creating empty snapshot.")
             return pd.DataFrame(columns=SNAPSHOT_COL_NAMES).astype(SNAPSHOT_DTYPES)
             
     except Exception as e:
-        logger.error("Error reading census Parquet file %s: %s", str(census_path), str(e), exc_info=True)
+        logger.error("Error reading census file %s: %s", str(census_path), str(e), exc_info=True)
         raise
     
     logger.info("Loaded census data with %d records. Columns: %s", len(census_df), census_df.columns.tolist())
     
+    # Handle column name standardization
+    logger.info("Standardizing column names in census data")
+    
+    # Map common variations of column names to the expected names
+    column_mapping = {
+        # Standard mappings from schema.py
+        'ssn': EMP_ID,  # Map ssn to employee_id
+        'employee_ssn': EMP_ID,  # Map employee_ssn to employee_id
+        'birth_date': EMP_BIRTH_DATE,
+        'hire_date': EMP_HIRE_DATE,
+        'termination_date': EMP_TERM_DATE,
+        'gross_compensation': EMP_GROSS_COMP,
+        'role': EMP_ROLE,
+        
+        # Additional mappings specific to our CSV structure
+        'employee_birth_date': EMP_BIRTH_DATE,
+        'employee_hire_date': EMP_HIRE_DATE,
+        'employee_termination_date': EMP_TERM_DATE,
+        'employee_gross_compensation': EMP_GROSS_COMP,
+        'employee_role': EMP_ROLE,
+        'employee_deferral_rate': EMP_DEFERRAL_RATE
+    }
+    
+    # Apply column mapping
+    census_df = census_df.rename(columns=column_mapping)
+    
+    # Log the column mapping results
+    logger.info(f"After column mapping, available columns: {census_df.columns.tolist()}")
+    
     # Ensure required columns exist
     required_columns = [EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP]
     missing_columns = [col for col in required_columns if col not in census_df.columns]
+    
+    if missing_columns:
+        # If employee_id is missing but we have employee_ssn, create employee_id from it
+        if EMP_ID in missing_columns and 'employee_ssn' in census_df.columns:
+            logger.info(f"Creating {EMP_ID} from employee_ssn column")
+            census_df[EMP_ID] = census_df['employee_ssn']
+            missing_columns.remove(EMP_ID)
+    
     if missing_columns:
         error_msg = f"Census data is missing required columns: {', '.join(missing_columns)}"
         logger.error(error_msg)
         raise ValueError(error_msg)
     
     # Filter out employees terminated before or at the projection start year
-    from ..utils.columns import EMP_TERM_DATE
     term_col = EMP_TERM_DATE if EMP_TERM_DATE in census_df.columns else None
     
     if term_col:
@@ -88,7 +145,7 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         logger.info("No '%s' column found in census. Assuming all employees are active.", EMP_TERM_DATE)
     
     # Always add simulation_year column at creation
-    census_df["simulation_year"] = start_year
+    census_df[SIMULATION_YEAR] = start_year
     logger.debug("Set simulation_year=%d for all employees", start_year)
 
     # Data for the snapshot at the beginning of the start_year
@@ -121,7 +178,8 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         EMP_LEVEL: pd.Series([pd.NA] * len(census_df), dtype='Int64'),
         EMP_LEVEL_SOURCE: pd.Series([pd.NA] * len(census_df), dtype='string'),
         EMP_EXITED: False,  # Will be updated based on termination status
-        EMP_ROLE: pd.NA  # Will be set to a default value if not in census
+        EMP_ROLE: pd.NA,  # Will be set to a default value if not in census
+        SIMULATION_YEAR: start_year  # Set simulation year for all employees
     }
     
     # Set tenure_band based on employee_tenure
@@ -219,7 +277,13 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         logger.warning(f"No {EMP_ROLE} column found in census. Initializing with default role 'Regular'.")
         initial_data[EMP_ROLE] = 'Regular'
 
+    # Create snapshot_df with all required columns, ensuring simulation_year is included
     snapshot_df = pd.DataFrame(initial_data)
+    
+    # Explicitly ensure simulation_year is present and set to start_year
+    if SIMULATION_YEAR not in snapshot_df.columns:
+        logger.debug(f"Adding missing {SIMULATION_YEAR} column to snapshot_df with value {start_year}")
+        snapshot_df[SIMULATION_YEAR] = start_year
     
     # Ensure 'active' column is broadcasted if it was a scalar
     if 'active' in snapshot_df.columns and len(snapshot_df) > 1 and isinstance(snapshot_df['active'].iloc[0], bool):

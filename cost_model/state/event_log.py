@@ -4,6 +4,7 @@ Handles loading, saving, and appending events to the central event log.
 This demonstrates how to create, load, filter, and save event logs, which form the foundation of the event-driven simulation system.
 """
 
+import json
 import logging
 import pandas as pd
 import pyarrow as pa  # Recommended for explicit Parquet schema handling
@@ -43,6 +44,7 @@ EVENT_COLS = [
     "value_num",  # nullable<float64>
     "value_json",  # nullable<string> (JSON blob)
     "meta",  # nullable<string> (free-text, JSON ok)
+    SIMULATION_YEAR,  # int (year the event occurs in)
 ]
 
 # Define explicit Schema using PyArrow for Parquet consistency
@@ -56,6 +58,7 @@ EVENT_SCHEMA = pa.schema(
         pa.field("value_num", pa.float64(), nullable=True),
         pa.field("value_json", pa.string(), nullable=True),
         pa.field("meta", pa.string(), nullable=True),
+        pa.field(SIMULATION_YEAR, pa.int32(), nullable=True),
     ]
 )
 
@@ -68,6 +71,7 @@ EVENT_PANDAS_DTYPES = {
     "value_num": pd.Float64Dtype(),  # Pandas nullable Float
     "value_json": pd.StringDtype(),  # Pandas nullable String
     "meta": pd.StringDtype(),  # Pandas nullable String
+    SIMULATION_YEAR: pd.Int32Dtype(),  # Pandas nullable Int32
 }
 
 # --- Core Functions ---
@@ -210,7 +214,7 @@ def save_log(log: pd.DataFrame, path: Path) -> None:
 
 def create_event(
     event_time: pd.Timestamp,
-    employee_id: Union[str, pd.NA, None],
+    employee_id: Union[str, None],
     event_type: str,
     value_num: Optional[float] = None,
     value_json: Optional[Union[Dict, str]] = None,

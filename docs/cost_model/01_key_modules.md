@@ -31,8 +31,25 @@ This document provides an overview of the main modules and systems in the Workfo
 ## Data Processing
 
 - **Data Readers/Writers**: Handles I/O operations for various data formats
+  - Supports both Parquet and CSV file formats
+  - Automatic format detection based on file extension
+  - Efficient handling of large datasets
 - **Data Validation**: Ensures data quality and consistency
+  - Validates required columns in input data
+  - Checks for data type consistency
+  - Validates data ranges and constraints
+- **Data Transformation**: Standardizes and prepares data for analysis
+  - Automatic column name standardization (e.g., `employee_ssn` to `employee_id`)
+  - Handles missing values and data type conversions
+  - Supports custom data transformations
+- **DataFrame Operations**: Robust handling of tabular data
+  - Safe merging of DataFrames with duplicate column handling
+  - Efficient row-wise and column-wise operations
+  - Memory-optimized operations for large datasets
 - **Sampling**: Provides statistical sampling utilities
+  - Random sampling with configurable sampling rates
+  - Stratified sampling based on key variables
+  - Bootstrapping for statistical analysis
 
 ## Machine Learning
 
