@@ -27,13 +27,53 @@
 - **Parameters**:
   - `census_data`: DataFrame with employee census data
   - `simulation_year`: Starting simulation year
-- **Returns**: Initial snapshot DataFrame
-- **Search Tags**: `function:create_initial_snapshot`, `state:initialization`
+- **Returns**: Initial snapshot DataFrame with validated compensation data
+- **Compensation Handling**:
+  - Validates all compensation values in the input data
+  - Replaces missing or invalid compensation with role-based defaults
+  - Logs warnings for any compensation validation issues
+- **Search Tags**: `function:create_initial_snapshot`, `state:initialization`, `compensation:validation`
 
 ### update_snapshot()
 - **Location**: `state.snapshot.update_snapshot`
 - **Description**: Updates the snapshot with new employee data
-- **Search Tags**: `function:update_snapshot`, `state:update`
+- **Compensation Validation**:
+  - Validates compensation for all new and updated employee records
+  - Ensures compensation values are within expected ranges for job levels
+  - Applies default compensation when data is missing or invalid
+  - Logs detailed information about any compensation adjustments
+- **Search Tags**: `function:update_snapshot`, `state:update`, `compensation:validation`
+
+### validate_compensation()
+- **Location**: `state.snapshot.validate_compensation`
+- **Description**: Validates and normalizes compensation data
+- **Parameters**:
+  - `snapshot`: The employee snapshot DataFrame to validate
+  - `role_levels`: Optional mapping of job roles to expected compensation ranges
+- **Returns**: Validated snapshot with normalized compensation values
+- **Validation Rules**:
+  - Checks for missing or null compensation values
+  - Validates against role-based compensation ranges
+  - Applies default values when necessary
+  - Logs all validation issues for auditing
+
+## Compensation Data Management
+
+### Compensation Validation Process
+1. **Initial Load**:
+   - Validate all compensation values from source data
+   - Replace missing values with role-based defaults
+   - Log any data quality issues
+
+2. **During Simulation**:
+   - Validate compensation for new hires and promotions
+   - Ensure compensation changes comply with business rules
+   - Log all compensation adjustments
+
+3. **Final Validation**:
+   - Verify all employees have valid compensation
+   - Check for outliers and anomalies
+   - Generate validation report
 
 ## Snapshot Schema
 

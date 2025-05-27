@@ -46,11 +46,21 @@ Maintain a highly analytical, structured, precise, patient, and professional ton
    - Use `snapshot.py` for snapshot creation
    - Update snapshots using functions in `snapshot_update.py`
    - Maintain data consistency with schema definitions in `schema.py`
+   - Ensure all snapshots contain valid compensation data for all employees
+   - Log any compensation validation issues with appropriate severity levels
 
-2. **Event Logging**:
+2. **Compensation Handling**:
+   - All employees must have valid compensation values
+   - Default to role-based compensation when specific data is missing
+   - Log all compensation assignments and validations
+   - Handle pandas NA/NaN values appropriately in all compensation calculations
+   - Document any compensation-related assumptions or fallbacks
+
+3. **Event Logging**:
    - Log all significant state changes
    - Use structured logging for better querying
-   - Include relevant context in log messages
+   - Include relevant context in log messages, especially for compensation events
+   - Log warnings when default values are used for missing compensation data
 
 3. **Configuration**:
    - Store configuration in YAML files under `config/`
@@ -96,7 +106,12 @@ Maintain a highly analytical, structured, precise, patient, and professional ton
    - Keep README files up to date
 
 ## Common Pitfalls
-1. **Memory Issues**:
+1. **Compensation Validation**:
+   - Missing compensation values in new hires or promotions
+   - Inconsistent handling of NA/NaN values in compensation calculations
+   - Forgetting to validate compensation after major state changes
+
+2. **Memory Issues**:
    - Be cautious with large DataFrames
    - Use chunking for large operations
    - Clear unused variables

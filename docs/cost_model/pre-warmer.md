@@ -33,7 +33,22 @@ Verification and User Approval
 
 Our Current Focus
 
-Our immediate priority is debugging and validating the deterministic and stochastic termination logic to resolve the anomalies observed in the decreasing rate of experienced terminations and the lack of new hire terminations across multiple simulation years. Ensuring the orchestration logic, snapshots, and event logs accurately reflect the expected workforce behaviors and outcomes is critical.
+Our immediate priority is ensuring robust compensation handling and validation throughout the workforce simulation. This includes:
+
+1. **Compensation Validation**
+   - All employees must have valid compensation values in the snapshot
+   - Default compensation is assigned when missing, with appropriate logging
+   - Compensation validation occurs during hiring and in the final snapshot
+
+2. **Error Handling**
+   - Proper handling of pandas NA/NaN values in event creation
+   - Comprehensive logging of missing compensation data
+   - Graceful fallbacks for missing configuration values
+
+3. **Documentation**
+   - Maintaining clear documentation of compensation handling logic
+   - Ensuring all changes are properly reflected in project documentation
+   - Updating validation rules as needed
 
 ⸻
 

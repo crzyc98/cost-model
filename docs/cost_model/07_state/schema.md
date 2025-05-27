@@ -38,8 +38,13 @@ class Department(BaseModel):
 
 ### validate_employee()
 - **Location**: `state.schema.validate_employee`
-- **Description**: Validates employee data against schema
-- **Search Tags**: `function:validate_employee`, `schema:validation`
+- **Description**: Validates employee data against schema, including compensation validation
+- **Compensation Validation**:
+  - Ensures all employees have valid compensation values
+  - Validates compensation falls within expected ranges for job levels
+  - Handles missing or invalid compensation with appropriate defaults
+  - Logs warnings for any compensation validation issues
+- **Search Tags**: `function:validate_employee`, `schema:validation`, `compensation:validation`
 
 ### validate_department()
 - **Location**: `state.schema.validate_department`
@@ -78,10 +83,31 @@ except ImportError:
 
 ### Available Constants
 - `EMP_ID`: Primary employee identifier column name
+- `EMP_GROSS_COMP`: Column name for employee gross compensation
 - `SIMULATION_YEAR`: Column name for simulation year tracking
 - `EVENT_COLS`: List of standard event columns
 - `SNAPSHOT_COLS`: List of columns in the employee snapshot
 - `SNAPSHOT_DTYPES`: Pandas dtypes for snapshot columns
+- `DEFAULT_COMPENSATION`: Fallback compensation value when data is missing (default: 50000.0)
+
+## Compensation Schema
+
+### Compensation Validation Rules
+1. **Required Fields**:
+   - All employees must have a valid `compensation` value
+   - Compensation must be a positive number
+   - Missing values are replaced with role-based defaults or `DEFAULT_COMPENSATION`
+
+2. **Validation Process**:
+   - Check for missing or null values
+   - Validate against minimum/maximum ranges for job levels
+   - Log any validation issues for review
+   - Apply default values when necessary
+
+3. **Default Values**:
+   - New hires: Calculated based on role and experience
+   - Missing data: Falls back to `DEFAULT_COMPENSATION`
+   - Invalid values: Replaced with role-based medians
 
 ## Data Types
 
