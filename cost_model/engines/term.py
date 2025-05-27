@@ -77,12 +77,33 @@ def run(
         & (snapshot[EMP_HIRE_DATE] < as_of)
     ].copy()
 
+    # Log employee_level and employee_tenure_band distributions for diagnostics
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Before hazard merge: {len(active)} employees")
+    
+    # Log distribution of employee levels
+    level_counts = active[EMP_LEVEL].value_counts().to_dict()
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Employee level distribution: {level_counts}")
+    
+    # Log distribution of tenure bands
+    tenure_counts = active[EMP_TENURE_BAND].value_counts().to_dict()
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution: {tenure_counts}")
+        
+    # STEP 2: Get a list of all unique employee_level and tenure_band combinations in the active population
+    # This will help us identify which combinations we need to check against the hazard table
+    active_combos = set(zip(active[EMP_LEVEL], active[EMP_TENURE_BAND]))
+    logger.debug(f"[TERM DIAGNOSTIC YR={year}] Unique level-tenure combinations in active employees: {active_combos}")
+    
     # 1. Pull out only the columns you need and dedupe the hazard table
     hz = (
         hazard_slice[[EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE]]
         .drop_duplicates(subset=[EMP_LEVEL, EMP_TENURE_BAND])
     )
-
+    
+    # DIAGNOSTIC: Log hazard table coverage
+    hz_combos = set(zip(hz[EMP_LEVEL], hz[EMP_TENURE_BAND]))
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Hazard table contains {len(hz_combos)} level-tenure combinations")
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Sample of hazard table combinations: {list(hz_combos)[:5]}")
+    
     # 2. Merge with many-to-one validation (one hazard row to many employees)
     merged_df = active.merge(
         hz,
@@ -119,13 +140,72 @@ def run(
     zero_rates = (merged_df[TERM_RATE] == 0)
     
     if missing_rates.any():
+        # DIAGNOSTIC: Examine which employee level and tenure band combinations are missing
+        missing_df = merged_df[missing_rates][[EMP_ID, EMP_LEVEL, EMP_TENURE_BAND]]
+        missing_combos = missing_df.groupby([EMP_LEVEL, EMP_TENURE_BAND]).size().reset_index()
+        missing_combos.columns = [EMP_LEVEL, EMP_TENURE_BAND, 'count']
+        
         logger.warning(
-            f"[TERM] Year {year}: {missing_rates.sum()} employees missing {TERM_RATE} after merge. "
-            f"Filling with 0. Check hazard table coverage for all {EMP_LEVEL} and {EMP_TENURE_BAND} combinations."
+            f"[TERM DIAGNOSTIC YR={year}] Missing level-tenure combinations:\n"
+            f"{missing_combos.to_string()}"
         )
-        merged_df[TERM_RATE] = merged_df[TERM_RATE].fillna(0)
+        
+        # Show a sample of employee IDs with missing rates
+        sample_size = min(5, missing_df.shape[0])
+        if sample_size > 0:
+            sample_missing = missing_df.sample(sample_size, random_state=42) if sample_size > 1 else missing_df.iloc[:1]
+            logger.warning(
+                f"[TERM DIAGNOSTIC YR={year}] Sample of {sample_size} employees missing term rates:\n"
+                f"{sample_missing.to_string()}"
+            )
+        
+        # FALLBACK STRATEGY: For level 2 with '0-1' tenure (specifically identified in logs)
+        # Use a reasonable fallback rate based on other rates in the hazard table
+        level2_01yr_mask = (merged_df[EMP_LEVEL] == 2) & (merged_df[EMP_TENURE_BAND] == '0-1') & missing_rates
+        level2_01yr_count = level2_01yr_mask.sum()
+        
+        if level2_01yr_count > 0:
+            # Find the average termination rate for level 2 employees of all tenure bands
+            level2_rates = hz[hz[EMP_LEVEL] == 2][TERM_RATE]
+            
+            # If we have level 2 rates, use their mean; otherwise, use level 1 with 0-1 tenure as a proxy
+            if not level2_rates.empty:
+                fallback_rate = level2_rates.mean()
+                logger.info(f"[TERM] Year {year}: Using average rate {fallback_rate:.4f} from level 2 employees as fallback")
+            else:
+                # Try to get the rate for level 1, 0-1 as a proxy
+                level1_01yr = hz[(hz[EMP_LEVEL] == 1) & (hz[EMP_TENURE_BAND] == '0-1')]
+                if not level1_01yr.empty:
+                    fallback_rate = level1_01yr[TERM_RATE].iloc[0]
+                    logger.info(f"[TERM] Year {year}: Using level 1, 0-1 rate {fallback_rate:.4f} as proxy for level 2, 0-1")
+                else:
+                    # Last resort - use global average
+                    fallback_rate = hz[TERM_RATE].mean()
+                    logger.info(f"[TERM] Year {year}: Using global average rate {fallback_rate:.4f} as last resort fallback")
+            
+            # Apply the fallback rate
+            merged_df.loc[level2_01yr_mask, TERM_RATE] = fallback_rate
+            logger.info(f"[TERM] Year {year}: Applied fallback rate {fallback_rate:.4f} to {level2_01yr_count} level 2 employees with 0-1 tenure")
+            
+            # Update missing rates count after applying fallback
+            missing_rates = merged_df[TERM_RATE].isna()
+        
+        # For any remaining NAs, fill with 0 (default behavior)
+        remaining_na_count = missing_rates.sum()
+        if remaining_na_count > 0:
+            logger.warning(
+                f"[TERM] Year {year}: {remaining_na_count} employees still missing {TERM_RATE} after fallback logic. "
+                f"Filling with 0. Check hazard table coverage for all {EMP_LEVEL} and {EMP_TENURE_BAND} combinations."
+            )
+            merged_df[TERM_RATE] = merged_df[TERM_RATE].fillna(0)
+        else:
+            logger.info(f"[TERM] Year {year}: All missing term rates successfully handled with fallback logic.")
     
     logger.debug(f"[TERM] Year {year}: {n} employees processed, {zero_rates.sum()} with zero {TERM_RATE} after merge.")
+    
+    # Add distribution of term rates by level and tenure band for transparency
+    rate_by_level_tenure = merged_df.groupby([EMP_LEVEL, EMP_TENURE_BAND])[TERM_RATE].mean().reset_index()
+    logger.debug(f"[TERM DIAGNOSTIC YR={year}] Term rate by level and tenure:\n{rate_by_level_tenure.to_string()}")
     logger.info(
         f"[TERM] Year {year}: {TERM_RATE} stats - "
         f"min={merged_df[TERM_RATE].min():.4f}, "
@@ -254,6 +334,11 @@ def run_new_hires(
     if df_nh.empty:
         return [pd.DataFrame(columns=EVENT_COLS)]
         
+    # Log new hire tenure distribution for diagnostics
+    if EMP_TENURE_BAND in df_nh.columns:
+        tenure_counts = df_nh[EMP_TENURE_BAND].value_counts().to_dict()
+        logger.debug(f"[TERM NEW HIRE DIAGNOSTIC YR={year}] New hire tenure distribution: {tenure_counts}")
+        
     # Use the pre-filtered hazard_slice for this year
     rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hazard_slice.columns else 0.0
     df_nh[NEW_HIRE_TERM_RATE] = rate
@@ -277,11 +362,20 @@ def run_new_hires(
     if len(losers) == 0:
         return [pd.DataFrame(columns=EVENT_COLS)]
     
-    # Fix: Get hire dates for all losers
+    # Get hire dates for all losers (with validation)
     loser_hire_dates = []
     for emp in losers:
-        hire_date = snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE].iloc[0]
+        hire_date_series = snapshot.loc[snapshot[EMP_ID] == emp, EMP_HIRE_DATE]
+        if hire_date_series.empty:
+            logger.warning(f"[TERM NEW HIRE] Year {year}: Could not find hire date for employee {emp}. Skipping termination.")
+            continue
+        hire_date = hire_date_series.iloc[0]
         loser_hire_dates.append(hire_date)
+    
+    # Update losers list to match the filtered hire dates
+    if len(loser_hire_dates) < len(losers):
+        logger.warning(f"[TERM NEW HIRE] Year {year}: Reduced new hire terminations from {len(losers)} to {len(loser_hire_dates)} due to missing hire dates")
+        losers = [emp for i, emp in enumerate(losers) if i < len(loser_hire_dates)]
     
     # Fix: Generate termination dates that are AFTER hire dates
     dates = random_dates_between(loser_hire_dates, end_of_year, rng)

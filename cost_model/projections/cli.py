@@ -15,7 +15,7 @@ from .snapshot import create_initial_snapshot
 from .event_log import create_initial_event_log
 from cost_model.engines.run_one_year.orchestrator import run_one_year
 from cost_model.plan_rules import load_plan_rules
-from cost_model.projections.hazard import build_hazard_table
+from cost_model.projections.hazard import build_hazard_table, load_and_expand_hazard_table
 from .reporting import save_detailed_results, plot_projection_results
 from .snapshot import consolidate_snapshots_to_parquet
 
@@ -195,13 +195,58 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
     plan_rules = load_plan_rules(config_ns) if hasattr(config_ns, 'plan_rules') or hasattr(config_ns, 'plan_rules_path') else {}
     projection_years = list(range(start_year, start_year + global_params.projection_years))
     
-    logger.info(f"Building hazard table for years {projection_years}")
-    hazard_table = build_hazard_table(
-        years=projection_years,
-        initial_snapshot=initial_snapshot,
-        global_params=global_params,
-        plan_rules_config=plan_rules
-    )
+    # First, load and expand the hazard table from the parquet file
+    logger.info("Loading hazard table from parquet file and expanding role='*' entries")
+    expanded_hazard_table = load_and_expand_hazard_table('data/hazard_table.parquet')
+    
+    # Check if we successfully loaded and expanded the hazard table
+    if expanded_hazard_table.empty:
+        logger.warning("Could not load or expand hazard table from parquet. Falling back to build_hazard_table.")
+        logger.info(f"Building hazard table for years {projection_years}")
+        hazard_table = build_hazard_table(
+            years=projection_years,
+            initial_snapshot=initial_snapshot,
+            global_params=global_params,
+            plan_rules_config=plan_rules
+        )
+    else:
+        # Filter the expanded hazard table to only include the projection years
+        if 'simulation_year' in expanded_hazard_table.columns:
+            expanded_hazard_table = expanded_hazard_table[expanded_hazard_table['simulation_year'].isin(projection_years)]
+            
+        # Ensure the hazard table has all required columns
+        from cost_model.state.schema import (
+            SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT, 
+            NEW_HIRE_TERM_RATE, COLA_PCT, CFG
+        )
+        
+        # Map column names if needed
+        column_mapping = {
+            'simulation_year': SIMULATION_YEAR,
+            'employee_level': EMP_LEVEL,
+            'tenure_band': EMP_TENURE_BAND,
+            'term_rate': TERM_RATE,
+            'comp_raise_pct': COMP_RAISE_PCT,
+            'new_hire_termination_rate': NEW_HIRE_TERM_RATE,
+            'cola_pct': COLA_PCT,
+        }
+        
+        for src, dst in column_mapping.items():
+            if src in expanded_hazard_table.columns and dst not in expanded_hazard_table.columns:
+                expanded_hazard_table[dst] = expanded_hazard_table[src]
+        
+        # Add missing columns with default values
+        if CFG not in expanded_hazard_table.columns:
+            expanded_hazard_table[CFG] = plan_rules
+        
+        # Log some statistics about the expanded hazard table
+        logger.info(f"Expanded hazard table has {len(expanded_hazard_table)} rows")
+        if EMP_LEVEL in expanded_hazard_table.columns and EMP_TENURE_BAND in expanded_hazard_table.columns:
+            unique_combos = expanded_hazard_table[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates()
+            logger.info(f"Expanded hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations")
+        
+        # Use the expanded hazard table
+        hazard_table = expanded_hazard_table
     
     # Initialize random number generator
     seed = getattr(global_params, 'random_seed', 42)

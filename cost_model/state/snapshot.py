@@ -121,7 +121,7 @@ def _assign_tenure_band(tenure: float) -> str:
     if pd.isna(tenure):
         return pd.NA
     if tenure < 1:
-        return '<1'
+        return '0-1'  # Standardized to match hazard table format
     elif tenure < 3:
         return '1-3'
     elif tenure < 5:
@@ -300,7 +300,7 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
             logger.debug(f"[DEBUG tenure] {eid} hired {hd.date()}   as_of {as_of.date()}   years={ty:.2f}")
         def band(tenure):
             if pd.isna(tenure): return pd.NA
-            if tenure < 1: return '<1'
+            if tenure < 1: return '0-1'  # Standardized to match hazard table format
             elif tenure < 3: return '1-3'
             elif tenure < 5: return '3-5'
             else: return '5+'
@@ -594,7 +594,7 @@ def update(
                     logger.debug(f"[DEBUG tenure] {eid} hired {hd.date()}  ￂￂ as_of {as_of.date()}  ￂￂ years={ty:.2f}")
                 def band(tenure):
                     if pd.isna(tenure): return pd.NA
-                    if tenure < 1: return '<1'
+                    if tenure < 1: return '0-1'  # Standardized to match hazard table format
                     elif tenure < 3: return '1-3'
                     elif tenure < 5: return '3-5'
                     else: return '5+'
@@ -627,7 +627,7 @@ def update(
             current_snapshot[EMP_TENURE] = tenure_years.round(3)
             def band(tenure):
                 if pd.isna(tenure):    return pd.NA
-                elif tenure < 1:       return '<1'
+                elif tenure < 1:       return '0-1'  # Standardized to match hazard table format
                 elif tenure < 3:       return '1-3'
                 elif tenure < 5:       return '3-5'
                 else:                  return '5+'

@@ -16,7 +16,7 @@ def assign_tenure_band(tenure: float | int | pd.NA) -> str | pd.NA:
     if pd.isna(tenure):
         return pd.NA
     if tenure < 1:
-        return "<1"
+        return "0-1"
     if tenure < 3:
         return "1-3"
     if tenure < 5:

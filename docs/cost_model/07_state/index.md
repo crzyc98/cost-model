@@ -17,7 +17,7 @@ This document details the state management system and data schema used in the Wo
   - `active`: Boolean indicating if employee is currently active
   - `employee_deferral_rate`: Current retirement plan deferral rate
   - `employee_tenure`: Years of service (float)
-  - `employee_tenure_band`: Categorical tenure band (e.g., "<1", "1-3", "3-5", "5+")
+  - `employee_tenure_band`: Categorical tenure band (e.g., "0-1", "1-3", "3-5", "5+")
   - `employee_level`: Job level/grade
   - `job_level_source`: Source of job level assignment ("hire", "promotion", "demotion", "manual")
   - `exited`: Boolean indicating if employee has exited the company

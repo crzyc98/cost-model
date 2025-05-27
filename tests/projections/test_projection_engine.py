@@ -87,7 +87,7 @@ def tiny_snapshot():
         "active": [True, True, True, False, True],
         "eligible": [True, True, False, True, True],
         "enrolled": [True, True, False, True, True],
-        "tenure_band": ["1-3", "<1", "<1", "5+", "3-5"],
+        "tenure_band": ["1-3", "0-1", "0-1", "5+", "3-5"],
     }
     
     df = pd.DataFrame(data)

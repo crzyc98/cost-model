@@ -11,7 +11,7 @@ logger = logging.getLogger("warnings_errors")
 from .models import JobLevel
 from .init import get_level_by_id
 from .transitions import PROMOTION_MATRIX
-from cost_model.state.schema import EMP_LEVEL
+from cost_model.state.schema import EMP_LEVEL, EMP_ID, EMP_HIRE_DATE, EMP_EXITED, EMP_LEVEL_SOURCE
 
 
 def validate_promotion_matrix(matrix: pd.DataFrame) -> None:
@@ -268,8 +268,9 @@ def apply_promotion_markov(
         logger.error(error_msg)
         raise ValueError(error_msg)
     
-    # Initialize arrays with the same length as the dataframe
-    new_levels = [np.nan] * len(df)
+    # CHANGE 1: Initialize new_levels with CURRENT levels, not np.nan
+    # This ensures we have a fallback value for every employee
+    new_levels = df[level_col].tolist()  # Start with current levels as default
     exited = [False] * len(df)
     
     # Log the number of employees being processed
@@ -291,9 +292,17 @@ def apply_promotion_markov(
     for i, (_, row) in enumerate(df.iterrows()):
         current_level = row[level_col]
         
-        # Skip if no current level (shouldn't happen for active employees)
+        # CHANGE 2: Handle missing current levels explicitly
         if pd.isna(current_level):
-            logger.debug("Employee at index %d has no current level, skipping", i)
+            # CHANGE 3: Log this as a warning, not just debug, and provide a default level
+            emp_id = row.get(EMP_ID, f"at index {i}")
+            logger.warning(
+                f"Employee {emp_id} has no current level in apply_promotion_markov. "
+                f"This shouldn't happen for active employees. "
+                f"Assigning default level 1."
+            )
+            # CHANGE 4: Assign a default level rather than skipping
+            new_levels[i] = 1  # Default level for employees with missing levels
             continue
             
         # Get the row index in the transition matrix
@@ -353,6 +362,18 @@ def apply_promotion_markov(
     df[level_col] = new_levels
     df['exited'] = exited
     
+    # CHANGE 5: Add additional diagnostic check after assignment
+    if pd.isna(df[level_col]).any():
+        na_count = pd.isna(df[level_col]).sum()
+        na_indices = df[pd.isna(df[level_col])].index.tolist()
+        logger.warning(
+            f"CRITICAL: After processing all employees, {na_count} still have NaN levels. "
+            f"Problem indices: {na_indices[:5]}{'...' if len(na_indices) > 5 else ''}. "
+            f"Filling with default level 1."
+        )
+        # Final safety net
+        df[level_col] = df[level_col].fillna(1)
+    
     # Log summary statistics
     num_exits = sum(exited)
     num_promotions = sum(1 for new, old in zip(new_levels, df[level_col]) 
@@ -369,5 +390,40 @@ def apply_promotion_markov(
     
     # Restore the original index
     df.index = original_index
+    
+    # CRITICAL DIAGNOSIS: Check if any NaNs are present in level_col IMMEDIATELY before return
+    if pd.isna(df[level_col]).any():
+        na_count = pd.isna(df[level_col]).sum()
+        na_indices = df.index[pd.isna(df[level_col])].tolist()
+        
+        # Get employee IDs for better debugging if available
+        if EMP_ID in df.columns:
+            emp_ids = df.loc[pd.isna(df[level_col]), EMP_ID].tolist()
+            logger.warning(
+                f"CRITICAL DIAGNOSIS: {na_count} NaN values in {level_col} detected at return from apply_promotion_markov. "
+                f"Employee IDs: {emp_ids[:5]}{'...' if len(emp_ids) > 5 else ''}. "
+                f"These employees lost their level values during processing."
+            )
+            
+            # Get more information about employees with NaN levels
+            for emp_id in emp_ids[:5]:  # Limit to first 5 for brevity
+                emp_row = df[df[EMP_ID] == emp_id]
+                if not emp_row.empty:
+                    # Log information about employees with NaN levels
+                    logger.warning(
+                        f"Employee {emp_id} details: "
+                        f"exited={emp_row['exited'].values[0]}, "
+                        f"hire_date={emp_row[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d').values[0] if EMP_HIRE_DATE in emp_row.columns else 'N/A'}"
+                    )
+        else:
+            # Just log indices if no employee IDs available
+            logger.warning(
+                f"CRITICAL DIAGNOSIS: {na_count} NaN values in {level_col} detected at return from apply_promotion_markov. "
+                f"Indices: {na_indices[:5]}{'...' if len(na_indices) > 5 else ''}."
+            )
+        
+        # Let's fix this immediately rather than letting it propagate
+        logger.warning(f"Applying emergency fix: filling NaN values in {level_col} with default level 1")
+        df[level_col] = df[level_col].fillna(1)
     
     return df

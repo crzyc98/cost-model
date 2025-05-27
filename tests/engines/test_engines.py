@@ -28,7 +28,7 @@ def make_mini_snapshot():
             {
                 "employee_id": "E3",
                 "role": "C",
-                "tenure_band": "3+",
+                "tenure_band": "5+",
                 "active": True,
                 "term_date": pd.NaT,
                 "current_compensation": 70000,
@@ -43,7 +43,7 @@ def make_hazard_slice_comp():
         [
             {"role": "A", "tenure_band": "0-1", "comp_raise_pct": 0.03},
             {"role": "B", "tenure_band": "1-3", "comp_raise_pct": 0.04},
-            {"role": "C", "tenure_band": "3+", "comp_raise_pct": 0.05},
+            {"role": "C", "tenure_band": "5+", "comp_raise_pct": 0.05},
         ]
     )
 
@@ -54,7 +54,7 @@ def make_hazard_slice_term():
         [
             {"role": "A", "tenure_band": "0-1", "term_rate": 0.10},
             {"role": "B", "tenure_band": "1-3", "term_rate": 0.05},
-            {"role": "C", "tenure_band": "3+", "term_rate": 0.02},
+            {"role": "C", "tenure_band": "5+", "term_rate": 0.02},
         ]
     )
 

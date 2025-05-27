@@ -38,7 +38,7 @@ def make_tiny_events():
             "value_json": None,
             "meta": "{}",
             "role": "C",
-            "tenure_band": "3+",
+            "tenure_band": "5+",
         },
     ]
     df = pd.DataFrame(rows)
@@ -76,7 +76,7 @@ def make_tiny_hazard():
             {
                 "year": 2025,
                 "role": "C",
-                "tenure_band": "3+",
+                "tenure_band": "5+",
                 "comp_raise_pct": 0.05,
                 "term_rate": 0.02,
                 "nh_term_rate": 0.20,

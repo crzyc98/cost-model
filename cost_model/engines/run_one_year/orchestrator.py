@@ -53,7 +53,29 @@ def run_one_year(
 
     # --- 1. Initialization and validation ---
     as_of = pd.Timestamp(f"{year}-01-01")
+    
+    # Add diagnostics for EMP_LEVEL before ensure_snapshot_cols
+    logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before ensure_snapshot_cols:")
+    if EMP_LEVEL in prev_snapshot.columns:
+        logger.warning(f"  pre-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
+        logger.warning(f"  pre-ensure_snapshot_cols['{EMP_LEVEL}'] dtype: {prev_snapshot[EMP_LEVEL].dtype}")
+        # Log level distribution if there are no NaN values
+        if prev_snapshot[EMP_LEVEL].isna().sum() == 0:
+            level_counts = prev_snapshot[EMP_LEVEL].value_counts().to_dict()
+            logger.warning(f"  Level distribution before ensure_snapshot_cols: {level_counts}")
+    else:
+        logger.warning(f"  {EMP_LEVEL} column not found in prev_snapshot before ensure_snapshot_cols")
+    
     prev_snapshot = ensure_snapshot_cols(prev_snapshot)
+    
+    # Add diagnostics for EMP_LEVEL after ensure_snapshot_cols
+    logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After ensure_snapshot_cols:")
+    logger.warning(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
+    logger.warning(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] dtype: {prev_snapshot[EMP_LEVEL].dtype}")
+    # Log level distribution if there are no NaN values
+    if prev_snapshot[EMP_LEVEL].isna().sum() == 0:
+        level_counts = prev_snapshot[EMP_LEVEL].value_counts().to_dict()
+        logger.warning(f"  Level distribution after ensure_snapshot_cols: {level_counts}")
 
     # Validate EMP_ID in prev_snapshot
     if EMP_ID in prev_snapshot.columns and prev_snapshot[EMP_ID].isna().any():
@@ -101,6 +123,9 @@ def run_one_year(
     # Filter hazard table by year for termination engines
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
     
+    # CRITICAL FIX: Standardize tenure band formats to ensure consistent matching
+    # Note: No longer mapping '0-1' to '0-1yr' as we've standardized all tenure bands to use '0-1' format
+    
     # Run hazard-based terminations
     term_event_dfs = term.run(
         snapshot=experienced,
@@ -138,6 +163,9 @@ def run_one_year(
     logger.info("[STEP] Generate/apply hires")
     # Filter hazard table by year to ensure correct matching
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
+    
+    # CRITICAL FIX: Standardize tenure band formats for hiring, just as we did for terminations
+    # Note: No longer mapping '0-1' to '0-1yr' as we've standardized all tenure bands to use '0-1' format
     hires_result = hire.run(
         snapshot=survivors_after_term,
         hires_to_make=gross_hires,  # Use gross_hires to account for expected new hire terminations
@@ -296,7 +324,7 @@ def run_one_year(
             'employee_termination_date': pd.NaT,
             'active': True,
             'employee_deferral_rate': 0.0,  # Default value, adjust as needed
-            'employee_tenure_band': '0-1yr',  # New hires have 0-1 year tenure
+            'employee_tenure_band': '0-1',  # New hires have 0-1 year tenure
             'employee_tenure': 0.0,  # New hires have 0 years tenure
             'employee_level': extracted_levels.fillna(1).astype('Int64'),  # Use extracted levels, default to 1 where missing
             'job_level_source': 'new_hire',
@@ -572,24 +600,57 @@ def run_one_year(
     if not nh_term_comp_events.empty:
         logger.info(f"Adding {len(nh_term_comp_events)} new hire compensation events")
         events_to_concat.append(nh_term_comp_events)
-    if not nh_term_comp_events.empty:
-        events_to_concat.append(nh_term_comp_events)
+    # Removed duplicate append of nh_term_comp_events
     
     # 1. Filter out empty DataFrames before concatenation
     non_empty_events = [df for df in events_to_concat if not df.empty]
     
+    # 1b. Pre-validation: Ensure all event DataFrames have required columns with proper types
+    required_cols = ['event_time', 'event_type', EMP_ID]
+    validated_events = []
+    
+    for i, df in enumerate(non_empty_events):
+        # Only proceed with validation if DataFrame has events
+        if not df.empty:
+            is_valid = True
+            # Check for required columns
+            for col in required_cols:
+                if col not in df.columns:
+                    logger.warning(f"DataFrame {i} is missing required column '{col}'. Skipping.")
+                    is_valid = False
+                    break
+                    
+            # Check for NAs in required columns
+            if is_valid:
+                for col in required_cols:
+                    if df[col].isna().any():
+                        na_count = df[col].isna().sum()
+                        logger.warning(f"DataFrame {i} has {na_count} NA values in required column '{col}'. Fixing.")
+                        
+                        # For event_time, fill with year timestamp
+                        if col == 'event_time' and na_count > 0:
+                            df[col] = df[col].fillna(pd.Timestamp(f"{year}-01-01"))
+                            
+                        # For event_type and employee_id, drop rows with NA values
+                        if (col == 'event_type' or col == EMP_ID) and na_count > 0:
+                            df = df.dropna(subset=[col])
+                
+                # Only add valid, non-empty DataFrames
+                if not df.empty:
+                    validated_events.append(df)
+            
     # 2. Create this year's new events
-    if non_empty_events:
-        logger.info(f"Concatenating {len(non_empty_events)} non-empty event DataFrames for year {year}")
+    if validated_events:
+        logger.info(f"Concatenating {len(validated_events)} validated event DataFrames for year {year}")
         try:
-            new_events = pd.concat(non_empty_events, ignore_index=True)
+            new_events = pd.concat(validated_events, ignore_index=True)
             logger.info(f"Successfully created {len(new_events)} new events for year {year}")
         except Exception as e:
             logger.error(f"Error concatenating events for year {year}: {e}")
-            logger.debug(f"Event DataFrames being concatenated: {[df.shape for df in non_empty_events]}")
+            logger.debug(f"Event DataFrames being concatenated: {[df.shape for df in validated_events]}")
             raise
     else:
-        logger.warning(f"No non-empty event DataFrames to concatenate for year {year}")
+        logger.warning(f"No valid event DataFrames to concatenate for year {year}")
         # Create an empty DataFrame with the correct columns and dtypes
         new_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object) 
                                  for col, t in EVENT_PANDAS_DTYPES.items()})

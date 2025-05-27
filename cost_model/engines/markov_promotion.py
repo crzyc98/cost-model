@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 from typing import Tuple, Optional, List
 from cost_model.state.job_levels.sampling import apply_promotion_markov, load_markov_matrix
-from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, create_event
-from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP, EMP_HIRE_DATE
+from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, EVT_TERM, create_event
+from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_ROLE, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP, EMP_HIRE_DATE, SIMULATION_YEAR
 
 
 def create_promotion_raise_events(
@@ -162,6 +162,29 @@ def apply_markov_promotions(
     # Create a copy to avoid modifying the input
     snapshot = snapshot.copy()
     
+    # Add diagnostics for EMP_LEVEL at start of apply_markov_promotions
+    year_val = simulation_year or promo_time.year
+    logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Snapshot analysis at start of apply_markov_promotions:")
+    if EMP_LEVEL in snapshot.columns:
+        na_count = snapshot[EMP_LEVEL].isna().sum()
+        logger.warning(f"  Input snapshot['{EMP_LEVEL}'] NA count: {na_count}")
+        logger.warning(f"  Input snapshot['{EMP_LEVEL}'] dtype: {snapshot[EMP_LEVEL].dtype}")
+        
+        # If there are any NaN values, log the affected employee IDs for debugging
+        if na_count > 0:
+            na_employees = snapshot[snapshot[EMP_LEVEL].isna()][[EMP_ID, EMP_HIRE_DATE]].copy()
+            if not na_employees.empty:
+                na_employees[EMP_HIRE_DATE] = na_employees[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
+                logger.warning(f"  Employees with NaN {EMP_LEVEL}: {na_employees.to_dict('records')}")
+        
+        # Log level distribution if there are no NaNs or after removing NaNs
+        non_na_snapshot = snapshot.dropna(subset=[EMP_LEVEL])
+        if not non_na_snapshot.empty:
+            level_counts = non_na_snapshot[EMP_LEVEL].value_counts().to_dict()
+            logger.warning(f"  Level distribution in input snapshot: {level_counts}")
+    else:
+        logger.warning(f"  {EMP_LEVEL} column not found in input snapshot")
+    
     # Check for missing compensation and log details before filtering
     missing_comp_mask = snapshot[EMP_GROSS_COMP].isna()
     if missing_comp_mask.any():
@@ -209,6 +232,23 @@ def apply_markov_promotions(
         matrix=promotion_matrix  # Always pass the loaded promotion matrix
     )
     
+    # DIAGNOSTIC: Immediately check for NaNs after apply_promotion_markov
+    if pd.isna(out[EMP_LEVEL]).any():
+        nan_count = pd.isna(out[EMP_LEVEL]).sum()
+        logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: Found {nan_count} NaN values in {EMP_LEVEL}")
+        
+        # Get some details about the employees with NaN levels
+        nan_emps = out[pd.isna(out[EMP_LEVEL])]
+        if not nan_emps.empty and EMP_ID in nan_emps.columns:
+            nan_emp_ids = nan_emps[EMP_ID].tolist()
+            logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Employees with NaN {EMP_LEVEL}: {nan_emp_ids[:5]}{'...' if len(nan_emp_ids) > 5 else ''}")
+            
+            # Check if these employees have exited
+            nan_exited = nan_emps[EMP_EXITED].sum() if EMP_EXITED in nan_emps.columns else 'N/A'
+            logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Out of {len(nan_emps)} employees with NaN {EMP_LEVEL}, {nan_exited} have exited=True")
+    else:
+        logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: No NaN values in {EMP_LEVEL}, all good!")
+    
     # Create promotion events for level changes
     promoted_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
     promoted = out[promoted_mask].copy()
@@ -238,6 +278,11 @@ def apply_markov_promotions(
         
         # Now it's safe to set the value
         out.loc[promoted.index, EMP_LEVEL_SOURCE] = 'markov-promo'
+        
+        # DIAGNOSTIC: Check if the level_source update introduced any NaNs
+        if pd.isna(out[EMP_LEVEL]).any():
+            nan_count = pd.isna(out[EMP_LEVEL]).sum()
+            logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] After EMP_LEVEL_SOURCE update: Found {nan_count} NaN values in {EMP_LEVEL}")
     
     # Update the levels in the output snapshot
     # Fill NaN values before converting to int to avoid IntCastingNaNError
@@ -245,7 +290,20 @@ def apply_markov_promotions(
         # Log how many NaN values we found
         nan_count = pd.isna(out[EMP_LEVEL]).sum()
         logger = logging.getLogger(__name__)
-        logger.warning(f"Found {nan_count} NaN values in EMP_LEVEL, filling with default level 1")
+        logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Final check: Found {nan_count} NaN values in {EMP_LEVEL}, filling with default level 1")
+        
+        # Get details about the employees with NaNs at this stage
+        nan_indices = out.index[pd.isna(out[EMP_LEVEL])].tolist()
+        if len(nan_indices) > 0:
+            nan_emps = out.loc[nan_indices]
+            if EMP_ID in nan_emps.columns:
+                nan_emp_ids = nan_emps[EMP_ID].tolist()
+                logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Final check - Employees with NaN {EMP_LEVEL}: {nan_emp_ids[:5]}{'...' if len(nan_emp_ids) > 5 else ''}")
+                
+                # Check if these employees have exited flag set
+                if EMP_EXITED in nan_emps.columns:
+                    exited_count = nan_emps[EMP_EXITED].sum()
+                    logger.warning(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Out of {nan_count} employees with NaN {EMP_LEVEL}, {exited_count} have exited=True")
         
         # Fill NaN values with level 1 (or another appropriate default)
         out[EMP_LEVEL] = out[EMP_LEVEL].fillna(1)
@@ -253,4 +311,38 @@ def apply_markov_promotions(
     # Now convert to int safely
     out[EMP_LEVEL] = out[EMP_LEVEL].astype(int)
     
-    return promotions_df, raises_df, out[out[EMP_EXITED]].copy()
+    # Get employees who exited during Markov promotions
+    exited_employees = out[out[EMP_EXITED]].copy()
+    
+    # Create proper exit events for employees who exited
+    exit_events = []
+    
+    for _, row in exited_employees.iterrows():
+        emp_id = row[EMP_ID]
+        
+        # Get termination date if it exists, or use promo_time as fallback
+        term_date = row.get('employee_termination_date', promo_time)
+        if pd.isna(term_date):
+            term_date = promo_time
+            
+        # Create exit event with proper schema using standard EVT_TERM type
+        exit_event = create_event(
+            event_time=term_date,
+            employee_id=emp_id,
+            event_type=EVT_TERM,  # Using standard termination event type
+            value_json=json.dumps({
+                "previous_level": int(row.get(EMP_LEVEL, 0)),
+                "exit_source": "markov_promotion"
+            }),
+            meta=f"Employee exited via Markov promotion chain"
+        )
+        exit_events.append(exit_event)
+    
+    # Convert to DataFrame with proper event schema
+    exited_df = pd.DataFrame(exit_events, columns=EVENT_COLS) if exit_events else pd.DataFrame(columns=EVENT_COLS)
+    
+    # Add simulation_year column if it's not already there
+    if not exited_df.empty and SIMULATION_YEAR not in exited_df.columns:
+        exited_df[SIMULATION_YEAR] = simulation_year
+    
+    return promotions_df, raises_df, exited_df

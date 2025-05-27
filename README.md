@@ -132,6 +132,7 @@ The ABM approach models each employee as an autonomous agent making decisions ba
 
 - **Event-Driven Architecture**: Immutable event log for complete audit trail and state reconstruction
 - **Dual Simulation Approaches**: Traditional projection framework and agent-based modeling
+- **Data Validation**: Comprehensive validation of input data and simulation state. [View data validation documentation](docs/cost_model/10_data_validation_issues.md)
 - **Configurable Scenarios**: Via YAML files (start year, projection length, comp increases, hire/term rates)
 - **Modular Plan Rules**: Eligibility, auto-enrollment (AE), auto-increase (AI), employer match/NEC formulas
 - **Population Dynamics**: Sophisticated models for hires and terminations (rule-based or ML-based)

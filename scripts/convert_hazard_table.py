@@ -1,60 +1,74 @@
-"""
-Convert hazard table from CSV to Parquet format
-
-This script reads the hazard table CSV from cost_model/state/ and converts it to Parquet format
-in the data directory for use in simulations. It also adds required columns that might be missing.
-"""
+# /scripts/convert_hazard_table.py
 import pandas as pd
 from pathlib import Path
 
 def main():
-    # Define paths
-    input_csv = Path("cost_model/state/hazard_table.csv")
+    input_csv = Path("cost_model/state/hazard_table.csv") # Or your actual path
     output_parquet = Path("data/hazard_table.parquet")
     
-    # Create data directory if it doesn't exist
     output_parquet.parent.mkdir(exist_ok=True)
     
-    # Read CSV
     print(f"Reading hazard table from {input_csv}")
+    if not input_csv.exists():
+        print(f"ERROR: Input CSV file not found at {input_csv}")
+        return
     df = pd.read_csv(input_csv)
+    print(f"Successfully read {len(df)} rows from {input_csv}")
     
-    # Rename columns to match expected names
+    # Define column mapping based on your NEW CSV structure
+    # It now includes 'employee_level' and might not include 'role'
     column_mapping = {
         'year': 'simulation_year',
-        'role': 'role',
-        'tenure_band': 'tenure_band',
+        'employee_level': 'employee_level', # Assuming CSV now has 'employee_level'
+        # 'role': 'role', # Keep if your new CSV still has a role column you want
+        'tenure_band': 'tenure_band', 
         'term_rate': 'term_rate',
         'comp_raise_pct': 'comp_raise_pct',
         'cola_pct': 'cola_pct'
     }
-    df = df.rename(columns=column_mapping)
-    
-    # Add missing columns with default values
-    df['new_hire_termination_rate'] = 0.25  # Default value from config
-    df['cfg'] = None  # Will be filled by the simulation engine
-    
-    # Ensure all required columns are present
-    required_columns = {
-        'simulation_year',
-        'role',
-        'tenure_band',
-        'term_rate',
-        'comp_raise_pct',
+    # Only rename columns that exist in the CSV
+    df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
+
+    # Add other missing globally applicable columns with default values
+    if 'new_hire_termination_rate' not in df.columns:
+        df['new_hire_termination_rate'] = 0.25
+        print("Added 'new_hire_termination_rate' column with default 0.25")
+
+    if 'cfg' not in df.columns:
+        df['cfg'] = None
+        print("Added 'cfg' column with default None")
+
+    # Define the exact columns expected in the output Parquet file
+    # This Parquet is the INPUT to cost_model.projections.hazard.py
+    # It should now include 'employee_level' directly from your CSV.
+    expected_parquet_columns = [
+        'simulation_year', 
+        'employee_level',   # Now sourced from CSV
+        'tenure_band', 
+        'term_rate', 
+        'comp_raise_pct', 
+        'cola_pct', 
         'new_hire_termination_rate',
-        'cola_pct',
         'cfg'
-    }
-    missing_columns = required_columns - set(df.columns)
-    if missing_columns:
-        raise ValueError(f"Missing required columns after processing: {missing_columns}")
+    ]
+    # If you decided to keep 'role' in your CSV and Parquet, add it here too:
+    # if 'role' in df.columns:
+    #     if 'role' not in expected_parquet_columns: # To avoid duplicates if already there
+    #        expected_parquet_columns.insert(1, 'role') # Insert after simulation_year for example
+
+    # Ensure all expected columns are present
+    for col in expected_parquet_columns:
+        if col not in df.columns:
+            # If 'employee_level' is missing here, it means it wasn't in your CSV or mapping
+            raise ValueError(f"FATAL: Column '{col}' is missing from DataFrame after CSV load and rename. Columns present: {df.columns.tolist()}. Please check your CSV and column_mapping.")
     
-    # Write to Parquet
-    print(f"Writing to {output_parquet}")
+    # Select and reorder columns
+    df = df[expected_parquet_columns] 
+    
+    print(f"Writing to {output_parquet}. Columns: {df.columns.tolist()}")
     df.to_parquet(output_parquet, index=False)
     
     print("Conversion complete!")
-    print("Final columns:", df.columns.tolist())
 
 if __name__ == "__main__":
     main()

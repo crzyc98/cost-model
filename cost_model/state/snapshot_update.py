@@ -44,6 +44,7 @@ from cost_model.state.snapshot_utils import (
     ensure_columns_and_types,
 )
 from cost_model.state.tenure import apply_tenure
+from cost_model.utils.tenure_utils import standardize_tenure_band
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,12 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
 
     as_of = pd.Timestamp(f"{year}-12-31")
     new_df = apply_tenure(new_df, EMP_HIRE_DATE, as_of, out_tenure_col=EMP_TENURE, out_band_col="tenure_band")
+    
+    # Ensure tenure bands are standardized
+    if EMP_TENURE_BAND in new_df.columns:
+        logger.debug(f"Standardizing tenure bands for {len(new_df)} new hires")
+        new_df[EMP_TENURE_BAND] = new_df[EMP_TENURE_BAND].map(standardize_tenure_band)
+        logger.debug(f"New hire tenure bands after standardization: {new_df[EMP_TENURE_BAND].value_counts().to_dict()}")
 
     new_df[EMP_ID] = new_df.index.astype(str)
 

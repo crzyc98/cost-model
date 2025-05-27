@@ -36,7 +36,7 @@ REQUIRED_SNAPSHOT_DEFAULTS = {
     EMP_TERM_DATE: pd.NaT,  # Not terminated by default
     EMP_ACTIVE: True,       # Active by default
     EMP_DEFERRAL_RATE: 0.0, # No deferral by default
-    TENURE_BAND: "<1yr",    # Default tenure band
+    TENURE_BAND: "0-1",    # Default tenure band
     EMP_TENURE: 0.0,        # 0 years of tenure by default
     EMP_EXITED: False       # Not exited by default
 }

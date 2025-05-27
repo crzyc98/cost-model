@@ -99,7 +99,7 @@ def test_tenure():
     }, index=pd.Index(["emp1", "emp2"], name=const.EMP_ID))
     
     # Test tenure band assignment
-    assert assign_tenure_band(0.5) == "<1"
+    assert assign_tenure_band(0.5) == "0-1"
     assert assign_tenure_band(2.5) == "1-3"
     assert assign_tenure_band(4.5) == "3-5"
     assert assign_tenure_band(6.0) == "5+"
@@ -113,8 +113,8 @@ def test_tenure():
         out_band_col=const.EMP_TENURE_BAND
     )
     
-    # Employee hired in 2023 should have <1 year tenure
-    assert result.loc["emp1", EMP_TENURE_BAND] == "<1"
+    # Employee hired in 2023 should have 0-1 year tenure
+    assert result.loc["emp1", EMP_TENURE_BAND] == "0-1"
     # Employee hired in 2021 should have 2.99 years tenure -> 1-3 band
     assert result.loc["emp2", EMP_TENURE_BAND] == "1-3"
 
@@ -150,9 +150,9 @@ def test_snapshot_build():
     # Verify tenure calculation
     # Employee hired in 2023-01-01, as_of is 2023-12-31 -> ~11.99 months
     assert snapshot.loc["emp1", EMP_TENURE] == pytest.approx(0.997, abs=1e-3)  # ~11.99 months
-    assert snapshot.loc["emp1", EMP_TENURE_BAND] == "<1"  # Less than 1 year
-    assert snapshot.loc["emp1", EMP_TENURE_BAND] == "<1"  # Less than 1 year
-    assert emp1[const.EMP_TENURE_BAND] == "<1"  # Less than 1 year
+    assert snapshot.loc["emp1", EMP_TENURE_BAND] == "0-1"  # Less than 1 year
+    assert snapshot.loc["emp1", EMP_TENURE_BAND] == "0-1"  # Less than 1 year
+    assert emp1[const.EMP_TENURE_BAND] == "0-1"  # Less than 1 year
 
 def test_snapshot_update():
     """Test updating an existing snapshot."""
@@ -341,5 +341,5 @@ def test_snapshot_update():
     assert updated.loc["emp2", const.EMP_ACTIVE]
     
     # Verify tenure bands
-    assert updated.loc["emp1", const.EMP_TENURE_BAND] == "<1"
-    assert updated.loc["emp2", const.EMP_TENURE_BAND] == "<1"
+    assert updated.loc["emp1", const.EMP_TENURE_BAND] == "0-1"
+    assert updated.loc["emp2", const.EMP_TENURE_BAND] == "0-1"
