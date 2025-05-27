@@ -392,6 +392,37 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
 
     logger.info(f"Initial snapshot created with {len(snapshot_df)} records. Columns: {snapshot_df.columns.tolist()}")
     logger.debug(f"Initial snapshot dtypes:\n{snapshot_df.dtypes}")
+    
+    # Final validation for EMP_LEVEL - ensure no NaN values remain
+    if EMP_LEVEL in snapshot_df.columns:
+        nan_levels_mask = snapshot_df[EMP_LEVEL].isna()
+        nan_count = nan_levels_mask.sum()
+        
+        if nan_count > 0:
+            # Get employee IDs with NaN levels for logging
+            nan_emp_ids = snapshot_df.loc[nan_levels_mask, EMP_ID].tolist()
+            log_sample = nan_emp_ids[:5]  # Show first 5 IDs in log
+            
+            logger.warning(
+                f"Found {nan_count} employees with NaN values in {EMP_LEVEL}. "
+                f"Setting to default level 1. Sample IDs: {log_sample}"
+                f"{' (plus more...)' if nan_count > 5 else ''}"
+            )
+            
+            # Fill NaN values with default level 1
+            snapshot_df.loc[nan_levels_mask, EMP_LEVEL] = 1
+            
+            # Also update the level source to indicate this was a fallback
+            if EMP_LEVEL_SOURCE in snapshot_df.columns:
+                snapshot_df.loc[nan_levels_mask, EMP_LEVEL_SOURCE] = 'default-validation'
+
+    # Ensure EMP_LEVEL is properly typed as Int64
+    if EMP_LEVEL in snapshot_df.columns:
+        try:
+            snapshot_df[EMP_LEVEL] = snapshot_df[EMP_LEVEL].astype('Int64')
+        except Exception as e:
+            logger.error(f"Failed to convert {EMP_LEVEL} to Int64 after validation: {e}")
+    
     return snapshot_df
 
 def update_snapshot_with_events(

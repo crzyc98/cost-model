@@ -58,6 +58,15 @@ def load_markov_matrix(path: Optional[str] = None, allow_default: bool = False) 
     """
     Load a Markov transition matrix from YAML (path) or use the canonical PROMOTION_MATRIX if allowed.
 
+    The YAML file should have the following structure:
+    ```yaml
+    states: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 'exit']
+    transitions:
+      0: [0.85, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      # ... other levels ...
+      exit: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    ```
+
     Args:
       path: Path to the YAML file. If None and allow_default=True, returns PROMOTION_MATRIX.
       allow_default: Whether to fall back to PROMOTION_MATRIX when path is None.
@@ -69,7 +78,7 @@ def load_markov_matrix(path: Optional[str] = None, allow_default: bool = False) 
       FileNotFoundError: If path is provided but file is missing.
       ValueError: If path is None and allow_default=False, or if the loaded matrix is invalid.
     """
-    # 1) Dev‐mode default
+    # 1) Handle default case if no path provided
     if path is None:
         if allow_default:
             logger.info("No promotion_matrix_path provided; using full default PROMOTION_MATRIX")
@@ -85,59 +94,56 @@ def load_markov_matrix(path: Optional[str] = None, allow_default: bool = False) 
         raise FileNotFoundError(f"Promotion matrix file not found: {path}")
 
     logger.info(f"Loading promotion matrix from: {path}")
+    
     try:
         with open(path, "r") as f:
-            data = yaml.safe_load(f)
+            yaml_data = yaml.safe_load(f)
+            
+        # Expect YAML with 'states' (list) and 'transitions' (dict)
+        if 'states' not in yaml_data or 'transitions' not in yaml_data:
+            raise ValueError(
+                "YAML must contain 'states' (list) and 'transitions' (dict) keys. "
+                "See function docstring for expected format."
+            )
+            
+        states = yaml_data['states']
+        transitions = yaml_data['transitions']
+        
+        # Ensure transitions keys are all strings for robust lookup
+        transitions_str_keys = {str(k): v for k, v in transitions.items()}
+        
+        # Build matrix data as a list of lists, ordered by states
+        matrix_data = []
+        for state in states:
+            key = str(state)
+            if key not in transitions_str_keys:
+                raise ValueError(f"Missing transition row for state '{state}' in promotion matrix YAML.")
+                
+            row = transitions_str_keys[key]
+            if len(row) != len(states):
+                raise ValueError(
+                    f"Transition row for state '{state}' has length {len(row)} but expected {len(states)}. "
+                    f"Each row must have exactly one probability per state."
+                )
+            matrix_data.append(row)
+            
+        # Construct DataFrame with explicit row and column order
+        df = pd.DataFrame(matrix_data, index=states, columns=states, dtype=float)
+        
+        # Log successful load
+        logger.info(f"Successfully loaded promotion matrix with states: {states}")
+        
+    except yaml.YAMLError as e:
+        logger.error(f"Error parsing YAML file {path}: {str(e)}")
+        raise ValueError(f"Invalid YAML in promotion matrix file: {str(e)}")
     except Exception as e:
-        raise ValueError(f"Error loading YAML from {path}: {str(e)}")
-
-    # Check if this looks like a summary DataFrame rather than a promotion matrix
-    # by detecting common summary column names
-    suspect_columns = ['year', 'active_headcount', 'terminations', 'new_hires', 
-                      'total_compensation', 'avg_compensation']
+        logger.error(f"Error loading promotion matrix from {path}: {str(e)}")
+        raise ValueError(f"Invalid promotion matrix: {str(e)}")
     
-    # Build DataFrame
-    try:
-        if isinstance(data, list) and all(isinstance(r, list) for r in data):
-            df = pd.DataFrame(data)
-        else:
-            df = pd.DataFrame(data)
-            
-        # Pre-validation checks
-        # 1. Check for duplicate column names
-        if len(df.columns) != len(set(df.columns)):
-            duplicates = [col for col in df.columns if list(df.columns).count(col) > 1]
-            raise ValueError(f"Duplicate column names found: {duplicates}. This does not look like a valid promotion matrix.")
-            
-        # 2. Check if this appears to be a summary file instead of a promotion matrix
-        common_suspect_cols = [col for col in suspect_columns if col in df.columns]
-        if common_suspect_cols:
-            raise ValueError(f"File contains columns typical of summary data ({common_suspect_cols}), not a promotion matrix. "
-                           f"Please check your promotion_matrix_path configuration. Expected format is a square matrix "
-                           f"of transition probabilities between job levels.")
-            
-        # Basic shape checks
-        if df.shape[0] == 0 or df.shape[1] == 0:
-            raise ValueError(f"Promotion matrix is empty in {path}")
-        if df.shape[0] != df.shape[1]:
-            raise ValueError(f"Matrix must be square (got {df.shape} with {df.shape[0]} rows and {df.shape[1]} columns). "
-                           f"A promotion matrix should have the same states as both rows and columns.")
-            
-        # Try to ensure numeric values
-        try:
-            df = df.astype(float)
-        except ValueError:
-            non_numeric = [col for col in df.columns if not pd.to_numeric(df[col], errors='coerce').notnull().all()]
-            raise ValueError(f"Non-numeric values found in columns: {non_numeric}. A promotion matrix must contain only probabilities.")
-            
-    except Exception as e:
-        logger.error(f"Failed to process file as promotion matrix: {str(e)}")
-        raise ValueError(f"File at {path} is not a valid promotion matrix: {str(e)}")
-
-    # Validate contents
+    # Validate the matrix structure and probabilities
     validate_promotion_matrix(df)
-    logger.info(f"Successfully loaded promotion matrix with shape {df.shape}")
-    return df.astype(float)
+    
+    return df
 
 
 def sample_new_hire_compensation(

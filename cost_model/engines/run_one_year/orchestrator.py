@@ -226,6 +226,66 @@ def run_one_year(
             
             compensation_values.append(comp_value)
         
+        # Define a helper function to extract level from value_json
+        def extract_level_from_hire_event(row):
+            """Extract the employee level from a hire event row's value_json."""
+            try:
+                if 'value_json' in row:
+                    # Parse JSON if it's a string
+                    if isinstance(row['value_json'], str):
+                        try:
+                            value_json = json.loads(row['value_json'])
+                        except (json.JSONDecodeError, TypeError):
+                            return None
+                    else:
+                        value_json = row['value_json']  # Already a dict
+                        
+                    # Extract level from 'role' field (this is where hire.py stores the level)
+                    if isinstance(value_json, dict) and 'role' in value_json:
+                        level = value_json['role']
+                        # Convert to int if possible
+                        if isinstance(level, (int, float)):
+                            return int(level)
+                        elif isinstance(level, str) and level.isdigit():
+                            return int(level)
+            except Exception as e:
+                logger.debug(f"Error extracting level for employee {row.get(EMP_ID, 'unknown')}: {str(e)}")
+            return None
+
+        # Enhanced diagnostic logging
+        logger.warning(f"[ORCHESTRATOR YR={year}] Entering level extraction block for {len(hires_events)} hire events")
+        if not hires_events.empty:
+            # Sample the first few hire events to understand their structure
+            sample_row = hires_events.iloc[0]
+            logger.warning(f"[ORCHESTRATOR YR={year}] Sample hire event columns: {sample_row.index.tolist()}")
+            
+            # Examine value_json content
+            if 'value_json' in sample_row:
+                try:
+                    if isinstance(sample_row['value_json'], str):
+                        value_json = json.loads(sample_row['value_json'])
+                    else:
+                        value_json = sample_row['value_json']
+                    logger.warning(f"[ORCHESTRATOR YR={year}] Sample value_json keys: {list(value_json.keys()) if isinstance(value_json, dict) else 'Not a dict'}")
+                    if isinstance(value_json, dict) and 'role' in value_json:
+                        logger.warning(f"[ORCHESTRATOR YR={year}] Sample role value: {value_json['role']}, type: {type(value_json['role'])}")
+                except Exception as e:
+                    logger.warning(f"[ORCHESTRATOR YR={year}] Error examining value_json: {str(e)}")
+
+        # Extract levels using apply (vectorized)
+        extracted_levels = hires_events.apply(extract_level_from_hire_event, axis=1)
+
+        # Log statistics about extracted levels with enhanced visibility
+        extracted_count = extracted_levels.notna().sum()
+        logger.warning(f"[ORCHESTRATOR YR={year}] Successfully extracted levels for {extracted_count} out of {len(hires_events)} new hires")
+        if extracted_count < len(hires_events):
+            logger.warning(f"[ORCHESTRATOR YR={year}] Using default level 1 for {len(hires_events) - extracted_count} new hires without extractable levels")
+            
+        if not hires_events.empty:
+            # Show sample of extracted values
+            sample_levels = extracted_levels.head(3).tolist()
+            logger.warning(f"[ORCHESTRATOR YR={year}] Sample of extracted levels: {sample_levels}")
+        
         # Construct the new_hires DataFrame for the snapshot
         new_hires_data = {
             EMP_ID: employee_ids_for_new_hires, # Use the sanitized Series
@@ -238,7 +298,7 @@ def run_one_year(
             'employee_deferral_rate': 0.0,  # Default value, adjust as needed
             'employee_tenure_band': '0-1yr',  # New hires have 0-1 year tenure
             'employee_tenure': 0.0,  # New hires have 0 years tenure
-            'employee_level': 1,  # Default level for new hires, adjust as needed
+            'employee_level': extracted_levels.fillna(1).astype('Int64'),  # Use extracted levels, default to 1 where missing
             'job_level_source': 'new_hire',
             'exited': False,
             'simulation_year': year
@@ -295,26 +355,61 @@ def run_one_year(
 
         snapshot_with_hires = pd.concat([survivors_after_term, new_hires], sort=False) # sort=False is typical
         
+        # Diagnostic logging for snapshot_with_hires right after concatenation
+        if not snapshot_with_hires.empty:
+            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After snapshot_with_hires creation (concat):")
+            if 'employee_level' in snapshot_with_hires.columns:
+                level_na_count = snapshot_with_hires['employee_level'].isna().sum()
+                logger.warning(f"  snapshot_with_hires['employee_level'] NA count: {level_na_count}")
+                logger.warning(f"  snapshot_with_hires['employee_level'] dtype: {snapshot_with_hires['employee_level'].dtype}")
+                if level_na_count > 0:
+                    # Check if there are any new hires with NA levels
+                    if 'job_level_source' in snapshot_with_hires.columns:
+                        new_hire_level_na = snapshot_with_hires[
+                            (snapshot_with_hires['employee_level'].isna()) & 
+                            (snapshot_with_hires['job_level_source'] == 'new_hire')
+                        ]
+                        logger.warning(f"  Number of new hires with NA levels: {len(new_hire_level_na)}")
+                        if not new_hire_level_na.empty:
+                            logger.warning(f"  Sample of new hire employee IDs with NA levels: {new_hire_level_na[EMP_ID].head().tolist()}")
+                    # Show all entries with NA levels
+                    logger.warning(f"  Sample of ALL employee IDs with NA levels: {snapshot_with_hires[snapshot_with_hires['employee_level'].isna()][EMP_ID].head().tolist()}")
+                # Show a frequency table of the levels
+                level_counts = snapshot_with_hires['employee_level'].value_counts(dropna=False).to_dict()
+                logger.warning(f"  Level distribution in snapshot_with_hires: {level_counts}")
+            else:
+                logger.warning(f"  'employee_level' column not found in snapshot_with_hires! Columns: {snapshot_with_hires.columns.tolist()}")
+        
         # Add new hire events to the list of all events for the year
         all_new_events_list.append(hires_events)
         
         # Diagnostic logging for new_hires DataFrame
-        if not new_hires.empty and EMP_ID in new_hires.columns:
-            logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation:")
-            logger.info(f"  new_hires['{EMP_ID}'] dtype: {new_hires[EMP_ID].dtype}")
-            na_sum_new_hires = new_hires[EMP_ID].isna().sum()
-            logger.info(f"  new_hires['{EMP_ID}'] NA sum: {na_sum_new_hires}")
-            if na_sum_new_hires > 0:
-                logger.info(f"  Sample of NA IDs in new_hires['{EMP_ID}']: {new_hires[new_hires[EMP_ID].isna()][EMP_ID].head().tolist()}")
-            if new_hires[EMP_ID].dtype == 'object':
-                none_sum_new_hires = new_hires[EMP_ID].apply(lambda x: x is None).sum()
-                if none_sum_new_hires > 0:
-                    logger.info(f"  new_hires['{EMP_ID}'] Python None sum: {none_sum_new_hires}")
-                    logger.info(f"  Sample of None IDs in new_hires['{EMP_ID}']: {new_hires[new_hires[EMP_ID].apply(lambda x: x is None)][EMP_ID].head().tolist()}")
-        elif new_hires.empty:
-            logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation: new_hires is empty.")
-        else: # Not empty, but EMP_ID column missing
-            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation: new_hires is NOT empty, but MISSING '{EMP_ID}' column. Columns: {new_hires.columns.tolist()}")
+        if not new_hires.empty:
+            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation:")
+            # Check EMP_LEVEL column specifically
+            if 'employee_level' in new_hires.columns:
+                level_na_count = new_hires['employee_level'].isna().sum()
+                logger.warning(f"  new_hires['employee_level'] NA count: {level_na_count}")
+                logger.warning(f"  new_hires['employee_level'] dtype: {new_hires['employee_level'].dtype}")
+                if level_na_count > 0:
+                    logger.warning(f"  Sample of employee IDs with NA levels: {new_hires[new_hires['employee_level'].isna()][EMP_ID].head().tolist()}")
+                # Show a frequency table of the levels
+                level_counts = new_hires['employee_level'].value_counts(dropna=False).to_dict()
+                logger.warning(f"  Level distribution in new_hires: {level_counts}")
+            else:
+                logger.warning(f"  'employee_level' column not found in new_hires! Columns: {new_hires.columns.tolist()}")
+                
+            # Also check EMP_ID column
+            if EMP_ID in new_hires.columns:
+                na_sum_new_hires = new_hires[EMP_ID].isna().sum()
+                logger.warning(f"  new_hires['{EMP_ID}'] dtype: {new_hires[EMP_ID].dtype}")
+                logger.warning(f"  new_hires['{EMP_ID}'] NA sum: {na_sum_new_hires}")
+                if na_sum_new_hires > 0:
+                    logger.warning(f"  Sample of NA IDs in new_hires['{EMP_ID}']: {new_hires[new_hires[EMP_ID].isna()][EMP_ID].head().tolist()}")
+            else:
+                logger.warning(f"  '{EMP_ID}' column not found in new_hires! Columns: {new_hires.columns.tolist()}")
+        else:
+            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation: new_hires is empty.")
     else:
         snapshot_with_hires = survivors_after_term
 
@@ -373,6 +468,30 @@ def run_one_year(
 
     # --- 8. Run new-hire termination ---
     logger.info("[STEP] Deterministic new-hire terminations")
+    
+    # Diagnostic logging before new hire termination
+    if not snapshot_with_hires.empty:
+        logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before new-hire termination:")
+        if 'employee_level' in snapshot_with_hires.columns:
+            level_na_count = snapshot_with_hires['employee_level'].isna().sum()
+            logger.warning(f"  Pre-termination snapshot['employee_level'] NA count: {level_na_count}")
+            logger.warning(f"  Pre-termination snapshot['employee_level'] dtype: {snapshot_with_hires['employee_level'].dtype}")
+            # More detailed analysis of where NA values are
+            if level_na_count > 0:
+                # Check if these are new hires
+                if 'job_level_source' in snapshot_with_hires.columns:
+                    level_na_by_source = snapshot_with_hires[snapshot_with_hires['employee_level'].isna()]\
+                        .groupby('job_level_source', dropna=False).size().to_dict()
+                    logger.warning(f"  NA levels by job_level_source: {level_na_by_source}")
+                    
+                # Check tenure of employees with NA levels
+                if 'employee_tenure_band' in snapshot_with_hires.columns:
+                    level_na_by_tenure = snapshot_with_hires[snapshot_with_hires['employee_level'].isna()]\
+                        .groupby('employee_tenure_band', dropna=False).size().to_dict()
+                    logger.warning(f"  NA levels by tenure band: {level_na_by_tenure}")
+        else:
+            logger.warning(f"  'employee_level' column not found in pre-termination snapshot! Columns: {snapshot_with_hires.columns.tolist()}")
+    
     from cost_model.engines.nh_termination import run_new_hires
     nh_term_events, nh_term_comp_events = run_new_hires(snapshot_with_hires, hz_slice, year_rng, year, deterministic=True)
     terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
@@ -382,6 +501,45 @@ def run_one_year(
     # --- 9. Final snapshot + validation ---
     logger.info("[STEP] Final snapshot + validation")
     logger.info(f"[FINAL] Final headcount: {len(final_snapshot)}")
+    
+    # Comprehensive diagnostic logging for final snapshot
+    if not final_snapshot.empty:
+        logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Final snapshot analysis:")
+        if 'employee_level' in final_snapshot.columns:
+            level_na_count = final_snapshot['employee_level'].isna().sum()
+            logger.warning(f"  Final snapshot['employee_level'] NA count: {level_na_count}")
+            logger.warning(f"  Final snapshot['employee_level'] dtype: {final_snapshot['employee_level'].dtype}")
+            
+            # Detailed analysis if NA values exist
+            if level_na_count > 0:
+                # Get sample of employees with NA levels
+                na_sample = final_snapshot[final_snapshot['employee_level'].isna()]
+                if not na_sample.empty:
+                    logger.warning(f"  Sample of employee IDs with NA levels: {na_sample[EMP_ID].head().tolist()}")
+                    
+                    # Check other important columns for these employees
+                    if 'employee_hire_date' in na_sample.columns:
+                        hire_year_counts = na_sample['employee_hire_date'].dt.year.value_counts().to_dict()
+                        logger.warning(f"  Hire years for employees with NA levels: {hire_year_counts}")
+                        
+                    if 'simulation_year' in na_sample.columns:
+                        sim_year_counts = na_sample['simulation_year'].value_counts().to_dict()
+                        logger.warning(f"  Simulation years for employees with NA levels: {sim_year_counts}")
+                    
+                    if 'job_level_source' in na_sample.columns:
+                        source_counts = na_sample['job_level_source'].value_counts(dropna=False).to_dict()
+                        logger.warning(f"  Job level sources for employees with NA levels: {source_counts}")
+            
+            # Show distribution of level values
+            level_counts = final_snapshot['employee_level'].value_counts(dropna=False).to_dict()
+            logger.warning(f"  Level distribution in final snapshot: {level_counts}")
+            
+            # Check for any level=0 employees (possibly from demotions)
+            if 0 in level_counts:
+                level0_count = level_counts[0]
+                logger.warning(f"  Found {level0_count} employees with level=0 in final snapshot")
+        else:
+            logger.warning(f"  'employee_level' column not found in final snapshot! Columns: {final_snapshot.columns.tolist()}")
 
     # --- 9. Aggregate event log ---
     logger.info("[STEP] Build event log")
