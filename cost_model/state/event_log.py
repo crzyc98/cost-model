@@ -304,7 +304,7 @@ def create_event(
         "event_time": event_time,
         EMP_ID: str(employee_id).strip(),  # Ensure string type and trim whitespace
         "event_type": event_type,
-        "value_num": float(value_num) if value_num is not None else None,
+        "value_num": float(value_num) if value_num is not None and pd.notna(value_num) else None,
         "value_json": value_json,
         "meta": meta,
     }

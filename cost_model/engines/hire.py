@@ -101,13 +101,34 @@ def run(
         else set(snapshot.index) 
     )
     new_ids = []
-    i = 1
-    while len(new_ids) < hires_to_make:
-        # Use simulation_year for generating new hire IDs for consistency
-        eid = f"NH_{simulation_year}_{i:04d}"
-        if eid not in existing_ids:
-            new_ids.append(eid)
-        i += 1
+    i = 1 
+    # Maximum attempts to prevent potential infinite loops if existing_ids is extremely dense 
+    # or if f-string somehow generates problematic IDs repeatedly (unlikely for f-string itself).
+    max_attempts = hires_to_make * 2 + 20 # Allow a generous number of retries
+
+    if hires_to_make > 0: # Only attempt to generate IDs if hires are needed
+        while len(new_ids) < hires_to_make and i <= max_attempts:
+            candidate_eid = f"NH_{simulation_year}_{i:04d}"
+            
+            # Validate the candidate_eid string before adding it
+            # It should be non-empty, not a representation of NA, and unique.
+            is_problematic_string = candidate_eid.lower() in ['nan', 'na', '<na>', 'none', 'null', '']
+            
+            if not is_problematic_string and candidate_eid not in existing_ids:
+                new_ids.append(candidate_eid)
+            # else: # Optional: log if a candidate was skipped
+                # logger.debug(f"[HIRE.RUN] Skipped candidate EID: '{candidate_eid}'. Problematic: {is_problematic_string}, Exists: {candidate_eid in existing_ids}")
+            i += 1
+
+        if len(new_ids) < hires_to_make:
+            logger.warning(
+                f"[HIRE.RUN YR={simulation_year}] Could only generate {len(new_ids)} unique/valid new EIDs out of {hires_to_make} requested "
+                f"(attempted {i-1} times). Proceeding with {len(new_ids)} hires."
+            )
+            # Crucial: Adjust hires_to_make to the actual number of IDs successfully generated.
+            # This ensures subsequent list creations (role_choices, hire_dates, etc.) are sized correctly
+            # and the zip operation in the event creation loop doesn't misalign.
+            hires_to_make = len(new_ids)
     # Generate hire dates uniformly in the year
     start = pd.Timestamp(f"{simulation_year}-01-01")
     end = pd.Timestamp(f"{simulation_year}-12-31")
@@ -259,7 +280,7 @@ def run(
 
     # Generate hire events
     hire_events = []
-    for eid, role, dt, bd_raw, co in zip(new_ids, role_choices, hire_dates, birth_dates, clone_of):
+    for i, (eid, role, dt, bd_raw, co) in enumerate(zip(new_ids, role_choices, hire_dates, birth_dates, clone_of)):
         # Debug: Log birth date values and types
         logger.debug(f"Processing birth date for {eid}: type={type(bd_raw)}, value={bd_raw}")
         
@@ -295,7 +316,7 @@ def run(
                 event_time=dt,
                 employee_id=eid,
                 event_type=EVT_HIRE,
-                value_num=None,
+                value_num=starting_comps[i],  # Use the sampled compensation value
                 value_json=json.dumps(payload),
                 meta=f"Hire event for {eid} in {simulation_year}"
             ))
@@ -304,4 +325,37 @@ def run(
             raise
     hire_df = pd.DataFrame(hire_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
     # Only return hire events; compensation will be sampled in run_one_year
-    return [hire_df]  
+    
+    # Rename for clarity from general 'hire_df' to 'hires_events_df' if this is the final events DF
+    hires_events_df = hire_df
+
+    if not hires_events_df.empty:
+        # Check 1: EMP_ID column must exist
+        if EMP_ID not in hires_events_df.columns:
+            logger.error(f"[HIRE.RUN VALIDATION] CRITICAL: Returned hires_events DataFrame is MISSING the '{EMP_ID}' column. Columns present: {hires_events_df.columns.tolist()}")
+            # Consider raising an error here to halt execution if this critical column is missing.
+            # raise ValueError(f"Hires events DataFrame missing '{EMP_ID}' column.")
+        else:
+            # Check 2: No actual pd.NA objects in EMP_ID column
+            if hires_events_df[EMP_ID].isna().any():
+                num_na = hires_events_df[EMP_ID].isna().sum()
+                logger.error(f"[HIRE.RUN VALIDATION] CRITICAL: EMP_ID column in returned hires_events CONTAINS {num_na} pd.NA VALUES. This should not happen if create_event stringifies IDs.")
+                # Consider raising an error.
+                # raise ValueError(f"EMP_ID column in hires_events contains {num_na} pd.NA values.")
+
+            # Check 3: All non-NA values in EMP_ID must be non-empty strings
+            non_na_ids = hires_events_df[EMP_ID].dropna()
+            if not non_na_ids.empty:
+                all_valid_strings = True
+                for idx, val in non_na_ids.items():
+                    if not isinstance(val, str) or not val.strip():
+                        all_valid_strings = False
+                        logger.error(f"[HIRE.RUN VALIDATION] CRITICAL: EMP_ID column in returned hires_events contains invalid string at index {idx}: Value='{val}', Type={type(val)}.")
+                        # Break or collect all problematic ones
+                        break 
+                if not all_valid_strings:
+                    # Consider raising an error
+                    # raise ValueError("EMP_ID column in hires_events contains non-string or empty string values.")
+                    pass # Logged above
+
+    return [hires_events_df]  

@@ -14,7 +14,7 @@ from cost_model.state.event_log import EVENT_COLS, EVENT_PANDAS_DTYPES
 
 from cost_model.engines import hire
 from cost_model.state.snapshot import update as snapshot_update
-from cost_model.state.schema import EMP_ID
+from cost_model.state.schema import EMP_ID, SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, EMP_GROSS_COMP
 
 # Import submodules
 from .validation import ensure_snapshot_cols, validate_and_extract_hazard_slice, validate_eoy_snapshot
@@ -49,6 +49,7 @@ def run_one_year(
     """
     logger = logging.getLogger(__name__)
     logger.info(f"[RUN_ONE_YEAR] Simulating year {year}")
+    all_new_events_list = []  # Initialize list to collect event DataFrames
 
     # --- 1. Initialization and validation ---
     as_of = pd.Timestamp(f"{year}-01-01")
@@ -88,8 +89,8 @@ def run_one_year(
     logger.info(f"[MARKOV] Promotions: {len(promotions_df)}, Raises: {len(raises_df)}, Exits: {len(exited_df)}")
     
     # Get survivors after markov promotions/exits
-    exited_emp_ids = set(exited_df['employee_id'].unique())
-    survivors_after_markov = prev_snapshot[~prev_snapshot['employee_id'].isin(exited_emp_ids)].copy()
+    exited_emp_ids = set(exited_df[EMP_ID].unique())
+    survivors_after_markov = prev_snapshot[~prev_snapshot[EMP_ID].isin(exited_emp_ids)].copy()
 
     # --- 3. Hazard-based terminations (experienced only) ---
     logger.info("[STEP] Hazard-based terminations (experienced only)")
@@ -98,7 +99,6 @@ def run_one_year(
     experienced = survivors_after_markov[experienced_mask].copy()
     
     # Filter hazard table by year for termination engines
-    from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
     
     # Run hazard-based terminations
@@ -108,11 +108,18 @@ def run_one_year(
         rng=year_rng,
         deterministic=False
     )
-    term_events = term_event_dfs[0] if term_event_dfs else pd.DataFrame()
-    comp_events = term_event_dfs[1] if len(term_event_dfs) > 1 else pd.DataFrame()
+    term_events = term_event_dfs[0] if term_event_dfs and not term_event_dfs[0].empty else pd.DataFrame()
+    comp_events = term_event_dfs[1] if len(term_event_dfs) > 1 and not term_event_dfs[1].empty else pd.DataFrame()
+
+    if not term_events.empty and SIMULATION_YEAR not in term_events.columns:
+        term_events[SIMULATION_YEAR] = year
+    if not comp_events.empty and SIMULATION_YEAR not in comp_events.columns:
+        comp_events[SIMULATION_YEAR] = year
+    
     logger.info(f"[TERM] Terminations: {len(term_events)}, Prorated comp events: {len(comp_events)}")
     # Remove terminated employees from survivors
-    terminated_ids = set(term_events['employee_id']) if not term_events.empty else set()
+    # Ensure EMP_ID column exists before trying to access it
+    terminated_ids = set(term_events[EMP_ID]) if not term_events.empty and EMP_ID in term_events.columns else set()
     survivors_after_term = survivors_after_markov[~survivors_after_markov[EMP_ID].isin(terminated_ids)].copy()
 
     # --- 4. Update snapshot to survivors ---
@@ -130,7 +137,6 @@ def run_one_year(
     # --- 6. Generate/apply hires ---
     logger.info("[STEP] Generate/apply hires")
     # Filter hazard table by year to ensure correct matching
-    from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
     hires_result = hire.run(
         snapshot=survivors_after_term,
@@ -143,8 +149,28 @@ def run_one_year(
     )
     
     # The run function returns a list with hire events and comp events
-    hires_events = hires_result[0]  # Get the hire events
-    logger.info(f"[HIRES] Added {len(hires_events)} new hires")
+    hires_events = hires_result[0] if hires_result and not hires_result[0].empty else pd.DataFrame()
+    hires_comp_events = hires_result[1] if len(hires_result) > 1 and not hires_result[1].empty else pd.DataFrame()
+
+    if not hires_events.empty:
+        if EMP_ID not in hires_events.columns:
+            logger.error(f"Critical: '{EMP_ID}' column missing in hires_events. Cannot process hires.")
+            hires_events = pd.DataFrame() # Treat as empty to prevent downstream errors
+        else:
+            original_hire_count = len(hires_events)
+            hires_events.dropna(subset=[EMP_ID], inplace=True)
+            if len(hires_events) < original_hire_count:
+                logger.warning(
+                    f"Dropped {original_hire_count - len(hires_events)} hire events with NA '{EMP_ID}'."
+                )
+        
+        if not hires_events.empty and SIMULATION_YEAR not in hires_events.columns:
+            hires_events[SIMULATION_YEAR] = year
+            
+    if not hires_comp_events.empty and SIMULATION_YEAR not in hires_comp_events.columns:
+        hires_comp_events[SIMULATION_YEAR] = year
+        
+    logger.info(f"[HIRES] Processed {len(hires_events)} new hires after validation. Corresponding comp events: {len(hires_comp_events)}")
 
     # --- 7. Update snapshot with hires ---
     # Since the run function doesn't return the updated snapshot, we'll need to create it
@@ -162,12 +188,28 @@ def run_one_year(
                 return default
 
         # Create a DataFrame with the new hires
-        new_hires = pd.DataFrame({
-            'employee_id': hires_events['employee_id'],
+        logger.info(f"Generated {len(hires_events)} new hire events for year {year}")
+        
+        # Ensure employee_id from hires_events is explicitly handled as strings
+        employee_ids_for_new_hires = hires_events[EMP_ID]
+        if employee_ids_for_new_hires.dtype == 'object': # If it's object, it might contain Nones
+            # Convert actual None to string "None", pd.NA to string "<NA>"
+            employee_ids_for_new_hires = employee_ids_for_new_hires.apply(
+                lambda x: "<NA>" if pd.isna(x) else ("None" if x is None else str(x))
+            )
+        elif pd.api.types.is_string_dtype(employee_ids_for_new_hires) and employee_ids_for_new_hires.isna().any():
+            # If it's already a Pandas StringDtype (like pd.StringDtype()) and has pd.NA, convert pd.NA to "<NA>" string.
+            employee_ids_for_new_hires = employee_ids_for_new_hires.fillna("<NA>")
+        else: # For other dtypes, just ensure string conversion
+            employee_ids_for_new_hires = employee_ids_for_new_hires.astype(str)
+        
+        # Construct the new_hires DataFrame for the snapshot
+        new_hires_data = {
+            EMP_ID: employee_ids_for_new_hires, # Use the sanitized Series
             'employee_hire_date': pd.to_datetime(hires_events['event_time']),
             'employee_birth_date': pd.to_datetime('1990-01-01'),  # Default date
             'employee_role': 'UNKNOWN',  # Default role
-            'employee_gross_comp': hires_events['value_num'],
+            EMP_GROSS_COMP: hires_events['value_num'],
             'employee_termination_date': pd.NaT,
             'active': True,
             'employee_deferral_rate': 0.0,  # Default value, adjust as needed
@@ -177,22 +219,79 @@ def run_one_year(
             'job_level_source': 'new_hire',
             'exited': False,
             'simulation_year': year
-        })
+        }
         
         # Try to get birth date and role from meta if available
         if 'meta' in hires_events.columns:
-            new_hires['employee_birth_date'] = hires_events['meta'].apply(
+            new_hires_data['employee_birth_date'] = hires_events['meta'].apply(
                 lambda x: pd.to_datetime(safe_get_meta(x, 'birth_date', '1990-01-01'))
             )
-            new_hires['employee_role'] = hires_events['meta'].apply(
+            new_hires_data['employee_role'] = hires_events['meta'].apply(
                 lambda x: safe_get_meta(x, 'role', 'UNKNOWN')
             )
         
-        # Set the index to employee_id to match the snapshot
-        new_hires.set_index('employee_id', inplace=True)
+        # Create the new_hires DataFrame and set the index to employee_id while keeping it as a column
+        new_hires = pd.DataFrame(new_hires_data)
         
-        # Combine the survivors with the new hires
-        snapshot_with_hires = pd.concat([survivors_after_term, new_hires])
+        # Check for and fix missing compensation values
+        missing_comp_mask = new_hires[EMP_GROSS_COMP].isna()
+        if missing_comp_mask.any():
+            missing_count = missing_comp_mask.sum()
+            logger.warning(f"Found {missing_count} new hires with missing compensation. Assigning default compensation values.")
+            
+            # Set default compensation based on role if available, otherwise use a reasonable default
+            role_comp_defaults = getattr(global_params, 'compensation', {})
+            if hasattr(role_comp_defaults, 'new_hire') and hasattr(role_comp_defaults.new_hire, 'comp_base_salary'):
+                default_comp = role_comp_defaults.new_hire.comp_base_salary
+            else:
+                default_comp = 50000.0  # Fallback default
+                
+            logger.info(f"Using default compensation of {default_comp} for new hires with missing values")
+            new_hires.loc[missing_comp_mask, EMP_GROSS_COMP] = default_comp
+        
+        # Don't drop employee_id column when setting index (key difference!)
+        new_hires = new_hires.set_index(EMP_ID, drop=False)
+        
+        # Concatenate new hires with survivors
+        # Ensure indices are compatible (both should be EMP_ID)
+        # If survivors_after_term.index.name is not EMP_ID, it needs to be set.
+        if survivors_after_term.index.name != EMP_ID and EMP_ID in survivors_after_term.columns:
+            logger.warning(f"Setting index of survivors_after_term to '{EMP_ID}' before concat.")
+            survivors_after_term = survivors_after_term.set_index(EMP_ID)
+        elif survivors_after_term.index.name != EMP_ID and EMP_ID not in survivors_after_term.columns:
+            logger.error(f"CRITICAL: Cannot set index for survivors_after_term, '{EMP_ID}' not in columns or index.")
+            # Handle this error case, perhaps by raising an exception or returning
+
+        # Before concatenating, ensure no duplicate EMP_IDs exist between survivors and new_hires
+        # This should be guaranteed by hire.run's existing_ids check, but good to be defensive
+        common_ids = survivors_after_term.index.intersection(new_hires.index)
+        if not common_ids.empty:
+            logger.warning(f"Found {len(common_ids)} duplicate EMP_IDs between survivors and new hires. New hires will overwrite. IDs: {common_ids.tolist()}")
+            # This implies hire.run might not have perfectly unique IDs or existing_ids was incomplete.
+            # For now, new_hires will overwrite, which might be desired if re-hiring.
+
+        snapshot_with_hires = pd.concat([survivors_after_term, new_hires], sort=False) # sort=False is typical
+        
+        # Add new hire events to the list of all events for the year
+        all_new_events_list.append(hires_events)
+        
+        # Diagnostic logging for new_hires DataFrame
+        if not new_hires.empty and EMP_ID in new_hires.columns:
+            logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation:")
+            logger.info(f"  new_hires['{EMP_ID}'] dtype: {new_hires[EMP_ID].dtype}")
+            na_sum_new_hires = new_hires[EMP_ID].isna().sum()
+            logger.info(f"  new_hires['{EMP_ID}'] NA sum: {na_sum_new_hires}")
+            if na_sum_new_hires > 0:
+                logger.info(f"  Sample of NA IDs in new_hires['{EMP_ID}']: {new_hires[new_hires[EMP_ID].isna()][EMP_ID].head().tolist()}")
+            if new_hires[EMP_ID].dtype == 'object':
+                none_sum_new_hires = new_hires[EMP_ID].apply(lambda x: x is None).sum()
+                if none_sum_new_hires > 0:
+                    logger.info(f"  new_hires['{EMP_ID}'] Python None sum: {none_sum_new_hires}")
+                    logger.info(f"  Sample of None IDs in new_hires['{EMP_ID}']: {new_hires[new_hires[EMP_ID].apply(lambda x: x is None)][EMP_ID].head().tolist()}")
+        elif new_hires.empty:
+            logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation: new_hires is empty.")
+        else: # Not empty, but EMP_ID column missing
+            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation: new_hires is NOT empty, but MISSING '{EMP_ID}' column. Columns: {new_hires.columns.tolist()}")
     else:
         snapshot_with_hires = survivors_after_term
 
@@ -217,16 +316,43 @@ def run_one_year(
             f"Filtering them out. Sample of invalid IDs: {snapshot_with_hires[~valid_mask][EMP_ID].head(5).tolist()}"
         )
         snapshot_with_hires = snapshot_with_hires[valid_mask].copy()
-        
-        if snapshot_with_hires.empty:
-            logger.error("No valid employee records left after filtering invalid employee IDs")
-            raise ValueError("No valid employee records with valid employee IDs found after filtering")
 
-    # --- 8. Deterministic new-hire terminations ---
+    if snapshot_with_hires.empty:
+        logger.error("No valid employee records left after filtering invalid employee IDs")
+        raise ValueError("No valid employee records with valid employee IDs found after filtering")
+
+    # --- 7b. Ensure all employees have valid compensation values ---
+    # Check for missing compensation in the entire snapshot and handle it
+    missing_comp_mask = snapshot_with_hires[EMP_GROSS_COMP].isna()
+    if missing_comp_mask.any():
+        missing_count = missing_comp_mask.sum()
+        logger.warning(f"Found {missing_count} employees with missing compensation in final snapshot. Will assign default values.")
+        
+        # Get the relevant employees and log some details for debugging
+        missing_comp_df = snapshot_with_hires.loc[missing_comp_mask, [EMP_ID, EMP_HIRE_DATE, EMP_ROLE]].copy()
+        if not missing_comp_df.empty:
+            missing_comp_df[EMP_HIRE_DATE] = missing_comp_df[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
+            for _, row in missing_comp_df.head(5).iterrows():
+                logger.warning(f"Employee {row[EMP_ID]} (hired {row[EMP_HIRE_DATE]}, role {row[EMP_ROLE]}) is missing compensation data")
+            
+            if len(missing_comp_df) > 5:
+                logger.warning(f"... and {len(missing_comp_df) - 5} more employees with missing compensation")
+        
+        # Assign default compensation based on role if available, otherwise use a reasonable default
+        role_comp_defaults = getattr(global_params, 'compensation', {})
+        if hasattr(role_comp_defaults, 'new_hire') and hasattr(role_comp_defaults.new_hire, 'comp_base_salary'):
+            default_comp = role_comp_defaults.new_hire.comp_base_salary
+        else:
+            default_comp = 50000.0  # Fallback default
+            
+        logger.info(f"Using default compensation of {default_comp} for employees with missing values")
+        snapshot_with_hires.loc[missing_comp_mask, EMP_GROSS_COMP] = default_comp
+
+    # --- 8. Run new-hire termination ---
     logger.info("[STEP] Deterministic new-hire terminations")
     from cost_model.engines.nh_termination import run_new_hires
     nh_term_events, nh_term_comp_events = run_new_hires(snapshot_with_hires, hz_slice, year_rng, year, deterministic=True)
-    terminated_ids = set(nh_term_events['employee_id']) if not nh_term_events.empty else set()
+    terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
     final_snapshot = snapshot_with_hires.loc[~snapshot_with_hires.index.isin(terminated_ids)]
     logger.info(f"[NH-TERM] Terminated {len(terminated_ids)} new hires")
 
@@ -311,9 +437,9 @@ def run_one_year(
         new_events = new_events.dropna(subset=['event_type'])
     
     # 6. Ensure employee_id is present for all new events
-    if 'employee_id' in new_events.columns and new_events['employee_id'].isna().any():
-        logger.warning("Found NA values in employee_id for new events, dropping these events")
-        new_events = new_events.dropna(subset=['employee_id'])
+    if EMP_ID in new_events.columns and new_events[EMP_ID].isna().any():
+        logger.warning(f"Found NA values in {EMP_ID} for new events, dropping these events")
+        new_events = new_events.dropna(subset=[EMP_ID])
     
     # 7. Ensure event_id is unique and present for all new events
     if 'event_id' in new_events.columns:
