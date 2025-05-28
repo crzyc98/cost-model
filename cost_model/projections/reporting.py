@@ -120,6 +120,7 @@ def _standardize_summary_columns_for_plotting(df: pd.DataFrame) -> pd.DataFrame:
         "Active Headcount": schema.SUMMARY_ACTIVE_HEADCOUNT,
         "active_employees": schema.SUMMARY_ACTIVE_HEADCOUNT,
         "Terminations": schema.SUMMARY_TERMINATIONS,
+        "total_terminations": schema.SUMMARY_TERMINATIONS,  # Fix for plotting issue
         "Employee Contributions": schema.SUMMARY_TOTAL_EE_CONTRIBUTIONS,
         "Employer Contributions": schema.SUMMARY_TOTAL_ER_CONTRIBUTIONS,
         "Total Contributions": schema.SUMMARY_TOTAL_CONTRIBUTIONS,
@@ -199,7 +200,34 @@ def save_detailed_results(
 
     # Save final EOY snapshot
     final_snapshot_path = output_path / f"{scenario_name}_final_eoy_snapshot.parquet"
-    final_snapshot.to_parquet(final_snapshot_path, index=False)
+
+    # FIXED: Ensure data type consistency before saving to Parquet
+    # This prevents PyArrow conversion errors for mixed data types
+    final_snapshot_clean = final_snapshot.copy()
+
+    # Ensure employee_role column is properly typed as string
+    if 'employee_role' in final_snapshot_clean.columns:
+        # Convert any non-string values to strings, handling NaN/None properly
+        final_snapshot_clean['employee_role'] = final_snapshot_clean['employee_role'].astype(str)
+        # Replace 'nan' strings with proper NA values for string dtype
+        final_snapshot_clean['employee_role'] = final_snapshot_clean['employee_role'].replace('nan', pd.NA)
+        # Convert to nullable string dtype
+        final_snapshot_clean['employee_role'] = final_snapshot_clean['employee_role'].astype(pd.StringDtype())
+        logger.debug(f"Cleaned employee_role column in final snapshot: {final_snapshot_clean['employee_role'].dtype}")
+
+    # Check for other object columns that might have mixed types
+    for col in final_snapshot_clean.columns:
+        if final_snapshot_clean[col].dtype == 'object':
+            # Check if column contains mixed types (strings and numbers)
+            sample_values = final_snapshot_clean[col].dropna().head(100)
+            if len(sample_values) > 0:
+                has_strings = any(isinstance(v, str) for v in sample_values)
+                has_numbers = any(isinstance(v, (int, float)) for v in sample_values)
+                if has_strings and has_numbers:
+                    logger.warning(f"Column '{col}' has mixed types in final snapshot, converting to string")
+                    final_snapshot_clean[col] = final_snapshot_clean[col].astype(str).replace('nan', pd.NA).astype(pd.StringDtype())
+
+    final_snapshot_clean.to_parquet(final_snapshot_path, index=False)
     logger.info(f"Final EOY snapshot saved to {final_snapshot_path}")
 
     # Save full event log with enhanced validation
@@ -455,7 +483,34 @@ def save_detailed_results(
         yearly_snapshots_dir.mkdir(exist_ok=True)
         for year, snapshot_df in yearly_snapshots.items():
             year_path = yearly_snapshots_dir / f"{scenario_name}_snapshot_{year}.parquet"
-            snapshot_df.to_parquet(year_path, index=False)
+
+            # FIXED: Ensure data type consistency before saving to Parquet
+            # This prevents PyArrow conversion errors for mixed data types
+            snapshot_df_clean = snapshot_df.copy()
+
+            # Ensure employee_role column is properly typed as string
+            if 'employee_role' in snapshot_df_clean.columns:
+                # Convert any non-string values to strings, handling NaN/None properly
+                snapshot_df_clean['employee_role'] = snapshot_df_clean['employee_role'].astype(str)
+                # Replace 'nan' strings with proper NA values for string dtype
+                snapshot_df_clean['employee_role'] = snapshot_df_clean['employee_role'].replace('nan', pd.NA)
+                # Convert to nullable string dtype
+                snapshot_df_clean['employee_role'] = snapshot_df_clean['employee_role'].astype(pd.StringDtype())
+                logger.debug(f"Cleaned employee_role column for year {year}: {snapshot_df_clean['employee_role'].dtype}")
+
+            # Check for other object columns that might have mixed types
+            for col in snapshot_df_clean.columns:
+                if snapshot_df_clean[col].dtype == 'object':
+                    # Check if column contains mixed types (strings and numbers)
+                    sample_values = snapshot_df_clean[col].dropna().head(100)
+                    if len(sample_values) > 0:
+                        has_strings = any(isinstance(v, str) for v in sample_values)
+                        has_numbers = any(isinstance(v, (int, float)) for v in sample_values)
+                        if has_strings and has_numbers:
+                            logger.warning(f"Column '{col}' has mixed types, converting to string for year {year}")
+                            snapshot_df_clean[col] = snapshot_df_clean[col].astype(str).replace('nan', pd.NA).astype(pd.StringDtype())
+
+            snapshot_df_clean.to_parquet(year_path, index=False)
         logger.info(f"Yearly snapshots saved to {yearly_snapshots_dir}")
 
     # Save config

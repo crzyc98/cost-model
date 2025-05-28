@@ -74,6 +74,9 @@ EMP_TENURE_BAND = "employee_tenure_band"
 EMP_LEVEL_SOURCE = "job_level_source"
 EMP_EXITED = "exited"
 
+# Yearly snapshot specific columns for enhanced tracking
+EMP_STATUS_EOY = "employee_status_eoy"  # Status at end of year: 'Active', 'Terminated', etc.
+
 # Simulation parameters
 SIMULATION_YEAR = "simulation_year"
 TERM_RATE = "term_rate"
@@ -259,6 +262,7 @@ SNAPSHOT_COLS: List[str] = [
     EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_EXITED,
+    EMP_STATUS_EOY,  # Employee status at end of year for yearly snapshots
     SIMULATION_YEAR,  # Ensure simulation_year is included in all snapshots
 ]
 
@@ -266,6 +270,7 @@ SNAPSHOT_DTYPES: dict[str, object] = {
     EMP_ID: pd.StringDtype(),
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
+    EMP_ROLE: pd.StringDtype(),  # FIXED: Added missing employee_role column type
     EMP_GROSS_COMP: pd.Float64Dtype(),
     EMP_TERM_DATE: "datetime64[ns]",
     EMP_ACTIVE: pd.BooleanDtype(),
@@ -278,6 +283,10 @@ SNAPSHOT_DTYPES: dict[str, object] = {
         ordered=True,
     ),
     EMP_EXITED: pd.BooleanDtype(),
+    EMP_STATUS_EOY: pd.CategoricalDtype(
+        categories=["Active", "Terminated", "Inactive"],
+        ordered=False,
+    ),
     SIMULATION_YEAR: 'int64',  # Use standard int64 for simulation year
 }
 
@@ -295,6 +304,7 @@ __all__ = [
     "EMP_ID",
     "EMP_HIRE_DATE",
     "EMP_BIRTH_DATE",
+    "EMP_ROLE",
     "EMP_GROSS_COMP",
     "EMP_TERM_DATE",
     "EMP_DEFERRAL_RATE",
@@ -304,6 +314,7 @@ __all__ = [
     "EMP_LEVEL_SOURCE",
     "EMP_ACTIVE",
     "EMP_EXITED",
+    "EMP_STATUS_EOY",
     "SIMULATION_YEAR",
     # config defaults
     "TERM_RATE",

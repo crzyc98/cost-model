@@ -279,6 +279,9 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
         start_time = time.time()
 
         try:
+            # Store the start-of-year snapshot before applying any events
+            start_of_year_snapshot = current_snapshot.copy()
+
             # Run the projection for one year
             cumulative_event_log, eoy_snapshot = run_one_year(
                 event_log=current_event_log,
@@ -332,8 +335,24 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                     'new_hires': employment_summary.get('new_hire_actives', 0) + employment_summary.get('new_hire_terms', 0)
                 }
 
-            # Save snapshot for this year
-            yearly_eoy_snapshots[year] = eoy_snapshot
+            # Build enhanced yearly snapshot using the approved solution
+            from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
+
+            # Get events for this year from the cumulative event log
+            year_events = cumulative_event_log[
+                cumulative_event_log['simulation_year'] == year
+            ] if 'simulation_year' in cumulative_event_log.columns else cumulative_event_log
+
+            # Build the enhanced yearly snapshot that includes all employees active during the year
+            enhanced_yearly_snapshot = build_enhanced_yearly_snapshot(
+                start_of_year_snapshot=start_of_year_snapshot,
+                end_of_year_snapshot=eoy_snapshot,
+                year_events=year_events,
+                simulation_year=year
+            )
+
+            # Save enhanced snapshot for this year
+            yearly_eoy_snapshots[year] = enhanced_yearly_snapshot
 
             # Append to summary lists
             all_core_summaries.append(core_summary)
