@@ -109,13 +109,13 @@ def build_hazard_table(
 
 def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.DataFrame:
     """
-    Load hazard table from parquet file and expand role='*' entries to all employee levels.
+    Load hazard table from parquet file. Assumes 'employee_level' is present and correct.
     
     Args:
         path: Path to the hazard table parquet file
         
     Returns:
-        DataFrame with expanded hazard table entries for all employee levels
+        DataFrame with standardized hazard table entries
     """
     logger.info(f"Loading hazard table from {path}")
     
@@ -131,66 +131,86 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         logger.error(f"Error loading hazard table: {e}")
         return pd.DataFrame()
     
-    # Check if we have the required columns
-    required_cols = ['simulation_year', 'role', 'tenure_band', 'term_rate', 'comp_raise_pct']
-    missing_cols = set(required_cols) - set(df.columns)
+    logger.info(f"Initial columns from Parquet: {df.columns.tolist()}")
+
+    # Define rename map for columns that differ from constants used internally.
+    # Assumes constants (EMP_TENURE_BAND, NEW_HIRE_TERM_RATE, etc.) are imported from cost_model.constants or similar.
+    rename_map = {
+        # Parquet_column_name: internal_constant_name
+        'tenure_band': EMP_TENURE_BAND,                 # e.g., 'tenure_band' -> 'employee_tenure_band'
+        'new_hire_termination_rate': NEW_HIRE_TERM_RATE, # e.g., 'new_hire_termination_rate' -> 'new_hire_term_rate'
+        'termination_rate': TERM_RATE,                  # e.g., 'termination_rate' -> 'termination_rate'
+        'compensation_raise_percentage': COMP_RAISE_PCT, # e.g., 'compensation_raise_percentage' -> 'compensation_raise_percentage'
+        'employee_level': EMP_LEVEL,                    # e.g., 'employee_level' -> 'employee_level'
+        'simulation_year': SIMULATION_YEAR              # e.g., 'simulation_year' -> 'simulation_year'
+        # Add other mappings if Parquet names differ from internal constants or to standardize (e.g. case differences).
+    }
+    
+    # Filter rename_map to only include columns actually present in the DataFrame's current columns.
+    # This avoids errors if a mapped Parquet column is unexpectedly missing.
+    actual_rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
+    
+    if actual_rename_map:
+        logger.info(f"Applying rename map: {actual_rename_map}")
+        df = df.rename(columns=actual_rename_map)
+        logger.info(f"Columns after renaming: {df.columns.tolist()}")
+    else:
+        logger.info("No columns to rename based on the current DataFrame and rename_map. Ensure Parquet column names match keys in rename_map if renaming is expected.")
+
+    # Now, check for required columns using the standardized internal constant names.
+    required_cols = [
+        SIMULATION_YEAR, 
+        EMP_LEVEL,
+        EMP_TENURE_BAND, 
+        TERM_RATE, 
+        COMP_RAISE_PCT,
+        NEW_HIRE_TERM_RATE
+    ]
+    # Ensure consistency in column name expectations.
+    
+    # Check for missing required columns after the rename attempt.
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    
     if missing_cols:
-        logger.error(f"Hazard table missing required columns: {missing_cols}")
+        logger.error(f"Hazard table missing required columns AFTER RENAME ATTEMPT: {missing_cols}. Available columns: {df.columns.tolist()}")
         return pd.DataFrame()
-    
-    # Find rows with role='*' which need to be expanded
-    wildcard_mask = df['role'] == '*'
-    wildcard_rows = df[wildcard_mask].copy()
-    non_wildcard_rows = df[~wildcard_mask].copy()
-    
-    if wildcard_rows.empty:
-        logger.warning("No role='*' entries found in hazard table to expand")
-        # If no employee_level column, add it with default value
-        if 'employee_level' not in df.columns:
-            logger.warning("Adding default employee_level=1 to all hazard table entries")
-            df['employee_level'] = 1
-        return df
-    
-    logger.info(f"Found {len(wildcard_rows)} role='*' entries to expand across employee levels")
-    
-    # Create expanded rows for all employee levels (0-4)
-    all_levels = list(range(5))  # 0, 1, 2, 3, 4
-    expanded_rows = []
-    
-    for _, row in wildcard_rows.iterrows():
-        for level in all_levels:
-            new_row = row.copy()
-            new_row['employee_level'] = level
-            expanded_rows.append(new_row)
-    
-    # Create DataFrame from expanded rows
-    expanded_df = pd.DataFrame(expanded_rows)
-    
-    # If non_wildcard_rows doesn't have employee_level, add it with default value
-    if 'employee_level' not in non_wildcard_rows.columns and not non_wildcard_rows.empty:
-        non_wildcard_rows['employee_level'] = 1
-    
-    # Combine expanded and non-wildcard rows
-    result = pd.concat([expanded_df, non_wildcard_rows], ignore_index=True)
+
+    # The DataFrame 'df' is now the result, no role expansion needed.
+    result = df.copy() # Work on a copy to avoid SettingWithCopyWarning
     
     # Ensure correct column types
-    if 'simulation_year' in result.columns:
-        result['simulation_year'] = result['simulation_year'].astype(int)
-    if 'employee_level' in result.columns:
-        result['employee_level'] = result['employee_level'].astype(int)
+    if SIMULATION_YEAR in result.columns:
+        result[SIMULATION_YEAR] = result[SIMULATION_YEAR].astype(int)
+    if EMP_LEVEL in result.columns:
+        result[EMP_LEVEL] = result[EMP_LEVEL].astype(int)
         
     # Standardize tenure bands to ensure consistent format
-    if 'tenure_band' in result.columns:
+    if EMP_TENURE_BAND in result.columns:
         logger.info("Standardizing tenure band formats in hazard table")
-        result['tenure_band'] = result['tenure_band'].map(standardize_tenure_band)
-        logger.info(f"Unique tenure bands after standardization: {result['tenure_band'].unique().tolist()}")
+        result[EMP_TENURE_BAND] = result[EMP_TENURE_BAND].map(standardize_tenure_band)
+        logger.info(f"Unique tenure bands after standardization: {result[EMP_TENURE_BAND].unique().tolist()}")
+    else:
+        logger.warning(f"'{EMP_TENURE_BAND}' column not found in hazard table. Skipping standardization.")
+
+    # Ensure all key rate columns are numeric and handle potential NaNs by filling with 0
+    # This is a safeguard, ideally the Parquet file should have clean data.
+    rate_columns = [TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT]
+    for col in rate_columns:
+        if col in result.columns:
+            result[col] = pd.to_numeric(result[col], errors='coerce').fillna(0.0)
+            logger.info(f"Processed column '{col}': ensured numeric, NaNs filled with 0.0")
+        else:
+            logger.warning(f"Rate column '{col}' not found in hazard table. It might be optional or missing.")
+            # If a critical rate column like TERM_RATE is missing and not handled, it could cause issues downstream.
+            # However, NEW_HIRE_TERM_RATE was added to required_cols, so it should be present.
+            # COLA_PCT might be optional.
+
+    logger.info(f"Final processed hazard table has {len(result)} rows")
     
-    logger.info(f"Final expanded hazard table has {len(result)} rows")
-    
-    # Log the unique combinations in the expanded hazard table
-    if 'employee_level' in result.columns and 'tenure_band' in result.columns:
-        unique_combos = result[['employee_level', 'tenure_band']].drop_duplicates()
-        logger.info(f"Expanded hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations")
+    # Log the unique combinations in the processed hazard table
+    if EMP_LEVEL in result.columns and EMP_TENURE_BAND in result.columns:
+        unique_combos = result[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates()
+        logger.info(f"Processed hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations")
         logger.debug(f"Unique combinations: {unique_combos.to_dict('records')}")
     
     return result
