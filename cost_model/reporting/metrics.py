@@ -150,8 +150,11 @@ def calculate_summary_metrics(
 
     summary_metrics.rename(columns=final_rename, inplace=True)
 
-    # Add 'Projection Year' column as first column
-    summary_metrics.insert(0, "Projection Year", summary_metrics["simulation_year"])
+    # Import canonical column names from schema
+    from cost_model.state.schema import SUMMARY_YEAR
+
+    # Add canonical year column as first column
+    summary_metrics.insert(0, SUMMARY_YEAR, summary_metrics["simulation_year"])
     # Set index to simulation_year
     summary_metrics.set_index("simulation_year", inplace=True)
 

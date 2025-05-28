@@ -14,18 +14,18 @@ from cost_model.state.schema import (
 )
 
 
-def make_yearly_summaries(snapshot: pd.DataFrame, 
-                         year_events: pd.DataFrame, 
+def make_yearly_summaries(snapshot: pd.DataFrame,
+                         year_events: pd.DataFrame,
                          year: int,
                          start_headcount: int = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Compute yearly summaries for core metrics and employment status.
-    
+
     Args:
         snapshot: Current year's snapshot
         year_events: Events that occurred during the year
         year: Current year
-        
+
     Returns:
         Tuple containing:
         - core_summary: Dictionary of core metrics
@@ -33,18 +33,18 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
     """
     import logging
     logger = logging.getLogger(__name__)
-    
+
     # Debug log the input types
     logger.debug(f"make_yearly_summaries called with snapshot type: {type(snapshot)}")
     if hasattr(snapshot, 'shape'):
         logger.debug(f"Snapshot shape: {snapshot.shape}")
     if hasattr(snapshot, 'columns'):
         logger.debug(f"Snapshot columns: {list(snapshot.columns)}")
-    
+
     # Handle case where snapshot is a tuple instead of DataFrame
     if isinstance(snapshot, tuple):
         logger.warning(f"Snapshot is a tuple, converting to DataFrame. Length: {len(snapshot)}")
-        
+
         # Debug log the tuple contents
         for i, item in enumerate(snapshot):
             logger.debug(f"Tuple item {i} type: {type(item)}")
@@ -52,7 +52,7 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
                 logger.debug(f"Item {i} shape: {item.shape}")
             if hasattr(item, 'columns'):
                 logger.debug(f"Item {i} columns: {item.columns.tolist()}")
-        
+
         # If the first element is a DataFrame, use it directly
         if len(snapshot) > 0 and isinstance(snapshot[0], pd.DataFrame):
             snapshot = snapshot[0]
@@ -73,7 +73,7 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         else:
             # Fallback: convert the first element to a DataFrame
             snapshot = pd.DataFrame([snapshot[0]] if len(snapshot) > 0 else [{}])
-    
+
     # Ensure required columns exist with default values if missing
     required_columns = {
         EMP_ACTIVE: False,
@@ -85,57 +85,59 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         EMP_LEVEL: '',
         EMP_TENURE_BAND: ''
     }
-    
+
     for col, default in required_columns.items():
         if col not in snapshot.columns:
             logger.warning(f"Adding missing column '{col}' with default value: {default}")
             snapshot[col] = default
-    
+
     # Only look at employees who are actually active today
     if EMP_ACTIVE in snapshot.columns:
         active_snapshot = snapshot[snapshot[EMP_ACTIVE].astype(bool)].copy()
     else:
         active_snapshot = snapshot.copy()
-    
+
     # Core metrics with robust DataFrame handling
     try:
         # Debug log the snapshot structure
         logger.debug(f"Snapshot columns: {snapshot.columns.tolist()}")
         logger.debug(f"Snapshot dtypes: {snapshot.dtypes}")
         logger.debug(f"Snapshot head (2):\n{snapshot.head(2).to_string()}")
-        
+
         # Active headcount is now simply the number of rows in active_snapshot
         active_headcount = len(active_snapshot)
-        
+
         # Calculate participation rate safely
         if EMP_DEFERRAL_RATE in active_snapshot.columns:
-            participation_rate = (len(active_snapshot[active_snapshot[EMP_DEFERRAL_RATE] > 0]) / 
+            participation_rate = (len(active_snapshot[active_snapshot[EMP_DEFERRAL_RATE] > 0]) /
                                max(1, active_headcount)) * 100  # Avoid division by zero
         else:
             logger.warning(f"Column '{EMP_DEFERRAL_RATE}' not found in snapshot")
             participation_rate = 0.0
-        
+
         # Calculate employees with compensation > 0
         employees_with_comp = snapshot[snapshot[EMP_GROSS_COMP] > 0]
         comp_headcount = len(employees_with_comp)
-        
+
         # Calculate average compensation only for those with compensation > 0
         avg_comp = float(employees_with_comp[EMP_GROSS_COMP].mean() if comp_headcount > 0 else 0.0)
-        
+
+        # Import canonical column names from schema
+        from cost_model.state.schema import SUMMARY_YEAR
+
         core_summary = {
-            'Projection Year': year,  # Changed from SIMULATION_YEAR to match reporting.py
-            SIMULATION_YEAR: year,    # Keep both for backward compatibility
+            SUMMARY_YEAR: year,  # Use canonical year column name from schema
             "headcount": comp_headcount,  # Only count employees with compensation
             "active_headcount": active_headcount,
             "total_contributions": float(snapshot[EMP_CONTR].sum() if EMP_CONTR in snapshot.columns else 0.0),
-            "employer_contributions": float((snapshot[EMPLOYER_CORE_CONTRIB].sum() if EMPLOYER_CORE_CONTRIB in snapshot.columns else 0.0) + 
+            "employer_contributions": float((snapshot[EMPLOYER_CORE_CONTRIB].sum() if EMPLOYER_CORE_CONTRIB in snapshot.columns else 0.0) +
                                         (snapshot[EMPLOYER_MATCH_CONTRIB].sum() if EMPLOYER_MATCH_CONTRIB in snapshot.columns else 0.0)),
             "total_employee_gross_compensation": float(snapshot[EMP_GROSS_COMP].sum()),
             "avg_employee_gross_compensation": avg_comp,  # Average of only employees with compensation
             "avg_deferral_rate": float(snapshot[EMP_DEFERRAL_RATE].mean() if EMP_DEFERRAL_RATE in snapshot.columns else 0.0),
             "participation_rate": participation_rate
         }
-        
+
     except Exception as e:
         logger.error(f"Error calculating core metrics: {str(e)}")
         logger.error(f"Snapshot type: {type(snapshot)}")
@@ -143,11 +145,11 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         logger.error(f"Snapshot columns: {getattr(snapshot, 'columns', 'N/A')}")
         logger.error(f"Snapshot head (2): {getattr(snapshot, 'head', lambda _: 'N/A')(2) if hasattr(snapshot, 'head') else 'N/A'}")
         raise
-    
+
     # Employment status metrics
     # Active headcount at year end - only count rows where EMP_ACTIVE is True
     actives_at_year_end = int(snapshot[snapshot[EMP_ACTIVE]].shape[0])
-    
+
     # Use the provided start headcount if available, otherwise calculate it
     if start_headcount is not None:
         actives_at_year_start = start_headcount
@@ -157,25 +159,24 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         terms_count = len(year_events[year_events[EVENT_TYPE] == EVT_TERM]) if not year_events.empty else 0
         actives_at_year_start = max(0, actives_at_year_end + terms_count - hires_count)
         logger.warning(f"start_headcount not provided, calculated as {actives_at_year_start} based on end + terms - hires")
-    
+
     # Gross hires = every EVT_HIRE event
     hires = int((year_events[EVENT_TYPE] == EVT_HIRE).sum() if not year_events.empty else 0)
-    
+
     # New hire terminations are specifically EVT_NEW_HIRE_TERM
     new_hire_terminations = int((year_events[EVENT_TYPE] == EVT_NEW_HIRE_TERM).sum() if not year_events.empty else 0)
 
     # All terminations (includes regular and new hire terms)
     terminations = int(((year_events[EVENT_TYPE] == EVT_TERM) | (year_events[EVENT_TYPE] == EVT_NEW_HIRE_TERM)).sum() if not year_events.empty else 0)
-    
+
     # How many of our hires survived
     new_hire_actives = hires - new_hire_terminations
-    
+
     # Calculate experienced terminations (total terminations - new hire terminations)
     experienced_terminations = max(0, terminations - new_hire_terminations)
-    
+
     employment_summary = {
-        'Projection Year': year,
-        SIMULATION_YEAR: year,
+        SUMMARY_YEAR: year,  # Use canonical year column name from schema
         "actives_at_year_start": actives_at_year_start,
         "actives_at_year_end": actives_at_year_end,
         "terminations": terminations,
@@ -186,5 +187,5 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         "by_level": snapshot[EMP_LEVEL].value_counts().to_dict() if not snapshot.empty and EMP_LEVEL in snapshot.columns else {},
         "by_tenure_band": snapshot[EMP_TENURE_BAND].value_counts().to_dict() if not snapshot.empty and EMP_TENURE_BAND in snapshot.columns else {}
     }
-    
+
     return core_summary, employment_summary

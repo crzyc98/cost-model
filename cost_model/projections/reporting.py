@@ -152,10 +152,10 @@ def _standardize_year_column(df: pd.DataFrame) -> pd.DataFrame:
     """
     canonical = schema.SUMMARY_YEAR
     variants = ["Projection Year", "Year", "simulation_year", schema.SIMULATION_YEAR]
-    
+
     # Check if canonical already exists along with variants
     found_variants = [v for v in variants if v in df.columns]
-    
+
     if canonical in df.columns and found_variants:
         logger.warning(
             f"Both canonical '{canonical}' and variant(s) {found_variants} found in summary. "
@@ -249,46 +249,49 @@ def save_detailed_results(
 
     # Save summary statistics merging core summary with full employment status counts
     summary_to_save = summary_statistics.copy()
-    import cost_model.state.event_log as schema
+    # Import event log constants for event type queries
+    from cost_model.state.event_log import EVT_HIRE, EVT_TERM
 
     # Add new_hires and terminated_employees columns using event log
     if full_event_log is not None and not full_event_log.empty:
         if 'simulation_year' in full_event_log.columns:
-            hires_per_year = full_event_log.query("event_type == @schema.EVT_HIRE").groupby('simulation_year').size()
-            terms_per_year = full_event_log.query("event_type == @schema.EVT_TERM").groupby('simulation_year').size()
+            hires_per_year = full_event_log.query("event_type == @EVT_HIRE").groupby('simulation_year').size()
+            terms_per_year = full_event_log.query("event_type == @EVT_TERM").groupby('simulation_year').size()
 
-            # Check if 'year' column exists in summary_to_save
-            if 'year' not in summary_to_save.columns:
-                # Try to use simulation_year if available in summary_statistics
+            # Check if canonical 'year' column exists in summary_to_save
+            # With updated summary generation, this should already be present
+            canonical_year = schema.SUMMARY_YEAR
+            if canonical_year not in summary_to_save.columns:
+                # Fallback: try to use simulation_year if available in summary_statistics
                 if 'simulation_year' in summary_to_save.columns:
-                    logger.info("Using 'simulation_year' as 'year' for event mapping")
-                    summary_to_save['year'] = summary_to_save['simulation_year']
-                # If we have Projection Year, it might have been used instead
+                    logger.info(f"Using 'simulation_year' as '{canonical_year}' for event mapping")
+                    summary_to_save[canonical_year] = summary_to_save['simulation_year']
+                # Legacy fallback: if we have Projection Year, it might have been used instead
                 elif 'Projection Year' in summary_to_save.columns:
-                    logger.info("Using 'Projection Year' as 'year' for event mapping")
-                    summary_to_save['year'] = summary_to_save['Projection Year']
+                    logger.info(f"Using 'Projection Year' as '{canonical_year}' for event mapping")
+                    summary_to_save[canonical_year] = summary_to_save['Projection Year']
                 else:
                     # Create year column from available years in event log
-                    logger.warning("No year column found in summary. Creating one from event log years.")
+                    logger.warning(f"No {canonical_year} column found in summary. Creating one from event log years.")
                     event_years = sorted(full_event_log['simulation_year'].unique())
                     if len(event_years) > 0:
                         if not summary_to_save.empty and len(summary_to_save) == len(event_years):
-                            summary_to_save['year'] = event_years
+                            summary_to_save[canonical_year] = event_years
                         else:
                             logger.warning("Cannot create year column: summary rows don't match event years.")
                             # Create placeholder to prevent further errors
-                            summary_to_save['year'] = summary_to_save.index
+                            summary_to_save[canonical_year] = summary_to_save.index
                     else:
                         logger.warning("No simulation years found in event log.")
                         # Create placeholder to prevent further errors
-                        summary_to_save['year'] = summary_to_save.index
+                        summary_to_save[canonical_year] = summary_to_save.index
 
-            # Now we can safely map the hires and terminations
-            if 'year' in summary_to_save.columns:
-                summary_to_save['new_hires'] = summary_to_save['year'].map(hires_per_year).fillna(0).astype(int)
-                summary_to_save['terminated_employees'] = summary_to_save['year'].map(terms_per_year).fillna(0).astype(int)
+            # Now we can safely map the hires and terminations using canonical year column
+            if canonical_year in summary_to_save.columns:
+                summary_to_save['new_hires'] = summary_to_save[canonical_year].map(hires_per_year).fillna(0).astype(int)
+                summary_to_save['terminated_employees'] = summary_to_save[canonical_year].map(terms_per_year).fillna(0).astype(int)
             else:
-                logger.error("Failed to create 'year' column in summary_to_save. Cannot map hires/terminations.")
+                logger.error(f"Failed to create '{canonical_year}' column in summary_to_save. Cannot map hires/terminations.")
                 # Add default values to avoid further errors
                 summary_to_save['new_hires'] = 0
                 summary_to_save['terminated_employees'] = 0
@@ -297,7 +300,8 @@ def save_detailed_results(
     else:
         logger.warning("Event log missing or empty; cannot compute new_hires/terminated_employees.")
 
-    # Standardize year column in summary_to_save before attempting merge
+    # Note: summary_to_save should already have canonical year column from updated summary generation
+    # but we'll keep the standardization call as a safety measure for backward compatibility
     summary_to_save = _standardize_year_column(summary_to_save)
 
     if employment_status_summary_df is not None and not employment_status_summary_df.empty:
@@ -414,7 +418,8 @@ def save_detailed_results(
             # Keep just the summary data if merge fails
             summary_to_save = summary_clean
 
-    # Standardize year column naming to prevent conflicts
+    # Final standardization to ensure canonical year column naming
+    # This should be redundant with updated summary generation but kept for safety
     summary_to_save = _standardize_year_column(summary_to_save)
 
     # Convert dictionary columns to strings to avoid parquet serialization issues
@@ -461,7 +466,7 @@ def save_detailed_results(
         logger.info(f"Run config saved to {config_path}")
 
     logger.info(f"Detailed results for '{scenario_name}' saved to {output_path}")
-    
+
     # Upstream recommendation for future standardization
     logger.debug("NOTE: For optimal schema compliance, upstream summary generation processes "
                 "should use canonical column names from cost_model.state.schema "

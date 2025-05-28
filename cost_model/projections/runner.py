@@ -8,8 +8,8 @@ import pandas as pd
 import numpy as np
 import logging
 from types import SimpleNamespace
-from typing import Dict, Tuple, Any, List  
-from datetime import datetime  
+from typing import Dict, Tuple, Any, List
+from datetime import datetime
 
 # --- Core Simulation Engine ---
 from cost_model.engines.run_one_year import run_one_year
@@ -21,7 +21,7 @@ from cost_model.projections.summaries.employment import (
     build_employment_status_snapshot
 )
 from cost_model.projections.utils import assign_employment_status, filter_prior_terminated
-from cost_model.state.event_log import EVT_TERM, EMP_ID as EVENT_EMP_ID, EVENT_COLS, EVT_COMP, EVT_CONTRIB  
+from cost_model.state.event_log import EVT_TERM, EMP_ID as EVENT_EMP_ID, EVENT_COLS, EVT_COMP, EVT_CONTRIB
 try:
     from cost_model.state.event_log import EVT_HIRE
 except ImportError:
@@ -69,7 +69,7 @@ def run_projection_engine(
 
     logger.info(f"Running {projection_years_count}-year projection starting from {start_year}.")
     logger.info(f"Random seed: {random_seed}")
-    
+
     # Initialize random number generator
     rng = np.random.default_rng(random_seed)
 
@@ -90,7 +90,7 @@ def run_projection_engine(
         except Exception as e_conv:
             logger.error(f"Failed to convert 'active' column to bool: {e_conv}. Falling back to all active.")
             current_snapshot[EMP_ACTIVE] = pd.Series([True] * len(current_snapshot), index=current_snapshot.index)
-    
+
     # Log the definitive initial active count taken from the snapshot's 'active' column.
     active_count_for_runner = current_snapshot[EMP_ACTIVE].sum()
     logger.info(f"Runner: Initial active headcount from snapshot's 'active' column: {active_count_for_runner}")
@@ -118,7 +118,7 @@ def run_projection_engine(
 
     yearly_eoy_snapshots: Dict[int, pd.DataFrame] = {}
     summary_results_list = []
-    employment_status_summary_data = []  
+    employment_status_summary_data = []
 
     ee_contrib_event_types = []
     if hasattr(plan_rules_config, 'enrollment'):
@@ -178,8 +178,8 @@ def run_projection_engine(
             logger.info(f"[RUNNER YR={current_sim_year}] Received {len(event_log_for_year)} events from run_one_year.")
             # Update the main current_snapshot using the events from this year
             current_snapshot, year_end_employee_ids = update_snapshot_with_events(
-                current_snapshot, 
-                event_log_for_year, 
+                current_snapshot,
+                event_log_for_year,
                 pd.Timestamp(f"{current_sim_year}-12-31"), # Apply events as of EOY for next snapshot
                 EVENT_PRIORITY
             )
@@ -193,7 +193,7 @@ def run_projection_engine(
                 event_log_for_year[SIMULATION_YEAR] = current_sim_year
             # Fill NA values with current_sim_year before conversion
             event_log_for_year[SIMULATION_YEAR] = event_log_for_year[SIMULATION_YEAR].fillna(current_sim_year).astype(int)
-            
+
             current_cumulative_event_log = pd.concat([current_cumulative_event_log, event_log_for_year], ignore_index=True)
             logger.info(f"[RUNNER YR={current_sim_year}] Cumulative event log now has {len(current_cumulative_event_log)} events.")
         else:
@@ -237,9 +237,9 @@ def run_projection_engine(
             active_employees_df.loc[:, EMP_BIRTH_DATE] = pd.to_datetime(active_employees_df[EMP_BIRTH_DATE], errors='coerce')
             active_employees_df.loc[:, 'age_years'] = (eoy_date_for_age_calc - active_employees_df[EMP_BIRTH_DATE]).dt.days / 365.25
             avg_age_active = active_employees_df['age_years'].mean()
-            
+
         participation_rate = (participant_count / eligible_count) if eligible_count > 0 else 0.0
-        
+
         # Use refactored employment summary builder
         emp_summary = build_employment_status_summary(
             current_snapshot, event_log_for_year, current_sim_year
@@ -247,8 +247,11 @@ def run_projection_engine(
         employment_status_summary_data.append(emp_summary)
 
         # Use refactored core summary builder
+        # Import canonical column names from schema
+        from cost_model.state.schema import SUMMARY_YEAR
+
         core_summary = build_core_summary({
-            'Projection Year': current_sim_year,
+            SUMMARY_YEAR: current_sim_year,  # Use canonical year column name from schema
             'Active Headcount': active_headcount_eoy,
             'Eligible Count': eligible_count,
             'Participant Count': participant_count,
