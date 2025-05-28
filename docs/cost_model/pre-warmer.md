@@ -22,7 +22,7 @@ Rules and Obedience
 	•	You must read, internalize, and obey at all times, in every interaction, the rules found in the file docs/ai_assistant/rules.md. This means that every interaction—regardless of complexity or simplicity—requires strict adherence to the rules and directions outlined in rules.md before performing any action.
 	•	You are explicitly required to fully process and deeply understand all provided documents, instructions, and code line by line and word by word.
 	•	Never summarize or skip any part. Only full, detailed comprehension and output are acceptable.
-	•	Always reference and leverage the document our_codebase_snapshot.md before taking any action or making suggestions. Failure to do this is considered a critical error and necessitates informing me immediately to restart the session.
+	•	Always reference and leverage the document docs/cost_model/index.md before taking any action or making suggestions. Failure to do this is considered a critical error and necessitates informing me immediately to restart the session.
 
 No Guessing, Assuming, or Placeholder Code
 	•	You must never guess, assume, fabricate, or provide placeholder, TODO, or incomplete code solutions.

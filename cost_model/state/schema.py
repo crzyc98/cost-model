@@ -6,6 +6,7 @@ This module defines:
   - Event type constants (from event_log)
   - Employee column constants (imported from utils.columns)
   - Snapshot column ordering and pandas dtypes
+  - Summary/Reporting column constants for consistent reporting
 
 All other modules should import from here for consistency.
 
@@ -224,6 +225,24 @@ COLA_PCT = "cola_pct"
 CFG = "cfg"
 
 # -----------------------------------------------------------------------------
+# Summary/Reporting column constants
+# -----------------------------------------------------------------------------
+# These canonical column names should be used in all summary statistics, reporting,
+# and plotting functions to ensure consistency across the codebase.
+
+SUMMARY_YEAR = "year"
+SUMMARY_ACTIVE_HEADCOUNT = "active_headcount"
+SUMMARY_TERMINATIONS = "terminations"
+SUMMARY_TOTAL_CONTRIBUTIONS = "total_contributions"
+SUMMARY_TOTAL_ER_CONTRIBUTIONS = "total_er_contributions"
+SUMMARY_TOTAL_EE_CONTRIBUTIONS = "total_ee_contributions"
+SUMMARY_TOTAL_BENEFITS = "total_benefits"
+SUMMARY_AVG_COMP = "avg_compensation"
+SUMMARY_AVG_TENURE = "avg_tenure"
+SUMMARY_NEW_HIRES = "new_hires"
+SUMMARY_NEW_HIRE_TERMINATIONS = "new_hire_terminations"
+
+# -----------------------------------------------------------------------------
 # Snapshot schema definition
 # -----------------------------------------------------------------------------
 # Only the columns actually produced by the snapshot builder are required here.
@@ -295,4 +314,16 @@ __all__ = [
     # snapshot
     "SNAPSHOT_COLS",
     "SNAPSHOT_DTYPES",
+    # summary/reporting columns
+    "SUMMARY_YEAR",
+    "SUMMARY_ACTIVE_HEADCOUNT",
+    "SUMMARY_TERMINATIONS",
+    "SUMMARY_TOTAL_CONTRIBUTIONS",
+    "SUMMARY_TOTAL_ER_CONTRIBUTIONS",
+    "SUMMARY_TOTAL_EE_CONTRIBUTIONS",
+    "SUMMARY_TOTAL_BENEFITS",
+    "SUMMARY_AVG_COMP",
+    "SUMMARY_AVG_TENURE",
+    "SUMMARY_NEW_HIRES",
+    "SUMMARY_NEW_HIRE_TERMINATIONS",
 ]
