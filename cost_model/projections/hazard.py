@@ -131,33 +131,58 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         logger.error(f"Error loading hazard table: {e}")
         return pd.DataFrame()
     
+    # Log the actual string values of constants to verify definitions
+    # These constants are assumed to be imported e.g., from cost_model.constants
+    logger.info(f"DEBUG CONSTANTS: SIMULATION_YEAR='{SIMULATION_YEAR}', EMP_LEVEL='{EMP_LEVEL}', EMP_TENURE_BAND='{EMP_TENURE_BAND}'")
+    logger.info(f"DEBUG CONSTANTS: TERM_RATE='{TERM_RATE}', COMP_RAISE_PCT='{COMP_RAISE_PCT}', NEW_HIRE_TERM_RATE='{NEW_HIRE_TERM_RATE}', COLA_PCT='{COLA_PCT}'")
+
     logger.info(f"Initial columns from Parquet: {df.columns.tolist()}")
 
-    # Define rename map for columns that differ from constants used internally.
-    # Assumes constants (EMP_TENURE_BAND, NEW_HIRE_TERM_RATE, etc.) are imported from cost_model.constants or similar.
+    # Define rename map: Parquet_column_name -> internal_constant_name
     rename_map = {
-        # Parquet_column_name: internal_constant_name
-        'tenure_band': EMP_TENURE_BAND,                 # e.g., 'tenure_band' -> 'employee_tenure_band'
-        'new_hire_termination_rate': NEW_HIRE_TERM_RATE, # e.g., 'new_hire_termination_rate' -> 'new_hire_term_rate'
-        'termination_rate': TERM_RATE,                  # e.g., 'termination_rate' -> 'termination_rate'
-        'compensation_raise_percentage': COMP_RAISE_PCT, # e.g., 'compensation_raise_percentage' -> 'compensation_raise_percentage'
-        'employee_level': EMP_LEVEL,                    # e.g., 'employee_level' -> 'employee_level'
-        'simulation_year': SIMULATION_YEAR              # e.g., 'simulation_year' -> 'simulation_year'
-        # Add other mappings if Parquet names differ from internal constants or to standardize (e.g. case differences).
+        'simulation_year': SIMULATION_YEAR,
+        'employee_level': EMP_LEVEL,
+        'tenure_band': EMP_TENURE_BAND, 
+        'term_rate': TERM_RATE,
+        'comp_raise_pct': COMP_RAISE_PCT,  # Corrected key based on error log's 'Available columns'
+        'new_hire_termination_rate': NEW_HIRE_TERM_RATE,
+        'cola_pct': COLA_PCT  # Added key based on error log's 'Available columns'
     }
-    
-    # Filter rename_map to only include columns actually present in the DataFrame's current columns.
-    # This avoids errors if a mapped Parquet column is unexpectedly missing.
-    actual_rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
-    
-    if actual_rename_map:
-        logger.info(f"Applying rename map: {actual_rename_map}")
-        df = df.rename(columns=actual_rename_map)
-        logger.info(f"Columns after renaming: {df.columns.tolist()}")
-    else:
-        logger.info("No columns to rename based on the current DataFrame and rename_map. Ensure Parquet column names match keys in rename_map if renaming is expected.")
+    logger.info(f"Defined rename_map: {rename_map}")
 
-    # Now, check for required columns using the standardized internal constant names.
+    # Filter rename_map to only include columns present in the DataFrame.
+    actual_rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
+    logger.info(f"Actual rename_map to be applied: {actual_rename_map}")
+
+    if actual_rename_map:
+        logger.info(f"Columns BEFORE rename operation: {df.columns.tolist()}")
+        df = df.rename(columns=actual_rename_map)
+        logger.info(f"Columns AFTER rename operation: {df.columns.tolist()}")
+
+        # Specific verification for critical renames
+        if 'tenure_band' in actual_rename_map: # Check if 'tenure_band' was intended for renaming
+            if EMP_TENURE_BAND in df.columns and 'tenure_band' not in df.columns:
+                logger.info(f"Verification: Rename of 'tenure_band' to '{EMP_TENURE_BAND}' appears successful.")
+            elif EMP_TENURE_BAND in df.columns and 'tenure_band' in df.columns:
+                 logger.warning(f"Verification: Rename of 'tenure_band' to '{EMP_TENURE_BAND}' PARTIALLY FAILED. Both '{EMP_TENURE_BAND}' and 'tenure_band' exist. Check constant value of EMP_TENURE_BAND.")
+            elif EMP_TENURE_BAND not in df.columns and 'tenure_band' in df.columns:
+                 logger.warning(f"Verification: Rename of 'tenure_band' to '{EMP_TENURE_BAND}' FAILED. Original 'tenure_band' still present, '{EMP_TENURE_BAND}' is not. Check constant value of EMP_TENURE_BAND or rename_map.")
+            else: # EMP_TENURE_BAND not in df.columns and 'tenure_band' not in df.columns
+                 logger.warning(f"Verification: Both 'tenure_band' and '{EMP_TENURE_BAND}' are MISSING after rename attempt. This is unexpected.")
+        
+        if 'new_hire_termination_rate' in actual_rename_map: # Check if 'new_hire_termination_rate' was intended for renaming
+            if NEW_HIRE_TERM_RATE in df.columns and 'new_hire_termination_rate' not in df.columns:
+                logger.info(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' appears successful.")
+            elif NEW_HIRE_TERM_RATE in df.columns and 'new_hire_termination_rate' in df.columns:
+                logger.warning(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' PARTIALLY FAILED. Both '{NEW_HIRE_TERM_RATE}' and 'new_hire_termination_rate' exist. Check constant value of NEW_HIRE_TERM_RATE.")
+            elif NEW_HIRE_TERM_RATE not in df.columns and 'new_hire_termination_rate' in df.columns:
+                logger.warning(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' FAILED. Original 'new_hire_termination_rate' still present, '{NEW_HIRE_TERM_RATE}' is not. Check constant value of NEW_HIRE_TERM_RATE or rename_map.")
+            else: # NEW_HIRE_TERM_RATE not in df.columns and 'new_hire_termination_rate' not in df.columns
+                logger.warning(f"Verification: Both 'new_hire_termination_rate' and '{NEW_HIRE_TERM_RATE}' are MISSING after rename attempt. This is unexpected.")
+    else:
+        logger.info("No columns to rename: actual_rename_map is empty or no keys matched Parquet columns.")
+
+    # Define required columns using internal constant names.
     required_cols = [
         SIMULATION_YEAR, 
         EMP_LEVEL,
@@ -166,14 +191,16 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         COMP_RAISE_PCT,
         NEW_HIRE_TERM_RATE
     ]
-    # Ensure consistency in column name expectations.
+    logger.info(f"Checking for required_cols (using constant values): {required_cols}")
+    logger.info(f"Current df.columns for check: {df.columns.tolist()}")
     
-    # Check for missing required columns after the rename attempt.
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
-        logger.error(f"Hazard table missing required columns AFTER RENAME ATTEMPT: {missing_cols}. Available columns: {df.columns.tolist()}")
+        logger.error(f"Hazard table missing required columns AFTER RENAME AND VERIFICATION: {missing_cols}. Available columns: {df.columns.tolist()}")
         return pd.DataFrame()
+    else:
+        logger.info("All required columns successfully found in hazard table after renaming.")
 
     # The DataFrame 'df' is now the result, no role expansion needed.
     result = df.copy() # Work on a copy to avoid SettingWithCopyWarning
