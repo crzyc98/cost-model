@@ -58,17 +58,31 @@ def build_hazard_table(
         global_nh_term_rate = 0.25
     logger.info(f"Using global rates: Term={global_term_rate}, CompPct={global_comp_raise_pct}, NH_Term={global_nh_term_rate}")
 
-    # Ensure all required employee levels (0-4) are represented in the hazard table
-    # This is a safety net to make sure we don't miss any levels
+    # Define all possible employee levels (0-4) and standard tenure bands
     all_employee_levels = set(range(5))  # 0, 1, 2, 3, 4
-    existing_levels = set(combo[EMP_LEVEL] for combo in unique_levels_tenures)
-    missing_levels = all_employee_levels - existing_levels
+    standard_tenure_bands = {'0-1', '1-3', '3-5', '5+'}
     
-    if missing_levels:
-        logger.warning(f"Initial snapshot missing employee levels: {missing_levels}. Adding to hazard table.")
-        for level in missing_levels:
-            for tenure_band in set(combo[EMP_TENURE_BAND] for combo in unique_levels_tenures):
-                unique_levels_tenures.append({EMP_LEVEL: level, EMP_TENURE_BAND: tenure_band})
+    # Create a set of all possible (level, tenure_band) combinations
+    all_combinations = set()
+    
+    # First, add all combinations from the initial snapshot
+    for combo in unique_levels_tenures:
+        # Ensure tenure band is standardized
+        std_tenure = standardize_tenure_band(combo[EMP_TENURE_BAND])
+        all_combinations.add((combo[EMP_LEVEL], std_tenure))
+    
+    # Then add all missing combinations with standard tenure bands
+    for level in all_employee_levels:
+        for tenure_band in standard_tenure_bands:
+            all_combinations.add((level, tenure_band))
+    
+    # Convert back to list of dicts for the rest of the function
+    unique_levels_tenures = [
+        {EMP_LEVEL: level, EMP_TENURE_BAND: tenure_band}
+        for level, tenure_band in all_combinations
+    ]
+    
+    logger.info(f"Generated hazard table with {len(unique_levels_tenures)} unique (level, tenure_band) combinations")
     
     records = []
     for year in years:

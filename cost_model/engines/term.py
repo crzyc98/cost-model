@@ -51,6 +51,7 @@ def random_dates_between(start_dates, end_date, rng: np.random.Generator):
     return result
 
 from cost_model.utils.columns import EMP_TENURE
+from cost_model.utils.tenure_utils import standardize_tenure_band
 
 def run(
     snapshot: pd.DataFrame,
@@ -84,25 +85,51 @@ def run(
     level_counts = active[EMP_LEVEL].value_counts().to_dict()
     logger.warning(f"[TERM DIAGNOSTIC YR={year}] Employee level distribution: {level_counts}")
     
-    # Log distribution of tenure bands
+    # Log distribution of tenure bands before standardization
     tenure_counts = active[EMP_TENURE_BAND].value_counts().to_dict()
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution: {tenure_counts}")
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution before standardization: {tenure_counts}")
+    
+    # Log sample of employee data for debugging
+    sample_employees = active[[EMP_ID, EMP_LEVEL, EMP_TENURE_BAND]].sample(min(5, len(active)), random_state=42)
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Sample of employee data before standardization:\n{sample_employees.to_string()}")
+    
+    # Standardize tenure bands to ensure consistent format for the merge
+    active[EMP_TENURE_BAND] = active[EMP_TENURE_BAND].map(standardize_tenure_band)
+    
+    # CRITICAL: Also standardize the hazard slice to ensure matching
+    hazard_slice[EMP_TENURE_BAND] = hazard_slice[EMP_TENURE_BAND].map(standardize_tenure_band)
+    
+    # Log distribution after standardization
+    tenure_counts_std = active[EMP_TENURE_BAND].value_counts().to_dict()
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution after standardization: {tenure_counts_std}")
+    
+    # Log sample of hazard table data for debugging
+    if len(hazard_slice) > 0:
+        hazard_sample = hazard_slice[[EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE]].drop_duplicates()
+        logger.warning(f"[TERM DIAGNOSTIC YR={year}] Hazard table entries (sample):\n{hazard_sample.head(10).to_string()}")
         
     # STEP 2: Get a list of all unique employee_level and tenure_band combinations in the active population
     # This will help us identify which combinations we need to check against the hazard table
     active_combos = set(zip(active[EMP_LEVEL], active[EMP_TENURE_BAND]))
     logger.debug(f"[TERM DIAGNOSTIC YR={year}] Unique level-tenure combinations in active employees: {active_combos}")
     
-    # 1. Pull out only the columns you need and dedupe the hazard table
+    # 1. Pull out only the columns you need, dedupe the hazard table, and ensure consistent tenure bands
     hz = (
         hazard_slice[[EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE]]
         .drop_duplicates(subset=[EMP_LEVEL, EMP_TENURE_BAND])
     )
     
+    # Ensure hazard table tenure bands are standardized right before the merge
+    hz[EMP_TENURE_BAND] = hz[EMP_TENURE_BAND].map(standardize_tenure_band)
+    
     # DIAGNOSTIC: Log hazard table coverage
     hz_combos = set(zip(hz[EMP_LEVEL], hz[EMP_TENURE_BAND]))
     logger.warning(f"[TERM DIAGNOSTIC YR={year}] Hazard table contains {len(hz_combos)} level-tenure combinations")
     logger.warning(f"[TERM DIAGNOSTIC YR={year}] Sample of hazard table combinations: {list(hz_combos)[:5]}")
+    
+    # Log the unique values in each to verify they're matching format
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Unique employee tenure bands before merge: {active[EMP_TENURE_BAND].unique().tolist()}")
+    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Unique hazard tenure bands before merge: {hz[EMP_TENURE_BAND].unique().tolist()}")
     
     # 2. Merge with many-to-one validation (one hazard row to many employees)
     merged_df = active.merge(
@@ -336,10 +363,30 @@ def run_new_hires(
         
     # Log new hire tenure distribution for diagnostics
     if EMP_TENURE_BAND in df_nh.columns:
+        # Log distribution before standardization
         tenure_counts = df_nh[EMP_TENURE_BAND].value_counts().to_dict()
-        logger.debug(f"[TERM NEW HIRE DIAGNOSTIC YR={year}] New hire tenure distribution: {tenure_counts}")
+        logger.debug(f"[TERM NEW HIRE DIAGNOSTIC YR={year}] New hire tenure distribution before standardization: {tenure_counts}")
+        
+        # Standardize tenure bands to ensure consistent format for new hires
+        df_nh[EMP_TENURE_BAND] = df_nh[EMP_TENURE_BAND].map(standardize_tenure_band)
+        
+        # Log distribution after standardization
+        tenure_counts_std = df_nh[EMP_TENURE_BAND].value_counts().to_dict()
+        logger.debug(f"[TERM NEW HIRE DIAGNOSTIC YR={year}] New hire tenure distribution after standardization: {tenure_counts_std}")
+        
+        # CRITICAL: Also standardize the hazard slice to ensure matching
+        hazard_slice[EMP_TENURE_BAND] = hazard_slice[EMP_TENURE_BAND].map(standardize_tenure_band)
+        
+        # Log unique tenure bands from both sides to verify they match
+        logger.warning(f"[TERM NEW HIRE DIAGNOSTIC YR={year}] Unique new hire tenure bands: {df_nh[EMP_TENURE_BAND].unique().tolist()}")
+        logger.warning(f"[TERM NEW HIRE DIAGNOSTIC YR={year}] Unique hazard tenure bands: {hazard_slice[EMP_TENURE_BAND].unique().tolist() if EMP_TENURE_BAND in hazard_slice.columns else 'N/A'}")
         
     # Use the pre-filtered hazard_slice for this year
+    # Ensure hazard_slice has standardized tenure bands before using rates
+    if EMP_TENURE_BAND in hazard_slice.columns:
+        # One more standardization to be absolutely certain
+        hazard_slice[EMP_TENURE_BAND] = hazard_slice[EMP_TENURE_BAND].map(standardize_tenure_band)
+    
     rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hazard_slice.columns else 0.0
     df_nh[NEW_HIRE_TERM_RATE] = rate
     

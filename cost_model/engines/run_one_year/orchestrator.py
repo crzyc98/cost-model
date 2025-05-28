@@ -15,6 +15,7 @@ from cost_model.state.event_log import EVENT_COLS, EVENT_PANDAS_DTYPES
 from cost_model.engines import hire
 from cost_model.state.snapshot import update as snapshot_update
 from cost_model.state.schema import EMP_ID, SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, EMP_GROSS_COMP
+from cost_model.utils.tenure_utils import standardize_tenure_band
 
 # Import submodules
 from .validation import ensure_snapshot_cols, validate_and_extract_hazard_slice, validate_eoy_snapshot
@@ -124,7 +125,14 @@ def run_one_year(
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
     
     # CRITICAL FIX: Standardize tenure band formats to ensure consistent matching
-    # Note: No longer mapping '0-1' to '0-1yr' as we've standardized all tenure bands to use '0-1' format
+    # Standardize both experienced employees and hazard slice tenure bands
+    if EMP_TENURE_BAND in experienced.columns:
+        experienced[EMP_TENURE_BAND] = experienced[EMP_TENURE_BAND].apply(standardize_tenure_band)
+        logger.info(f"[TERM STANDARDIZATION] Standardized employee tenure bands: {experienced[EMP_TENURE_BAND].unique().tolist()}")
+    
+    if EMP_TENURE_BAND in hz_slice.columns:
+        hz_slice[EMP_TENURE_BAND] = hz_slice[EMP_TENURE_BAND].apply(standardize_tenure_band)
+        logger.info(f"[TERM STANDARDIZATION] Standardized hazard slice tenure bands: {hz_slice[EMP_TENURE_BAND].unique().tolist()}")
     
     # Run hazard-based terminations
     term_event_dfs = term.run(
@@ -165,7 +173,15 @@ def run_one_year(
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
     
     # CRITICAL FIX: Standardize tenure band formats for hiring, just as we did for terminations
-    # Note: No longer mapping '0-1' to '0-1yr' as we've standardized all tenure bands to use '0-1' format
+    # Standardize both survivor snapshot and hazard slice tenure bands
+    if EMP_TENURE_BAND in survivors_after_term.columns:
+        survivors_after_term[EMP_TENURE_BAND] = survivors_after_term[EMP_TENURE_BAND].apply(standardize_tenure_band)
+        logger.info(f"[HIRE STANDARDIZATION] Standardized survivor tenure bands: {survivors_after_term[EMP_TENURE_BAND].unique().tolist()}")
+    
+    if EMP_TENURE_BAND in hz_slice.columns:
+        hz_slice[EMP_TENURE_BAND] = hz_slice[EMP_TENURE_BAND].apply(standardize_tenure_band)
+        logger.info(f"[HIRE STANDARDIZATION] Standardized hazard slice tenure bands: {hz_slice[EMP_TENURE_BAND].unique().tolist()}")
+    
     hires_result = hire.run(
         snapshot=survivors_after_term,
         hires_to_make=gross_hires,  # Use gross_hires to account for expected new hire terminations

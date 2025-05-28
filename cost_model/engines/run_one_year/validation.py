@@ -15,6 +15,7 @@ from cost_model.state.schema import (
     EMP_ACTIVE,  # Use the actual constant name
     EMP_EXITED
 )
+from cost_model.utils.tenure_utils import standardize_tenure_band
 from typing import Optional
 import logging
 
@@ -125,9 +126,18 @@ def validate_and_extract_hazard_slice(
         roles = list(hazard_slice["role"].unique())
         logging.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice roles: {roles}")
     
+    # Standardize tenure bands to ensure consistent matching
     if TENURE_BAND in hazard_slice.columns:
-        tenure_bands = list(hazard_slice[TENURE_BAND].unique())
-        logging.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice tenure_bands: {tenure_bands}")
+        # Before standardization
+        original_tenure_bands = list(hazard_slice[TENURE_BAND].unique())
+        logging.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice original tenure_bands: {original_tenure_bands}")
+        
+        # Apply standardization
+        hazard_slice[TENURE_BAND] = hazard_slice[TENURE_BAND].apply(standardize_tenure_band)
+        
+        # After standardization
+        standardized_tenure_bands = list(hazard_slice[TENURE_BAND].unique())
+        logging.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice standardized tenure_bands: {standardized_tenure_bands}")
         
     return hazard_slice
 

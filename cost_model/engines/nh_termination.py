@@ -9,8 +9,9 @@ import numpy as np
 import json
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
-from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
+from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_TENURE_BAND
 from cost_model.state.schema import NEW_HIRE_TERM_RATE
+from cost_model.utils.tenure_utils import standardize_tenure_band
 import logging
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,24 @@ def run_new_hires(
     ].copy()
     if df_nh.empty:
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
+        
+    # CRITICAL FIX: Standardize tenure bands to ensure consistent matching with hazard table
+    if EMP_TENURE_BAND in df_nh.columns:
+        # Log the original tenure bands for debugging
+        logger.info(f"[NH-TERM] Original new hire tenure bands: {df_nh[EMP_TENURE_BAND].unique().tolist()}")
+        
+        # Apply standardization
+        df_nh[EMP_TENURE_BAND] = df_nh[EMP_TENURE_BAND].apply(standardize_tenure_band)
+        logger.info(f"[NH-TERM] Standardized new hire tenure bands: {df_nh[EMP_TENURE_BAND].unique().tolist()}")
+    
+    # Standardize hazard slice tenure bands as well to ensure consistency
+    hz_slice_copy = hazard_slice.copy()
+    if EMP_TENURE_BAND in hz_slice_copy.columns:
+        hz_slice_copy[EMP_TENURE_BAND] = hz_slice_copy[EMP_TENURE_BAND].apply(standardize_tenure_band)
+        logger.info(f"[NH-TERM] Standardized hazard slice tenure bands: {hz_slice_copy[EMP_TENURE_BAND].unique().tolist()}")
+    
     # Get termination rate
-    nh_term_rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hazard_slice.columns else 0.0
+    nh_term_rate = hz_slice_copy[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hz_slice_copy.columns else 0.0
     n = len(df_nh)
     k = min(int(round(n * nh_term_rate)), n)  # Ensure k is not larger than n
     

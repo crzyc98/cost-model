@@ -8,6 +8,7 @@ import logging
 from typing import Union, Optional, Dict, Tuple
 
 from .constants import EMP_HIRE_DATE, EMP_TENURE, EMP_TENURE_BAND
+from cost_model.utils.tenure_utils import standardize_tenure_band
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +29,9 @@ def assign_tenure_band(tenure: Optional[Union[float, int]]) -> Optional[str]:
         - '3-5' for 3-5 years
         - '5+' for 5+ years
     """
-    if pd.isna(tenure):
-        return pd.NA
-    if tenure < 1:
-        return "0-1"  # Standardized to match hazard table format
-    if tenure < 3:
-        return "1-3"
-    if tenure < 5:
-        return "3-5"
-    return "5+"
+    # Convert the numeric tenure to a band directly using the standardize_tenure_band utility
+    # This ensures consistent standardization across the entire codebase
+    return standardize_tenure_band(tenure)
 
 def compute_tenure(
     df: pd.DataFrame, 
