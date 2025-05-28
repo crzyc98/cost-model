@@ -260,13 +260,11 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
     # === Refactored Multi-Year Projection Loop ===
     current_snapshot = initial_snapshot
     current_event_log = initial_event_log
-    all_core_summaries = []
     all_employment_summaries = []
     yearly_eoy_snapshots = {}
 
     # Import summary functions
     from cost_model.projections.summaries.employment import make_yearly_status
-    from cost_model.projections.summaries.core import build_core_summary
 
     # Performance metrics
     performance_logger = logging.getLogger(PERFORMANCE_LOGGER)
@@ -319,22 +317,6 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                 f"Terminations: {employment_summary.get('experienced_terms', 0) + employment_summary.get('new_hire_terms', 0)}"
             )
 
-            # Generate core summary with basic metrics
-            active_employees = eoy_snapshot[eoy_snapshot['active']] if 'active' in eoy_snapshot.columns else eoy_snapshot
-            terminations = cumulative_event_log[cumulative_event_log['event_type'] == 'termination']
-
-            # Import canonical column names from schema
-            from cost_model.state.schema import SUMMARY_YEAR
-
-            core_summary = {
-                SUMMARY_YEAR: year,  # Use canonical year column name from schema
-                'active_headcount': len(active_employees),
-                'total_terminations': len(terminations),
-                'avg_compensation': active_employees['gross_comp'].mean() if 'gross_comp' in active_employees.columns else 0,
-                'total_compensation': active_employees['gross_comp'].sum() if 'gross_comp' in active_employees.columns else 0,
-                    'new_hires': employment_summary.get('new_hire_actives', 0) + employment_summary.get('new_hire_terms', 0)
-                }
-
             # Build enhanced yearly snapshot using the approved solution
             from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
 
@@ -354,8 +336,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             # Save enhanced snapshot for this year
             yearly_eoy_snapshots[year] = enhanced_yearly_snapshot
 
-            # Append to summary lists
-            all_core_summaries.append(core_summary)
+            # Append employment summary to list (core summaries will be calculated later using corrected function)
             all_employment_summaries.append(employment_summary)
 
             # Update for next iteration
@@ -370,12 +351,25 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
 
     # Save results
     try:
-        # Convert summaries to DataFrames
-        core_summary_df = pd.DataFrame(all_core_summaries)
-        employment_summary_df = pd.DataFrame(all_employment_summaries)
-        # Convert lists to DataFrames
-        summary_results_df = pd.DataFrame(all_core_summaries)
+        # Use the corrected calculate_summary_metrics function instead of broken inline logic
+        logger.info("Calculating summary metrics using corrected function...")
+        from cost_model.reporting.metrics import calculate_summary_metrics
+
+        # Combine all yearly snapshots for summary calculation
+        if yearly_eoy_snapshots:
+            all_results_df = pd.concat(yearly_eoy_snapshots.values(), ignore_index=True)
+            logger.info(f"Combined {len(yearly_eoy_snapshots)} yearly snapshots for summary calculation")
+
+            # Calculate corrected summary metrics
+            summary_results_df = calculate_summary_metrics(all_results_df, config_ns.__dict__ if config_ns else {})
+            logger.info("Summary metrics calculated successfully using corrected function")
+        else:
+            logger.warning("No yearly snapshots available for summary calculation")
+            summary_results_df = pd.DataFrame()
+
+        # Convert employment summaries to DataFrame
         employment_status_summary_df = pd.DataFrame(all_employment_summaries)
+
         # Set final snapshot and event log for saving
         final_eoy_snapshot = current_snapshot
         final_cumulative_event_log = current_event_log
