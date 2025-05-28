@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import math
 import json
+import logging
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
 from cost_model.state.schema import (
@@ -21,9 +22,10 @@ from cost_model.state.schema import (
     SIMULATION_YEAR,
     NEW_HIRE_TERM_RATE
 )
-import logging
+from logging_config import get_logger, get_diagnostic_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+diag_logger = get_diagnostic_logger(__name__)
 
 def random_dates_in_year(year: int, n: int, rng: np.random.Generator):
     """Generate random dates within a given year."""
@@ -67,7 +69,6 @@ def run(
     year = int(hazard_slice[SIMULATION_YEAR].iloc[0])
     # Determine "as_of" start of year
     as_of = pd.Timestamp(f"{year}-01-01")
-    logger = logging.getLogger(__name__)
     
     # Ensure EMP_HIRE_DATE is datetime
     snapshot[EMP_HIRE_DATE] = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors='coerce')
@@ -79,19 +80,19 @@ def run(
     ].copy()
 
     # Log employee_level and employee_tenure_band distributions for diagnostics
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Before hazard merge: {len(active)} employees")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Before hazard merge: {len(active)} employees")
     
     # Log distribution of employee levels
     level_counts = active[EMP_LEVEL].value_counts().to_dict()
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Employee level distribution: {level_counts}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Employee level distribution: {level_counts}")
     
     # Log distribution of tenure bands before standardization
     tenure_counts = active[EMP_TENURE_BAND].value_counts().to_dict()
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution before standardization: {tenure_counts}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution before standardization: {tenure_counts}")
     
     # Log sample of employee data for debugging
     sample_employees = active[[EMP_ID, EMP_LEVEL, EMP_TENURE_BAND]].sample(min(5, len(active)), random_state=42)
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Sample of employee data before standardization:\n{sample_employees.to_string()}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Sample of employee data before standardization:\n{sample_employees.to_string()}")
     
     # Standardize tenure bands to ensure consistent format for the merge
     active[EMP_TENURE_BAND] = active[EMP_TENURE_BAND].map(standardize_tenure_band)
@@ -101,12 +102,12 @@ def run(
     
     # Log distribution after standardization
     tenure_counts_std = active[EMP_TENURE_BAND].value_counts().to_dict()
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution after standardization: {tenure_counts_std}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Tenure band distribution after standardization: {tenure_counts_std}")
     
     # Log sample of hazard table data for debugging
     if len(hazard_slice) > 0:
         hazard_sample = hazard_slice[[EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE]].drop_duplicates()
-        logger.warning(f"[TERM DIAGNOSTIC YR={year}] Hazard table entries (sample):\n{hazard_sample.head(10).to_string()}")
+        diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Hazard table entries (sample):\n{hazard_sample.head(10).to_string()}")
         
     # STEP 2: Get a list of all unique employee_level and tenure_band combinations in the active population
     # This will help us identify which combinations we need to check against the hazard table
@@ -124,12 +125,12 @@ def run(
     
     # DIAGNOSTIC: Log hazard table coverage
     hz_combos = set(zip(hz[EMP_LEVEL], hz[EMP_TENURE_BAND]))
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Hazard table contains {len(hz_combos)} level-tenure combinations")
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Sample of hazard table combinations: {list(hz_combos)[:5]}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Hazard table contains {len(hz_combos)} level-tenure combinations")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Sample of hazard table combinations: {list(hz_combos)[:5]}")
     
     # Log the unique values in each to verify they're matching format
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Unique employee tenure bands before merge: {active[EMP_TENURE_BAND].unique().tolist()}")
-    logger.warning(f"[TERM DIAGNOSTIC YR={year}] Unique hazard tenure bands before merge: {hz[EMP_TENURE_BAND].unique().tolist()}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Unique employee tenure bands before merge: {active[EMP_TENURE_BAND].unique().tolist()}")
+    diag_logger.debug(f"[TERM DIAGNOSTIC YR={year}] Unique hazard tenure bands before merge: {hz[EMP_TENURE_BAND].unique().tolist()}")
     
     # 2. Merge with many-to-one validation (one hazard row to many employees)
     merged_df = active.merge(
@@ -172,7 +173,7 @@ def run(
         missing_combos = missing_df.groupby([EMP_LEVEL, EMP_TENURE_BAND]).size().reset_index()
         missing_combos.columns = [EMP_LEVEL, EMP_TENURE_BAND, 'count']
         
-        logger.warning(
+        diag_logger.debug(
             f"[TERM DIAGNOSTIC YR={year}] Missing level-tenure combinations:\n"
             f"{missing_combos.to_string()}"
         )
@@ -181,7 +182,7 @@ def run(
         sample_size = min(5, missing_df.shape[0])
         if sample_size > 0:
             sample_missing = missing_df.sample(sample_size, random_state=42) if sample_size > 1 else missing_df.iloc[:1]
-            logger.warning(
+            diag_logger.debug(
                 f"[TERM DIAGNOSTIC YR={year}] Sample of {sample_size} employees missing term rates:\n"
                 f"{sample_missing.to_string()}"
             )
@@ -208,12 +209,14 @@ def run(
                 else:
                     # Last resort - use global average
                     fallback_rate = hz[TERM_RATE].mean()
-                    logger.info(f"[TERM] Year {year}: Using global average rate {fallback_rate:.4f} as last resort fallback")
+                    diag_logger.info(f"[TERM] Year {year}: Using global average rate {fallback_rate:.4f} as last resort fallback")
             
             # Apply the fallback rate
             merged_df.loc[level2_01yr_mask, TERM_RATE] = fallback_rate
-            logger.info(f"[TERM] Year {year}: Applied fallback rate {fallback_rate:.4f} to {level2_01yr_count} level 2 employees with 0-1 tenure")
-            
+            diag_logger.debug(
+                f"[TERM] Year {year}: Using fallback rate {fallback_rate:.1%} for {level2_01yr_count} "
+                f"employees with level 2 and 0-1 year tenure (no rate in hazard table)"
+            )
             # Update missing rates count after applying fallback
             missing_rates = merged_df[TERM_RATE].isna()
         

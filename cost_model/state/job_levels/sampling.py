@@ -1,4 +1,5 @@
-import logging
+import logging  # For type hinting only
+from logging_config import get_logger
 from typing import Optional, Dict, Tuple
 import numpy as np
 import pandas as pd
@@ -6,7 +7,7 @@ import yaml
 import os
 
 # Centralized warnings_errors logger for all error reporting
-logger = logging.getLogger("warnings_errors")
+logger = get_logger(__name__)
 
 from .models import JobLevel
 from .init import get_level_by_id
@@ -296,7 +297,7 @@ def apply_promotion_markov(
         if pd.isna(current_level):
             # CHANGE 3: Log this as a warning, not just debug, and provide a default level
             emp_id = row.get(EMP_ID, f"at index {i}")
-            logger.warning(
+            logger.debug(
                 f"Employee {emp_id} has no current level in apply_promotion_markov. "
                 f"This shouldn't happen for active employees. "
                 f"Assigning default level 1."
@@ -309,7 +310,7 @@ def apply_promotion_markov(
         row_idx = idx_map.get(current_level)
         if row_idx is None:
             # If level not in matrix, keep them at the same level
-            logger.warning(
+            logger.debug(
                 "Employee at index %d has level %s which is not in the promotion matrix. "
                 "Keeping at current level.", i, current_level
             )
@@ -347,7 +348,7 @@ def apply_promotion_markov(
                     logger.debug("Employee %d promoted from level %s to %s", 
                                 i, current_level, next_state)
                 elif next_state < current_level:
-                    logger.warning("Employee %d demoted from level %s to %s", 
+                    logger.debug("Employee %d demoted from level %s to %s", 
                                  i, current_level, next_state)
         except ValueError as e:
             logger.error(
@@ -366,7 +367,7 @@ def apply_promotion_markov(
     if pd.isna(df[level_col]).any():
         na_count = pd.isna(df[level_col]).sum()
         na_indices = df[pd.isna(df[level_col])].index.tolist()
-        logger.warning(
+        logger.debug(
             f"CRITICAL: After processing all employees, {na_count} still have NaN levels. "
             f"Problem indices: {na_indices[:5]}{'...' if len(na_indices) > 5 else ''}. "
             f"Filling with default level 1."
@@ -399,7 +400,7 @@ def apply_promotion_markov(
         # Get employee IDs for better debugging if available
         if EMP_ID in df.columns:
             emp_ids = df.loc[pd.isna(df[level_col]), EMP_ID].tolist()
-            logger.warning(
+            logger.debug(
                 f"CRITICAL DIAGNOSIS: {na_count} NaN values in {level_col} detected at return from apply_promotion_markov. "
                 f"Employee IDs: {emp_ids[:5]}{'...' if len(emp_ids) > 5 else ''}. "
                 f"These employees lost their level values during processing."
@@ -410,20 +411,20 @@ def apply_promotion_markov(
                 emp_row = df[df[EMP_ID] == emp_id]
                 if not emp_row.empty:
                     # Log information about employees with NaN levels
-                    logger.warning(
+                    logger.debug(
                         f"Employee {emp_id} details: "
                         f"exited={emp_row['exited'].values[0]}, "
                         f"hire_date={emp_row[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d').values[0] if EMP_HIRE_DATE in emp_row.columns else 'N/A'}"
                     )
         else:
             # Just log indices if no employee IDs available
-            logger.warning(
+            logger.debug(
                 f"CRITICAL DIAGNOSIS: {na_count} NaN values in {level_col} detected at return from apply_promotion_markov. "
                 f"Indices: {na_indices[:5]}{'...' if len(na_indices) > 5 else ''}."
             )
         
         # Let's fix this immediately rather than letting it propagate
-        logger.warning(f"Applying emergency fix: filling NaN values in {level_col} with default level 1")
+        logger.debug(f"Applying emergency fix: filling NaN values in {level_col} with default level 1")
         df[level_col] = df[level_col].fillna(1)
     
     return df

@@ -4,7 +4,8 @@ Orchestrator module for run_one_year package.
 Coordinates the execution of all simulation steps for a single year.
 """
 import json
-import logging
+import logging  # For type hinting and legacy usage
+from logging_config import get_logger, get_diagnostic_logger
 import uuid
 from typing import Dict, List, Optional, Tuple, Any, Union
 import pandas as pd
@@ -48,41 +49,44 @@ def run_one_year(
       6. Deterministic new-hire terminations
       7. Final snapshot + validation
     """
-    logger = logging.getLogger(__name__)
+    logger = get_logger(__name__)
     logger.info(f"[RUN_ONE_YEAR] Simulating year {year}")
     all_new_events_list = []  # Initialize list to collect event DataFrames
 
     # --- 1. Initialization and validation ---
     as_of = pd.Timestamp(f"{year}-01-01")
     
+    # Get diagnostic logger for non-critical messages
+    diag_logger = get_diagnostic_logger(__name__)
+    
     # Add diagnostics for EMP_LEVEL before ensure_snapshot_cols
-    logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before ensure_snapshot_cols:")
+    diag_logger.debug(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before ensure_snapshot_cols:")
     if EMP_LEVEL in prev_snapshot.columns:
-        logger.warning(f"  pre-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
-        logger.warning(f"  pre-ensure_snapshot_cols['{EMP_LEVEL}'] dtype: {prev_snapshot[EMP_LEVEL].dtype}")
+        diag_logger.debug(f"  pre-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
+        diag_logger.debug(f"  pre-ensure_snapshot_cols['{EMP_LEVEL}'] dtype: {prev_snapshot[EMP_LEVEL].dtype}")
         # Log level distribution if there are no NaN values
         if prev_snapshot[EMP_LEVEL].isna().sum() == 0:
             level_counts = prev_snapshot[EMP_LEVEL].value_counts().to_dict()
-            logger.warning(f"  Level distribution before ensure_snapshot_cols: {level_counts}")
+            diag_logger.debug(f"  Level distribution before ensure_snapshot_cols: {level_counts}")
     else:
-        logger.warning(f"  {EMP_LEVEL} column not found in prev_snapshot before ensure_snapshot_cols")
+        diag_logger.warning(f"{EMP_LEVEL} column not found in prev_snapshot before ensure_snapshot_cols")
     
     prev_snapshot = ensure_snapshot_cols(prev_snapshot)
     
     # Add diagnostics for EMP_LEVEL after ensure_snapshot_cols
-    logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After ensure_snapshot_cols:")
-    logger.warning(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
-    logger.warning(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] dtype: {prev_snapshot[EMP_LEVEL].dtype}")
+    diag_logger.debug(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After ensure_snapshot_cols:")
+    diag_logger.debug(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
+    diag_logger.debug(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] dtype: {prev_snapshot[EMP_LEVEL].dtype}")
     # Log level distribution if there are no NaN values
     if prev_snapshot[EMP_LEVEL].isna().sum() == 0:
         level_counts = prev_snapshot[EMP_LEVEL].value_counts().to_dict()
-        logger.warning(f"  Level distribution after ensure_snapshot_cols: {level_counts}")
+        diag_logger.debug(f"  Level distribution after ensure_snapshot_cols: {level_counts}")
 
     # Validate EMP_ID in prev_snapshot
     if EMP_ID in prev_snapshot.columns and prev_snapshot[EMP_ID].isna().any():
         na_count = prev_snapshot[EMP_ID].isna().sum()
-        logger.warning(
-            f"[RUN_ONE_YEAR] Year {year}: Input snapshot (prev_snapshot) contains {na_count} "
+        diag_logger.warning(
+            f"Year {year}: Input snapshot (prev_snapshot) contains {na_count} "
             f"records with NA {EMP_ID}. These records will be dropped."
         )
         prev_snapshot = prev_snapshot.dropna(subset=[EMP_ID]).copy()
@@ -297,11 +301,11 @@ def run_one_year(
             return None
 
         # Enhanced diagnostic logging
-        logger.warning(f"[ORCHESTRATOR YR={year}] Entering level extraction block for {len(hires_events)} hire events")
+        diag_logger.info(f"[ORCHESTRATOR YR={year}] Entering level extraction block for {len(hires_events)} hire events")
         if not hires_events.empty:
             # Sample the first few hire events to understand their structure
             sample_row = hires_events.iloc[0]
-            logger.warning(f"[ORCHESTRATOR YR={year}] Sample hire event columns: {sample_row.index.tolist()}")
+            diag_logger.debug(f"[ORCHESTRATOR YR={year}] Sample hire event columns: {sample_row.index.tolist()}")
             
             # Examine value_json content
             if 'value_json' in sample_row:
@@ -310,9 +314,9 @@ def run_one_year(
                         value_json = json.loads(sample_row['value_json'])
                     else:
                         value_json = sample_row['value_json']
-                    logger.warning(f"[ORCHESTRATOR YR={year}] Sample value_json keys: {list(value_json.keys()) if isinstance(value_json, dict) else 'Not a dict'}")
+                    diag_logger.debug(f"[ORCHESTRATOR YR={year}] Sample value_json keys: {list(value_json.keys()) if isinstance(value_json, dict) else 'Not a dict'}")
                     if isinstance(value_json, dict) and 'role' in value_json:
-                        logger.warning(f"[ORCHESTRATOR YR={year}] Sample role value: {value_json['role']}, type: {type(value_json['role'])}")
+                        diag_logger.debug(f"[ORCHESTRATOR YR={year}] Sample role value: {value_json['role']}, type: {type(value_json['role'])}")
                 except Exception as e:
                     logger.warning(f"[ORCHESTRATOR YR={year}] Error examining value_json: {str(e)}")
 
@@ -321,14 +325,14 @@ def run_one_year(
 
         # Log statistics about extracted levels with enhanced visibility
         extracted_count = extracted_levels.notna().sum()
-        logger.warning(f"[ORCHESTRATOR YR={year}] Successfully extracted levels for {extracted_count} out of {len(hires_events)} new hires")
+        diag_logger.info(f"[ORCHESTRATOR YR={year}] Successfully extracted levels for {extracted_count} out of {len(hires_events)} new hires")
         if extracted_count < len(hires_events):
             logger.warning(f"[ORCHESTRATOR YR={year}] Using default level 1 for {len(hires_events) - extracted_count} new hires without extractable levels")
             
         if not hires_events.empty:
             # Show sample of extracted values
             sample_levels = extracted_levels.head(3).tolist()
-            logger.warning(f"[ORCHESTRATOR YR={year}] Sample of extracted levels: {sample_levels}")
+            diag_logger.debug(f"[ORCHESTRATOR YR={year}] Sample of extracted levels: {sample_levels}")
         
         # Construct the new_hires DataFrame for the snapshot
         new_hires_data = {
@@ -401,11 +405,11 @@ def run_one_year(
         
         # Diagnostic logging for snapshot_with_hires right after concatenation
         if not snapshot_with_hires.empty:
-            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After snapshot_with_hires creation (concat):")
+            diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After snapshot_with_hires creation (concat):")
             if 'employee_level' in snapshot_with_hires.columns:
                 level_na_count = snapshot_with_hires['employee_level'].isna().sum()
-                logger.warning(f"  snapshot_with_hires['employee_level'] NA count: {level_na_count}")
-                logger.warning(f"  snapshot_with_hires['employee_level'] dtype: {snapshot_with_hires['employee_level'].dtype}")
+                diag_logger.debug(f"  snapshot_with_hires['employee_level'] NA count: {level_na_count}")
+                diag_logger.debug(f"  snapshot_with_hires['employee_level'] dtype: {snapshot_with_hires['employee_level'].dtype}")
                 if level_na_count > 0:
                     # Check if there are any new hires with NA levels
                     if 'job_level_source' in snapshot_with_hires.columns:
@@ -420,7 +424,7 @@ def run_one_year(
                     logger.warning(f"  Sample of ALL employee IDs with NA levels: {snapshot_with_hires[snapshot_with_hires['employee_level'].isna()][EMP_ID].head().tolist()}")
                 # Show a frequency table of the levels
                 level_counts = snapshot_with_hires['employee_level'].value_counts(dropna=False).to_dict()
-                logger.warning(f"  Level distribution in snapshot_with_hires: {level_counts}")
+                diag_logger.debug(f"  Level distribution in snapshot_with_hires: {level_counts}")
             else:
                 logger.warning(f"  'employee_level' column not found in snapshot_with_hires! Columns: {snapshot_with_hires.columns.tolist()}")
         
@@ -429,25 +433,25 @@ def run_one_year(
         
         # Diagnostic logging for new_hires DataFrame
         if not new_hires.empty:
-            logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation:")
+            diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation:")
             # Check EMP_LEVEL column specifically
             if 'employee_level' in new_hires.columns:
                 level_na_count = new_hires['employee_level'].isna().sum()
-                logger.warning(f"  new_hires['employee_level'] NA count: {level_na_count}")
-                logger.warning(f"  new_hires['employee_level'] dtype: {new_hires['employee_level'].dtype}")
+                diag_logger.debug(f"  new_hires['employee_level'] NA count: {level_na_count}")
+                diag_logger.debug(f"  new_hires['employee_level'] dtype: {new_hires['employee_level'].dtype}")
                 if level_na_count > 0:
                     logger.warning(f"  Sample of employee IDs with NA levels: {new_hires[new_hires['employee_level'].isna()][EMP_ID].head().tolist()}")
                 # Show a frequency table of the levels
                 level_counts = new_hires['employee_level'].value_counts(dropna=False).to_dict()
-                logger.warning(f"  Level distribution in new_hires: {level_counts}")
+                diag_logger.debug(f"  Level distribution in new_hires: {level_counts}")
             else:
                 logger.warning(f"  'employee_level' column not found in new_hires! Columns: {new_hires.columns.tolist()}")
                 
             # Also check EMP_ID column
             if EMP_ID in new_hires.columns:
                 na_sum_new_hires = new_hires[EMP_ID].isna().sum()
-                logger.warning(f"  new_hires['{EMP_ID}'] dtype: {new_hires[EMP_ID].dtype}")
-                logger.warning(f"  new_hires['{EMP_ID}'] NA sum: {na_sum_new_hires}")
+                diag_logger.debug(f"  new_hires['{EMP_ID}'] dtype: {new_hires[EMP_ID].dtype}")
+                diag_logger.debug(f"  new_hires['{EMP_ID}'] NA sum: {na_sum_new_hires}")
                 if na_sum_new_hires > 0:
                     logger.warning(f"  Sample of NA IDs in new_hires['{EMP_ID}']: {new_hires[new_hires[EMP_ID].isna()][EMP_ID].head().tolist()}")
             else:
@@ -515,11 +519,11 @@ def run_one_year(
     
     # Diagnostic logging before new hire termination
     if not snapshot_with_hires.empty:
-        logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before new-hire termination:")
+        diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before new-hire termination:")
         if 'employee_level' in snapshot_with_hires.columns:
             level_na_count = snapshot_with_hires['employee_level'].isna().sum()
-            logger.warning(f"  Pre-termination snapshot['employee_level'] NA count: {level_na_count}")
-            logger.warning(f"  Pre-termination snapshot['employee_level'] dtype: {snapshot_with_hires['employee_level'].dtype}")
+            diag_logger.debug(f"  Pre-termination snapshot['employee_level'] NA count: {level_na_count}")
+            diag_logger.debug(f"  Pre-termination snapshot['employee_level'] dtype: {snapshot_with_hires['employee_level'].dtype}")
             # More detailed analysis of where NA values are
             if level_na_count > 0:
                 # Check if these are new hires
@@ -548,11 +552,11 @@ def run_one_year(
     
     # Comprehensive diagnostic logging for final snapshot
     if not final_snapshot.empty:
-        logger.warning(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Final snapshot analysis:")
+        diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Final snapshot analysis:")
         if 'employee_level' in final_snapshot.columns:
             level_na_count = final_snapshot['employee_level'].isna().sum()
-            logger.warning(f"  Final snapshot['employee_level'] NA count: {level_na_count}")
-            logger.warning(f"  Final snapshot['employee_level'] dtype: {final_snapshot['employee_level'].dtype}")
+            diag_logger.debug(f"  Final snapshot['employee_level'] NA count: {level_na_count}")
+            diag_logger.debug(f"  Final snapshot['employee_level'] dtype: {final_snapshot['employee_level'].dtype}")
             
             # Detailed analysis if NA values exist
             if level_na_count > 0:
@@ -576,12 +580,12 @@ def run_one_year(
             
             # Show distribution of level values
             level_counts = final_snapshot['employee_level'].value_counts(dropna=False).to_dict()
-            logger.warning(f"  Level distribution in final snapshot: {level_counts}")
+            diag_logger.info(f"  Level distribution in final snapshot: {level_counts}")
             
             # Check for any level=0 employees (possibly from demotions)
             if 0 in level_counts:
                 level0_count = level_counts[0]
-                logger.warning(f"  Found {level0_count} employees with level=0 in final snapshot")
+                diag_logger.info(f"  Found {level0_count} employees with level=0 in final snapshot")
         else:
             logger.warning(f"  'employee_level' column not found in final snapshot! Columns: {final_snapshot.columns.tolist()}")
 

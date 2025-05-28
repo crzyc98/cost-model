@@ -5,7 +5,6 @@ QuickStart: see docs/cost_model/engines/hire.md
 """
 
 import json
-import logging
 from typing import List, Dict, Optional
 import pandas as pd
 import numpy as np
@@ -15,8 +14,10 @@ from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP,
 from cost_model.state.schema import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL, SIMULATION_YEAR
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
+from logging_config import get_logger, get_diagnostic_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+diag_logger = get_diagnostic_logger(__name__)
 
 from cost_model.state.schema import EMP_TENURE
 
@@ -76,16 +77,16 @@ def run(
             default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
     # 2. Try direct attribute on global_params
     elif hasattr(global_params, 'new_hire_compensation_params'):
-        logger.info(f"[HIRE.RUN YR={simulation_year}] Using default_params from global_params.new_hire_compensation_params")
+        diag_logger.debug(f"[HIRE.RUN YR={simulation_year}] Using default_params from global_params.new_hire_compensation_params")
         default_params = global_params.new_hire_compensation_params
         if not isinstance(default_params, dict):
             default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
             
     # Log available roles for debugging
-    logger.info(f"[HIRE.RUN YR={simulation_year}] Available roles in role_comp_params: {list(role_comp_params.keys()) if isinstance(role_comp_params, dict) else 'None'}")
+    diag_logger.debug(f"[HIRE.RUN YR={simulation_year}] Available roles in role_comp_params: {list(role_comp_params.keys()) if isinstance(role_comp_params, dict) else 'None'}")
 
     if hires_to_make <= 0:
-        logger.info(f"[HIRE.RUN YR={simulation_year}] No hires to make as passed-in value is zero or negative.")
+        diag_logger.debug(f"[HIRE.RUN YR={simulation_year}] No hires to make as passed-in value is zero or negative.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
     # Assign hires to levels according to proportions
     # Choose levels based on current distribution in snapshot
@@ -121,7 +122,7 @@ def run(
             i += 1
 
         if len(new_ids) < hires_to_make:
-            logger.warning(
+            diag_logger.debug(
                 f"[HIRE.RUN YR={simulation_year}] Could only generate {len(new_ids)} unique/valid new EIDs out of {hires_to_make} requested "
                 f"(attempted {i-1} times). Proceeding with {len(new_ids)} hires."
             )

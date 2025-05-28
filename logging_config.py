@@ -18,6 +18,7 @@ PROJECTION_LOGGER = "cost_model.projection"
 PERFORMANCE_LOGGER = "cost_model.performance"
 ERROR_LOGGER = "cost_model.errors"
 DEBUG_LOGGER = "cost_model.debug"
+DIAGNOSTIC_LOGGER = "cost_model.diagnostic"  # For detailed diagnostic information
 
 # Standard log format with module name and line number
 LOG_FORMAT = "%(asctime)s - %(name)s:%(lineno)d - %(levelname)s - %(message)s"
@@ -41,6 +42,7 @@ def clear_logs(log_dir: Path) -> None:
         log_dir / "performance_metrics.log",
         log_dir / "warnings_errors.log",
         log_dir / "debug_detail.log",
+        log_dir / "diagnostic.log",
         log_dir / "combined.log"
     ]
     
@@ -84,11 +86,34 @@ def setup_logging(log_dir: Path, debug: bool = False, clear_existing: bool = Tru
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-    root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
-
+    root_logger.setLevel(logging.INFO)  # Default to INFO level for root
+    
     # Formatters
     file_formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
     console_formatter = logging.Formatter("%(levelname)-8s %(message)s")
+
+    # Create diagnostic logger (DEBUG level, separate file, no propagation)
+    diagnostic_handler = logging.handlers.RotatingFileHandler(
+        filename=log_dir / "diagnostic.log",
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5,
+        encoding='utf-8',
+        mode='a'
+    )
+    diagnostic_handler.setLevel(logging.DEBUG)
+    diagnostic_handler.setFormatter(file_formatter)
+    
+    diagnostic_logger = logging.getLogger(DIAGNOSTIC_LOGGER)
+    for h in diagnostic_logger.handlers[:]:
+        diagnostic_logger.removeHandler(h)
+    diagnostic_logger.setLevel(logging.DEBUG)
+    diagnostic_logger.addHandler(diagnostic_handler)
+    diagnostic_logger.propagate = False  # Don't propagate to root logger
+    
+    # Set debug level for specific loggers if debug mode is on
+    if debug:
+        logging.getLogger(DEBUG_LOGGER).setLevel(logging.DEBUG)
+        root_logger.setLevel(logging.DEBUG)
 
     # Console handler (for warnings and above)
     console = logging.StreamHandler()
@@ -180,13 +205,33 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
 
     Args:
         name: Logger name (e.g., __name__). If None, returns root logger.
-
+        
     Returns:
         Configured logger instance
     """
-    if not _LOGGING_CONFIGURED:
-        setup_logging(Path("output_dev/projection_logs"), debug=False)
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+    return logger
+
+
+def get_diagnostic_logger(name: Optional[str] = None) -> logging.Logger:
+    """
+    Get a logger configured for diagnostic information.
+    
+    Args:
+        name: Logger name (e.g., __name__). Will be prefixed with 'diagnostic.'
+        
+    Returns:
+        Configured diagnostic logger instance
+    """
+    if name:
+        name = f"{DIAGNOSTIC_LOGGER}.{name}"
+    else:
+        name = DIAGNOSTIC_LOGGER
+    logger = logging.getLogger(name)
+    # Ensure the logger has at least one handler to avoid 'No handlers' warnings
+    if not logger.handlers and not logging.getLogger(DIAGNOSTIC_LOGGER).handlers:
+        logger.addHandler(logging.NullHandler())
+    return logger
 
 
 def test_logging():

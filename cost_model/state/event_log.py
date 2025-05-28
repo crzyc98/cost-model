@@ -5,7 +5,6 @@ This demonstrates how to create, load, filter, and save event logs, which form t
 """
 
 import json
-import logging
 import pandas as pd
 import pyarrow as pa  # Recommended for explicit Parquet schema handling
 import pyarrow.parquet as pq
@@ -15,8 +14,10 @@ from typing import Dict, Optional, Any, Union
 
 # Import schema constants directly - these are required
 from cost_model.state.schema import EMP_ID, SIMULATION_YEAR
+from logging_config import get_logger, get_diagnostic_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+diag_logger = get_diagnostic_logger(__name__)
 
 # --- Event Schema Definition ---
 
@@ -90,20 +91,20 @@ def load_log(path: Path) -> pd.DataFrame:
     """
     if path.exists() and path.stat().st_size > 0:  # Check size > 0 for robustness
         try:
-            logger.debug(f"Loading event log from: {path}")
+            diag_logger.debug(f"Loading event log from: {path}")
             # Read with specified Arrow schema to enforce types
             table = pq.read_table(path, schema=EVENT_SCHEMA)
             df = table.to_pandas()
             # Ensure correct Pandas dtypes after loading (sometimes needed)
             df = df.astype(EVENT_PANDAS_DTYPES)
-            logger.debug(f"Loaded {len(df)} events.")
+            diag_logger.debug(f"Loaded {len(df)} events.")
             return df
         except Exception as e:
             logger.error(f"Error loading event log from {path}: {e}", exc_info=True)
             # Depending on desired behavior, could raise error or return empty
             # Returning empty allows simulation to potentially start fresh
     else:
-        logger.debug(
+        diag_logger.debug(
             f"Event log file not found or empty at {path}. Returning empty DataFrame."
         )
 
@@ -127,7 +128,7 @@ def append_events(log: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFrame:
         A new DataFrame containing the combined events.
     """
     if new_events is None or new_events.empty:
-        logger.debug("append_events called with no new events.")
+        diag_logger.debug("append_events called with no new events.")
         return log  # Return original log if nothing to append
 
     # Basic validation: Check if essential columns exist in new_events
@@ -164,7 +165,7 @@ def append_events(log: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFrame:
                 f"Duplicate event_ids detected during append: {colliding_ids[:5]}..."
             )
 
-    logger.debug(f"Appending {len(new_events)} new events to log.")
+    diag_logger.debug(f"Appending {len(new_events)} new events to log.")
     # Using copy=True is safer default, False might be slightly faster but shares underlying data
     combined_log = pd.concat([log, new_events], ignore_index=True, copy=True)
 
@@ -194,7 +195,7 @@ def save_log(log: pd.DataFrame, path: Path) -> None:
             log_to_save, schema=EVENT_SCHEMA, preserve_index=False
         )
 
-        logger.debug(f"Saving {len(log_to_save)} events to: {path}")
+        diag_logger.debug(f"Saving {len(log_to_save)} events to: {path}")
         pq.write_table(
             table,
             path,
