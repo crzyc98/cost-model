@@ -61,29 +61,29 @@ def build_hazard_table(
     # Define all possible employee levels (0-4) and standard tenure bands
     all_employee_levels = set(range(5))  # 0, 1, 2, 3, 4
     standard_tenure_bands = {'0-1', '1-3', '3-5', '5+'}
-    
+
     # Create a set of all possible (level, tenure_band) combinations
     all_combinations = set()
-    
+
     # First, add all combinations from the initial snapshot
     for combo in unique_levels_tenures:
         # Ensure tenure band is standardized
         std_tenure = standardize_tenure_band(combo[EMP_TENURE_BAND])
         all_combinations.add((combo[EMP_LEVEL], std_tenure))
-    
+
     # Then add all missing combinations with standard tenure bands
     for level in all_employee_levels:
         for tenure_band in standard_tenure_bands:
             all_combinations.add((level, tenure_band))
-    
+
     # Convert back to list of dicts for the rest of the function
     unique_levels_tenures = [
         {EMP_LEVEL: level, EMP_TENURE_BAND: tenure_band}
         for level, tenure_band in all_combinations
     ]
-    
+
     logger.info(f"Generated hazard table with {len(unique_levels_tenures)} unique (level, tenure_band) combinations")
-    
+
     records = []
     for year in years:
         for combo in unique_levels_tenures:
@@ -110,19 +110,19 @@ def build_hazard_table(
 def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.DataFrame:
     """
     Load hazard table from parquet file. Assumes 'employee_level' is present and correct.
-    
+
     Args:
         path: Path to the hazard table parquet file
-        
+
     Returns:
         DataFrame with standardized hazard table entries
     """
     logger.info(f"Loading hazard table from {path}")
-    
+
     if not os.path.exists(path):
         logger.error(f"Hazard table file not found at {path}")
         return pd.DataFrame()
-    
+
     # Load the hazard table
     try:
         df = pd.read_parquet(path)
@@ -130,7 +130,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     except Exception as e:
         logger.error(f"Error loading hazard table: {e}")
         return pd.DataFrame()
-    
+
     # Log the actual string values of constants to verify definitions
     # These constants are assumed to be imported e.g., from cost_model.constants
     logger.info(f"DEBUG CONSTANTS: SIMULATION_YEAR='{SIMULATION_YEAR}', EMP_LEVEL='{EMP_LEVEL}', EMP_TENURE_BAND='{EMP_TENURE_BAND}'")
@@ -142,7 +142,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     rename_map = {
         'simulation_year': SIMULATION_YEAR,
         'employee_level': EMP_LEVEL,
-        'tenure_band': EMP_TENURE_BAND, 
+        'tenure_band': EMP_TENURE_BAND,
         'term_rate': TERM_RATE,
         'comp_raise_pct': COMP_RAISE_PCT,  # Corrected key based on error log's 'Available columns'
         'new_hire_termination_rate': NEW_HIRE_TERM_RATE,
@@ -169,7 +169,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
                  logger.warning(f"Verification: Rename of 'tenure_band' to '{EMP_TENURE_BAND}' FAILED. Original 'tenure_band' still present, '{EMP_TENURE_BAND}' is not. Check constant value of EMP_TENURE_BAND or rename_map.")
             else: # EMP_TENURE_BAND not in df.columns and 'tenure_band' not in df.columns
                  logger.warning(f"Verification: Both 'tenure_band' and '{EMP_TENURE_BAND}' are MISSING after rename attempt. This is unexpected.")
-        
+
         if 'new_hire_termination_rate' in actual_rename_map: # Check if 'new_hire_termination_rate' was intended for renaming
             if NEW_HIRE_TERM_RATE in df.columns and 'new_hire_termination_rate' not in df.columns:
                 logger.info(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' appears successful.")
@@ -184,18 +184,18 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
 
     # Define required columns using internal constant names.
     required_cols = [
-        SIMULATION_YEAR, 
+        SIMULATION_YEAR,
         EMP_LEVEL,
-        EMP_TENURE_BAND, 
-        TERM_RATE, 
+        EMP_TENURE_BAND,
+        TERM_RATE,
         COMP_RAISE_PCT,
         NEW_HIRE_TERM_RATE
     ]
     logger.info(f"Checking for required_cols (using constant values): {required_cols}")
     logger.info(f"Current df.columns for check: {df.columns.tolist()}")
-    
+
     missing_cols = [col for col in required_cols if col not in df.columns]
-    
+
     if missing_cols:
         logger.error(f"Hazard table missing required columns AFTER RENAME AND VERIFICATION: {missing_cols}. Available columns: {df.columns.tolist()}")
         return pd.DataFrame()
@@ -204,13 +204,13 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
 
     # The DataFrame 'df' is now the result, no role expansion needed.
     result = df.copy() # Work on a copy to avoid SettingWithCopyWarning
-    
+
     # Ensure correct column types
     if SIMULATION_YEAR in result.columns:
         result[SIMULATION_YEAR] = result[SIMULATION_YEAR].astype(int)
     if EMP_LEVEL in result.columns:
         result[EMP_LEVEL] = result[EMP_LEVEL].astype(int)
-        
+
     # Standardize tenure bands to ensure consistent format
     if EMP_TENURE_BAND in result.columns:
         logger.info("Standardizing tenure band formats in hazard table")
@@ -224,7 +224,10 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     rate_columns = [TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT]
     for col in rate_columns:
         if col in result.columns:
-            result[col] = pd.to_numeric(result[col], errors='coerce').fillna(0.0)
+            # Use infer_objects before fillna to avoid downcasting warning
+            numeric_series = pd.to_numeric(result[col], errors='coerce')
+            inferred_series = numeric_series.infer_objects(copy=False)
+            result[col] = inferred_series.fillna(0.0)
             logger.info(f"Processed column '{col}': ensured numeric, NaNs filled with 0.0")
         else:
             logger.warning(f"Rate column '{col}' not found in hazard table. It might be optional or missing.")
@@ -233,11 +236,11 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
             # COLA_PCT might be optional.
 
     logger.info(f"Final processed hazard table has {len(result)} rows")
-    
+
     # Log the unique combinations in the processed hazard table
     if EMP_LEVEL in result.columns and EMP_TENURE_BAND in result.columns:
         unique_combos = result[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates()
         logger.info(f"Processed hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations")
         logger.debug(f"Unique combinations: {unique_combos.to_dict('records')}")
-    
+
     return result

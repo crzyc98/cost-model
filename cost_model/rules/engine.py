@@ -73,15 +73,16 @@ except ImportError as e:
         pass
 
 
-# Import common elements from utils (absolute path from package root)
-from cost_model.utils.columns import (
+# Import common elements from state schema (centralized constants)
+from cost_model.state.schema import (
     STATUS_COL,
     EMP_TERM_DATE,
     EMP_DEFERRAL_RATE,
     IS_ELIGIBLE,
     ELIGIBILITY_ENTRY_DATE,
+    ACTIVE_STATUS,
+    INACTIVE_STATUS,
 )
-from cost_model.utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -192,13 +193,32 @@ def apply_rules_for_year(
 
     # Safely get IRS limits (assuming it's a dict keyed by year: {2024: {...}, 2025: {...}})
     # Expecting irs_limits to be an attribute of plan_rules_config
-    irs_limits_all_years = getattr(plan_rules_config, "irs_limits", {})
-    # No need to get specific year here, contributions.apply expects the full dict
-    if not irs_limits_all_years or not isinstance(irs_limits_all_years, dict):
+    irs_limits_raw = getattr(plan_rules_config, "irs_limits", {})
+
+    # Convert raw dictionary IRS limits to IRSYearLimits model objects
+    # The contributions.apply function expects Dict[int, IRSYearLimits] not Dict[int, Dict[str, Any]]
+    irs_limits_all_years = {}
+    if irs_limits_raw and isinstance(irs_limits_raw, dict):
+        from ..config.models import IRSYearLimits
+
+        for year, limits_dict in irs_limits_raw.items():
+            if isinstance(limits_dict, dict):
+                try:
+                    # Convert dictionary to IRSYearLimits model
+                    irs_limits_all_years[year] = IRSYearLimits(**limits_dict)
+                    log.debug(f"Successfully converted IRS limits for year {year}: {limits_dict}")
+                except Exception as e:
+                    log.warning(f"Failed to convert IRS limits for year {year}: {e}. Skipping this year.")
+            elif hasattr(limits_dict, 'compensation_limit'):
+                # Already an IRSYearLimits object
+                irs_limits_all_years[year] = limits_dict
+            else:
+                log.warning(f"Invalid IRS limits format for year {year}: {type(limits_dict)}. Skipping this year.")
+
+    if not irs_limits_all_years:
         log.warning(
-            f"IRS limits missing or not a dictionary in plan_rules_config for {sim_year}. Contribution calculations might fail."
+            f"IRS limits missing or could not be converted for {sim_year}. Contribution calculations might fail."
         )
-        irs_limits_all_years = {}  # Provide empty dict to prevent downstream errors
 
     # === Status & Pre-processing ===
     # 1. Determine Active/Inactive Status based on termination date
