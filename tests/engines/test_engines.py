@@ -41,9 +41,9 @@ def make_hazard_slice_comp():
     # Distinct comp_raise_pct for each role/tenure
     return pd.DataFrame(
         [
-            {"role": "A", "tenure_band": "0-1", "comp_raise_pct": 0.03},
-            {"role": "B", "tenure_band": "1-3", "comp_raise_pct": 0.04},
-            {"role": "C", "tenure_band": "5+", "comp_raise_pct": 0.05},
+            {"role": "A", "tenure_band": "0-1", "comp_raise_pct": 0.03, "simulation_year": 2025},
+            {"role": "B", "tenure_band": "1-3", "comp_raise_pct": 0.04, "simulation_year": 2025},
+            {"role": "C", "tenure_band": "5+", "comp_raise_pct": 0.05, "simulation_year": 2025},
         ]
     )
 
@@ -72,7 +72,8 @@ def test_comp_bump_interface():
     snap = make_mini_snapshot()
     hazard = make_hazard_slice_comp()
     as_of = pd.Timestamp("2025-01-01")
-    result = comp.bump(snap, hazard, as_of)
+    rng = np.random.default_rng(42)
+    result = comp.bump(snap, hazard, as_of, rng)
     assert isinstance(result, list)
     assert len(result) == 1
     df = result[0]

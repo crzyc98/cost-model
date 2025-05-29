@@ -9,7 +9,7 @@ global_parameters:
   start_year: 2025
   log_level: DEBUG
   projection_years: 5
-  random_seed: 42
+  random_seed: 79
   days_into_year_for_cola: 182
   days_into_year_for_promotion: 182
   deterministic_termination: true

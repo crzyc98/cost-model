@@ -111,14 +111,18 @@ def run_one_year(
     all_events.extend(promotion_events)
     validator.validate(snapshot, "markov_promotions", year_context)
 
-    # Step 2: Hazard-based terminations (experienced only)
+    # Step 2: Compensation events (annual raises and COLA)
+    compensation_events = _generate_compensation_events(snapshot, year_context, logger)
+    all_events.extend(compensation_events)
+
+    # Step 3: Hazard-based terminations (experienced only)
     termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
         snapshot, year_context
     )
     all_events.extend(termination_events)
     validator.validate(snapshot, "experienced_terminations", year_context)
 
-    # Step 3: Hiring
+    # Step 4: Hiring
     # Extract the first termination events DataFrame if available
     term_events_for_hiring = None
     if termination_events and len(termination_events) > 0 and not termination_events[0].empty:
@@ -132,20 +136,20 @@ def run_one_year(
     all_events.extend(hiring_events)
     validator.validate(snapshot, "hiring", year_context)
 
-    # Step 4: New hire terminations
+    # Step 5: New hire terminations
     nh_termination_events, snapshot = termination_orchestrator.get_new_hire_termination_events(
         snapshot, year_context
     )
     all_events.extend(nh_termination_events)
     validator.validate(snapshot, "new_hire_terminations", year_context)
 
-    # Step 5: Apply contribution calculations and eligibility
+    # Step 6: Apply contribution calculations and eligibility
     snapshot = _apply_contribution_calculations(snapshot, year_context, logger)
 
-    # Step 6: Final validation
+    # Step 7: Final validation
     validator.validate_eoy(snapshot)
 
-    # Step 7: Consolidate and return events
+    # Step 8: Consolidate and return events
     new_events = _consolidate_events(all_events, event_log, year, logger)
 
     logger.info(
@@ -371,6 +375,57 @@ def _apply_contribution_calculations(
             snapshot_copy[IS_ELIGIBLE] = False
 
     return snapshot_copy
+
+
+def _generate_compensation_events(
+    snapshot: pd.DataFrame,
+    year_context: YearContext,
+    logger: logging.Logger
+) -> List[List[pd.DataFrame]]:
+    """
+    Generate comprehensive compensation events (annual raises and COLA) for active employees.
+
+    This function calls the bump() function from cost_model.engines.comp which generates
+    both EVT_COMP (standard raises) and EVT_COLA (cost of living adjustments) events.
+
+    Args:
+        snapshot: Current workforce snapshot
+        year_context: Year-specific context and parameters
+        logger: Logger instance
+
+    Returns:
+        List containing the event DataFrames from bump() function
+    """
+    logger.info("[STEP] Generating compensation events (annual raises and COLA)")
+
+    try:
+        # Import the comprehensive compensation function from comp engine
+        from cost_model.engines.comp import bump
+
+        # Generate both EVT_COMP and EVT_COLA events using the bump function
+        compensation_events = bump(
+            snapshot=snapshot,
+            hazard_slice=year_context.hazard_slice,
+            as_of=year_context.as_of,
+            rng=year_context.year_rng
+        )
+
+        # Log summary of generated events
+        total_events = sum(len(df) for df in compensation_events if not df.empty)
+        event_types = []
+        for df in compensation_events:
+            if not df.empty and 'event_type' in df.columns:
+                event_types.extend(df['event_type'].unique())
+
+        logger.info(f"[COMP] Generated {total_events} compensation events for year {year_context.year}")
+        logger.info(f"[COMP] Event types generated: {list(set(event_types))}")
+
+        return [compensation_events]
+
+    except Exception as e:
+        logger.error(f"[COMP] Error generating compensation events: {e}")
+        # Return empty events to maintain flow
+        return [[pd.DataFrame(columns=EVENT_COLS)]]
 
 
 def _consolidate_events(

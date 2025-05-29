@@ -13,11 +13,10 @@ from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_COMP
 from cost_model.state.schema import (
     EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE,
-    EMP_TENURE, EMP_TENURE_BAND
+    EMP_TENURE, EMP_TENURE_BAND, SIMULATION_YEAR
 )
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
-from cost_model.state.event_log import EVENT_COLS, EVT_COMP
-import logging
+from cost_model.engines.cola import cola
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ def bump(
     Apply the comp_raise_pct from hazard_slice for each active employee,
     and emit one DataFrame of compensation bump events adhering to EVENT_COLS.
     """
-    from cost_model.state.schema import EMP_TENURE
     # 1) Derive year and filter active
     year = int(hazard_slice["simulation_year"].iloc[0])
     as_of = pd.Timestamp(as_of)
@@ -91,12 +89,14 @@ def bump(
     df["value_num"]   = df["new_comp"]
     # keep pct / audit in JSON
     df["value_json"] = df.apply(lambda row: json.dumps({
-        "reason": "cola_bump",
+        "reason": "annual_raise",
         "pct": row["comp_raise_pct"],
         "old_comp": row["old_comp"],
         "new_comp": row["new_comp"]
     }), axis=1)
-    df["meta"] = df.apply(lambda row: f"COLA bump for {row[EMP_ID]}: {row['old_comp']} -> {row['new_comp']} (+{row['comp_raise_pct']*100:.2f}%)", axis=1)
+    df["meta"] = df.apply(lambda row: f"Annual raise for {row[EMP_ID]}: {row['old_comp']} -> {row['new_comp']} (+{row['comp_raise_pct']*100:.2f}%)", axis=1)
+    # Add simulation year for EVENT_COLS compliance
+    df[SIMULATION_YEAR] = year
     # Remove notes column if present
     if "notes" in df.columns:
         df = df.drop(columns=["notes"])
@@ -111,4 +111,74 @@ def bump(
 
     # Debug log: summary of bumps
     logger.debug(f"[COMP.BUMP] Applied {len(events)} comp bumps for year {year}. Pct range: {events['value_json'].apply(lambda x: json.loads(x)['pct']).min():.2%} to {events['value_json'].apply(lambda x: json.loads(x)['pct']).max():.2%}")
-    return [events]
+
+    # Generate COLA events and combine with standard raise events
+    cola_events_list = generate_cola_events(
+        snapshot=snapshot,
+        hazard_slice=hazard_slice,
+        as_of=as_of,
+        rng=rng
+    )
+
+    # Combine standard raise events with COLA events
+    all_events = [events] + cola_events_list
+    return all_events
+
+
+def generate_cola_events(
+    snapshot: pd.DataFrame,
+    hazard_slice: pd.DataFrame,
+    as_of: pd.Timestamp,
+    days_into_year: int = 0,
+    jitter_days: int = 0,
+    rng: np.random.Generator = None
+) -> List[pd.DataFrame]:
+    """
+    Generate COLA (Cost of Living Adjustment) events for active employees.
+
+    This function integrates the dedicated cola() function from cost_model.engines.cola
+    into the main compensation engine workflow.
+
+    Args:
+        snapshot: Current workforce snapshot
+        hazard_slice: Hazard table slice containing cola_pct
+        as_of: Base timestamp for COLA events
+        days_into_year: Days to add to as_of for COLA timing (default: 0)
+        jitter_days: Optional random jitter in days for event timing (default: 0)
+        rng: Random number generator for jitter (optional)
+
+    Returns:
+        List containing a single DataFrame of EVT_COLA events
+    """
+    logger.info(f"[COMP.COLA] Generating COLA events for year {int(hazard_slice['simulation_year'].iloc[0])}")
+
+    try:
+        # Call the dedicated cola function
+        cola_events = cola(
+            snapshot=snapshot,
+            hazard_slice=hazard_slice,
+            as_of=as_of,
+            days_into_year=days_into_year,
+            jitter_days=jitter_days,
+            rng=rng
+        )
+
+        # Log summary
+        if cola_events and len(cola_events) > 0 and not cola_events[0].empty:
+            events_df = cola_events[0]
+            cola_pct = float(hazard_slice["cola_pct"].iloc[0])
+            logger.info(f"[COMP.COLA] Generated {len(events_df)} COLA events with rate {cola_pct:.1%}")
+        else:
+            logger.info("[COMP.COLA] No COLA events generated (rate is 0% or no active employees)")
+
+        return cola_events
+
+    except KeyError as e:
+        if "cola_pct" in str(e):
+            logger.warning("[COMP.COLA] No cola_pct found in hazard_slice. Returning empty events.")
+            return [pd.DataFrame(columns=EVENT_COLS)]
+        else:
+            raise
+    except Exception as e:
+        logger.error(f"[COMP.COLA] Error generating COLA events: {e}")
+        return [pd.DataFrame(columns=EVENT_COLS)]
