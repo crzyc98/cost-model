@@ -101,6 +101,31 @@ plan_rules:
       deferral_limit: 23000
       catchup_limit: 7500
       catchup_eligibility_age: 50
+    2025:
+      compensation_limit: 350000
+      deferral_limit: 23500
+      catchup_limit: 7500
+      catchup_eligibility_age: 50
+    2026:
+      compensation_limit: 355000
+      deferral_limit: 24000
+      catchup_limit: 7500
+      catchup_eligibility_age: 50
+    2027:
+      compensation_limit: 360000
+      deferral_limit: 24500
+      catchup_limit: 7500
+      catchup_eligibility_age: 50
+    2028:
+      compensation_limit: 365000
+      deferral_limit: 25000
+      catchup_limit: 7500
+      catchup_eligibility_age: 50
+    2029:
+      compensation_limit: 370000
+      deferral_limit: 25500
+      catchup_limit: 7500
+      catchup_eligibility_age: 50
   behavioral_params:
     voluntary_enrollment_rate: 0.20
     voluntary_default_deferral: 0.05

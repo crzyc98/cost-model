@@ -24,10 +24,10 @@ class Tier(BaseModel):
 
 
 class MatchRule(BaseModel):
-    tiers: conlist(Tier, min_items=1)
+    tiers: conlist(Tier, min_length=1)
     dollar_cap: Optional[confloat(ge=0)] = None
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def check_tiers_increasing(cls, values):
         caps = [t.cap_deferral_pct for t in values.get("tiers", [])]
         if any(c2 <= c1 for c1, c2 in zip(caps, caps[1:])):
@@ -60,7 +60,7 @@ class OutcomeDistribution(BaseModel):
     prob_increase_to_match: confloat(ge=0, le=1)
     prob_increase_high: confloat(ge=0, le=1)
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def check_probabilities_sum_to_one(cls, values):
         total = sum(v for k, v in values.items() if k.startswith("prob_"))
         if not abs(total - 1.0) < 0.0001:

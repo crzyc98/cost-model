@@ -810,7 +810,84 @@ def build_enhanced_yearly_snapshot(
     # Step 7: Ensure simulation_year is set correctly
     yearly_snapshot[SIMULATION_YEAR] = simulation_year
 
-    # Step 7.5: Calculate tenure for ALL employees in the yearly snapshot
+    # Step 7.5: Apply contribution calculations to ALL employees in the yearly snapshot
+    # This ensures that both terminated and active employees have contribution values
+    logger.info(f"Applying contribution calculations to yearly snapshot for {simulation_year}")
+
+    # Ensure required columns exist before applying contributions
+    from cost_model.state.schema import EMP_BIRTH_DATE
+
+    # EMP_BIRTH_DATE should already exist from census data, but add default if missing
+    if EMP_BIRTH_DATE not in yearly_snapshot.columns:
+        # Use a default birth date (will result in age calculation issues, but prevents crashes)
+        yearly_snapshot[EMP_BIRTH_DATE] = pd.Timestamp("1980-01-01")
+        logger.warning(f"Added default {EMP_BIRTH_DATE} column to yearly snapshot - age calculations may be inaccurate")
+
+    # Check if contribution columns are missing for any employees
+    from cost_model.state.schema import EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH
+    contrib_cols = [EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH]
+
+    missing_contrib_mask = pd.Series(False, index=yearly_snapshot.index)
+    for col in contrib_cols:
+        if col in yearly_snapshot.columns:
+            missing_contrib_mask |= yearly_snapshot[col].isna()
+        else:
+            missing_contrib_mask = pd.Series(True, index=yearly_snapshot.index)
+            break
+
+    missing_contrib_count = missing_contrib_mask.sum()
+    if missing_contrib_count > 0:
+        logger.info(f"Found {missing_contrib_count} employees missing contribution calculations")
+
+        # Apply contribution calculations to the entire yearly snapshot
+        try:
+            # Import the contribution calculation function
+            from cost_model.rules.contributions import apply as apply_contributions
+            from cost_model.rules.validators import ContributionsRule, MatchRule, NonElectiveRule
+
+            # Get plan rules for contribution calculations (these should be available from the calling context)
+            # For now, use default rules - this should be passed in as a parameter in a future refactor
+            contrib_rules = ContributionsRule(enabled=True)
+            from cost_model.rules.validators import Tier
+            default_tier = Tier(match_rate=0.5, cap_deferral_pct=0.06)
+            match_rules = MatchRule(tiers=[default_tier], dollar_cap=None)
+            nec_rules = NonElectiveRule(rate=0.01)
+
+            # Create default IRS limits
+            irs_limits = {
+                simulation_year: {
+                    'compensation_limit': 350000,
+                    'deferral_limit': 23500,
+                    'catchup_limit': 7500,
+                    'catchup_eligibility_age': 50
+                }
+            }
+
+            # Apply contribution calculations
+            yearly_snapshot = apply_contributions(
+                df=yearly_snapshot,
+                contrib_rules=contrib_rules,
+                match_rules=match_rules,
+                nec_rules=nec_rules,
+                irs_limits=irs_limits,
+                simulation_year=simulation_year,
+                year_start=pd.Timestamp(f"{simulation_year}-01-01"),
+                year_end=pd.Timestamp(f"{simulation_year}-12-31")
+            )
+            logger.info(f"Successfully applied contribution calculations to yearly snapshot")
+
+        except Exception as e:
+            logger.warning(f"Error applying contribution calculations to yearly snapshot: {e}")
+            # Ensure contribution columns exist with defaults
+            for col in contrib_cols:
+                if col not in yearly_snapshot.columns:
+                    yearly_snapshot[col] = 0.0
+                else:
+                    yearly_snapshot[col] = yearly_snapshot[col].fillna(0.0)
+    else:
+        logger.info(f"All employees already have contribution calculations")
+
+    # Step 7.6: Calculate tenure for ALL employees in the yearly snapshot
     # This ensures that both terminated and active employees have proper tenure data
     from cost_model.state.snapshot.tenure import compute_tenure
 

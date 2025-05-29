@@ -1,3 +1,4 @@
+# cost_model/engines/run_one_year/orchestrator.py
 """
 Orchestrator module for run_one_year package.
 
@@ -15,7 +16,7 @@ from cost_model.state.event_log import EVENT_COLS, EVENT_PANDAS_DTYPES
 
 from cost_model.engines import hire
 from cost_model.state.snapshot import update as snapshot_update
-from cost_model.state.schema import EMP_ID, SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, EMP_GROSS_COMP
+from cost_model.state.schema import EMP_ID, SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_ROLE, EMP_ACTIVE
 from cost_model.utils.tenure_utils import standardize_tenure_band
 
 # Import submodules
@@ -55,10 +56,10 @@ def run_one_year(
 
     # --- 1. Initialization and validation ---
     as_of = pd.Timestamp(f"{year}-01-01")
-    
+
     # Get diagnostic logger for non-critical messages
     diag_logger = get_diagnostic_logger(__name__)
-    
+
     # Add diagnostics for EMP_LEVEL before ensure_snapshot_cols
     diag_logger.debug(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before ensure_snapshot_cols:")
     if EMP_LEVEL in prev_snapshot.columns:
@@ -70,9 +71,9 @@ def run_one_year(
             diag_logger.debug(f"  Level distribution before ensure_snapshot_cols: {level_counts}")
     else:
         diag_logger.warning(f"{EMP_LEVEL} column not found in prev_snapshot before ensure_snapshot_cols")
-    
+
     prev_snapshot = ensure_snapshot_cols(prev_snapshot)
-    
+
     # Add diagnostics for EMP_LEVEL after ensure_snapshot_cols
     diag_logger.debug(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After ensure_snapshot_cols:")
     diag_logger.debug(f"  post-ensure_snapshot_cols['{EMP_LEVEL}'] NA count: {prev_snapshot[EMP_LEVEL].isna().sum()}")
@@ -114,7 +115,7 @@ def run_one_year(
         global_params=global_params        # <-- pass through so dev_mode is honoured
     )
     logger.info(f"[MARKOV] Promotions: {len(promotions_df)}, Raises: {len(raises_df)}, Exits: {len(exited_df)}")
-    
+
     # Get survivors after markov promotions/exits
     exited_emp_ids = set(exited_df[EMP_ID].unique())
     survivors_after_markov = prev_snapshot[~prev_snapshot[EMP_ID].isin(exited_emp_ids)].copy()
@@ -124,20 +125,20 @@ def run_one_year(
     # Only process experienced employees (not new hires)
     experienced_mask = survivors_after_markov['employee_hire_date'] < pd.Timestamp(f"{year}-01-01")
     experienced = survivors_after_markov[experienced_mask].copy()
-    
+
     # Filter hazard table by year for termination engines
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
-    
+
     # CRITICAL FIX: Standardize tenure band formats to ensure consistent matching
     # Standardize both experienced employees and hazard slice tenure bands
     if EMP_TENURE_BAND in experienced.columns:
         experienced[EMP_TENURE_BAND] = experienced[EMP_TENURE_BAND].apply(standardize_tenure_band)
         logger.info(f"[TERM STANDARDIZATION] Standardized employee tenure bands: {experienced[EMP_TENURE_BAND].unique().tolist()}")
-    
+
     if EMP_TENURE_BAND in hz_slice.columns:
         hz_slice[EMP_TENURE_BAND] = hz_slice[EMP_TENURE_BAND].apply(standardize_tenure_band)
         logger.info(f"[TERM STANDARDIZATION] Standardized hazard slice tenure bands: {hz_slice[EMP_TENURE_BAND].unique().tolist()}")
-    
+
     # Run hazard-based terminations
     term_event_dfs = term.run(
         snapshot=experienced,
@@ -152,7 +153,7 @@ def run_one_year(
         term_events[SIMULATION_YEAR] = year
     if not comp_events.empty and SIMULATION_YEAR not in comp_events.columns:
         comp_events[SIMULATION_YEAR] = year
-    
+
     logger.info(f"[TERM] Terminations: {len(term_events)}, Prorated comp events: {len(comp_events)}")
     # Remove terminated employees from survivors
     # Ensure EMP_ID column exists before trying to access it
@@ -175,17 +176,17 @@ def run_one_year(
     logger.info("[STEP] Generate/apply hires")
     # Filter hazard table by year to ensure correct matching
     hz_slice = hazard_table[hazard_table['simulation_year'] == year].drop_duplicates([EMP_LEVEL, EMP_TENURE_BAND])
-    
+
     # CRITICAL FIX: Standardize tenure band formats for hiring, just as we did for terminations
     # Standardize both survivor snapshot and hazard slice tenure bands
     if EMP_TENURE_BAND in survivors_after_term.columns:
         survivors_after_term[EMP_TENURE_BAND] = survivors_after_term[EMP_TENURE_BAND].apply(standardize_tenure_band)
         logger.info(f"[HIRE STANDARDIZATION] Standardized survivor tenure bands: {survivors_after_term[EMP_TENURE_BAND].unique().tolist()}")
-    
+
     if EMP_TENURE_BAND in hz_slice.columns:
         hz_slice[EMP_TENURE_BAND] = hz_slice[EMP_TENURE_BAND].apply(standardize_tenure_band)
         logger.info(f"[HIRE STANDARDIZATION] Standardized hazard slice tenure bands: {hz_slice[EMP_TENURE_BAND].unique().tolist()}")
-    
+
     hires_result = hire.run(
         snapshot=survivors_after_term,
         hires_to_make=gross_hires,  # Use gross_hires to account for expected new hire terminations
@@ -195,7 +196,7 @@ def run_one_year(
         global_params=global_params,
         terminated_events=term_events
     )
-    
+
     # The run function returns a list with hire events and comp events
     hires_events = hires_result[0] if hires_result and not hires_result[0].empty else pd.DataFrame()
     hires_comp_events = hires_result[1] if len(hires_result) > 1 and not hires_result[1].empty else pd.DataFrame()
@@ -211,13 +212,13 @@ def run_one_year(
                 logger.warning(
                     f"Dropped {original_hire_count - len(hires_events)} hire events with NA '{EMP_ID}'."
                 )
-        
+
         if not hires_events.empty and SIMULATION_YEAR not in hires_events.columns:
             hires_events[SIMULATION_YEAR] = year
-            
+
     if not hires_comp_events.empty and SIMULATION_YEAR not in hires_comp_events.columns:
         hires_comp_events[SIMULATION_YEAR] = year
-        
+
     logger.info(f"[HIRES] Processed {len(hires_events)} new hires after validation. Corresponding comp events: {len(hires_comp_events)}")
 
     # --- 7. Update snapshot with hires ---
@@ -237,7 +238,7 @@ def run_one_year(
 
         # Create a DataFrame with the new hires
         logger.info(f"Generated {len(hires_events)} new hire events for year {year}")
-        
+
         # Ensure employee_id from hires_events is explicitly handled as strings
         employee_ids_for_new_hires = hires_events[EMP_ID]
         if employee_ids_for_new_hires.dtype == 'object': # If it's object, it might contain Nones
@@ -250,13 +251,13 @@ def run_one_year(
             employee_ids_for_new_hires = employee_ids_for_new_hires.fillna("<NA>")
         else: # For other dtypes, just ensure string conversion
             employee_ids_for_new_hires = employee_ids_for_new_hires.astype(str)
-        
+
         # Extract compensation from value_json if available
         compensation_values = []
         for idx, row in hires_events.iterrows():
             # First try to get compensation from value_num (which might be None)
             comp_value = row.get('value_num')
-            
+
             # If value_num is None, try to extract compensation from value_json
             if pd.isna(comp_value) and 'value_json' in row:
                 try:
@@ -265,15 +266,15 @@ def run_one_year(
                         value_json = json.loads(row['value_json'])
                     else:
                         value_json = row['value_json']  # Might already be a dict
-                        
+
                     # Extract compensation from the parsed JSON
                     if isinstance(value_json, dict) and 'compensation' in value_json:
                         comp_value = float(value_json['compensation'])
                 except (json.JSONDecodeError, TypeError, ValueError) as e:
                     logger.warning(f"Failed to extract compensation from value_json for hire event {row.get(EMP_ID, 'unknown')}: {str(e)}")
-            
+
             compensation_values.append(comp_value)
-        
+
         # Define a helper function to extract level from value_json
         def extract_level_from_hire_event(row):
             """Extract the employee level from a hire event row's value_json."""
@@ -287,7 +288,7 @@ def run_one_year(
                             return None
                     else:
                         value_json = row['value_json']  # Already a dict
-                        
+
                     # Extract level from 'role' field (this is where hire.py stores the level)
                     if isinstance(value_json, dict) and 'role' in value_json:
                         level = value_json['role']
@@ -306,7 +307,7 @@ def run_one_year(
             # Sample the first few hire events to understand their structure
             sample_row = hires_events.iloc[0]
             diag_logger.debug(f"[ORCHESTRATOR YR={year}] Sample hire event columns: {sample_row.index.tolist()}")
-            
+
             # Examine value_json content
             if 'value_json' in sample_row:
                 try:
@@ -328,12 +329,12 @@ def run_one_year(
         diag_logger.info(f"[ORCHESTRATOR YR={year}] Successfully extracted levels for {extracted_count} out of {len(hires_events)} new hires")
         if extracted_count < len(hires_events):
             logger.warning(f"[ORCHESTRATOR YR={year}] Using default level 1 for {len(hires_events) - extracted_count} new hires without extractable levels")
-            
+
         if not hires_events.empty:
             # Show sample of extracted values
             sample_levels = extracted_levels.head(3).tolist()
             diag_logger.debug(f"[ORCHESTRATOR YR={year}] Sample of extracted levels: {sample_levels}")
-        
+
         # Construct the new_hires DataFrame for the snapshot
         new_hires_data = {
             EMP_ID: employee_ids_for_new_hires, # Use the sanitized Series
@@ -351,7 +352,7 @@ def run_one_year(
             'exited': False,
             'simulation_year': year
         }
-        
+
         # Try to get birth date and role from meta if available
         if 'meta' in hires_events.columns:
             new_hires_data['employee_birth_date'] = hires_events['meta'].apply(
@@ -360,29 +361,29 @@ def run_one_year(
             new_hires_data['employee_role'] = hires_events['meta'].apply(
                 lambda x: safe_get_meta(x, 'role', 'UNKNOWN')
             )
-        
+
         # Create the new_hires DataFrame and set the index to employee_id while keeping it as a column
         new_hires = pd.DataFrame(new_hires_data)
-        
+
         # Check for and fix missing compensation values
         missing_comp_mask = new_hires[EMP_GROSS_COMP].isna()
         if missing_comp_mask.any():
             missing_count = missing_comp_mask.sum()
             logger.warning(f"Found {missing_count} new hires with missing compensation. Assigning default compensation values.")
-            
+
             # Set default compensation based on role if available, otherwise use a reasonable default
             role_comp_defaults = getattr(global_params, 'compensation', {})
             if hasattr(role_comp_defaults, 'new_hire') and hasattr(role_comp_defaults.new_hire, 'comp_base_salary'):
                 default_comp = role_comp_defaults.new_hire.comp_base_salary
             else:
                 default_comp = 50000.0  # Fallback default
-                
+
             logger.info(f"Using default compensation of {default_comp} for new hires with missing values")
             new_hires.loc[missing_comp_mask, EMP_GROSS_COMP] = default_comp
-        
+
         # Don't drop employee_id column when setting index (key difference!)
         new_hires = new_hires.set_index(EMP_ID, drop=False)
-        
+
         # Concatenate new hires with survivors
         # Ensure indices are compatible (both should be EMP_ID)
         # If survivors_after_term.index.name is not EMP_ID, it needs to be set.
@@ -402,7 +403,7 @@ def run_one_year(
             # For now, new_hires will overwrite, which might be desired if re-hiring.
 
         snapshot_with_hires = pd.concat([survivors_after_term, new_hires], sort=False) # sort=False is typical
-        
+
         # Diagnostic logging for snapshot_with_hires right after concatenation
         if not snapshot_with_hires.empty:
             diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After snapshot_with_hires creation (concat):")
@@ -414,7 +415,7 @@ def run_one_year(
                     # Check if there are any new hires with NA levels
                     if 'job_level_source' in snapshot_with_hires.columns:
                         new_hire_level_na = snapshot_with_hires[
-                            (snapshot_with_hires['employee_level'].isna()) & 
+                            (snapshot_with_hires['employee_level'].isna()) &
                             (snapshot_with_hires['job_level_source'] == 'new_hire')
                         ]
                         logger.warning(f"  Number of new hires with NA levels: {len(new_hire_level_na)}")
@@ -427,10 +428,10 @@ def run_one_year(
                 diag_logger.debug(f"  Level distribution in snapshot_with_hires: {level_counts}")
             else:
                 logger.warning(f"  'employee_level' column not found in snapshot_with_hires! Columns: {snapshot_with_hires.columns.tolist()}")
-        
+
         # Add new hire events to the list of all events for the year
         all_new_events_list.append(hires_events)
-        
+
         # Diagnostic logging for new_hires DataFrame
         if not new_hires.empty:
             diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] After new_hires DataFrame creation:")
@@ -446,7 +447,7 @@ def run_one_year(
                 diag_logger.debug(f"  Level distribution in new_hires: {level_counts}")
             else:
                 logger.warning(f"  'employee_level' column not found in new_hires! Columns: {new_hires.columns.tolist()}")
-                
+
             # Also check EMP_ID column
             if EMP_ID in new_hires.columns:
                 na_sum_new_hires = new_hires[EMP_ID].isna().sum()
@@ -467,15 +468,15 @@ def run_one_year(
             return emp_id is not None and not pd.isna(emp_id) and str(emp_id).strip() != ''
         except Exception:
             return False
-            
+
     # Ensure EMP_ID is a column and not part of the index
     if EMP_ID in snapshot_with_hires.index.names and EMP_ID not in snapshot_with_hires.columns:
         snapshot_with_hires = snapshot_with_hires.reset_index(level=EMP_ID)
-    
+
     # Create a mask for valid employee IDs
     valid_mask = snapshot_with_hires[EMP_ID].apply(is_valid_employee_id)
     invalid_count = len(snapshot_with_hires) - sum(valid_mask)
-    
+
     if invalid_count > 0:
         logger.warning(
             f"Found {invalid_count} records with invalid employee IDs in snapshot_with_hires. "
@@ -493,30 +494,30 @@ def run_one_year(
     if missing_comp_mask.any():
         missing_count = missing_comp_mask.sum()
         logger.warning(f"Found {missing_count} employees with missing compensation in final snapshot. Will assign default values.")
-        
+
         # Get the relevant employees and log some details for debugging
         missing_comp_df = snapshot_with_hires.loc[missing_comp_mask, [EMP_ID, EMP_HIRE_DATE, EMP_ROLE]].copy()
         if not missing_comp_df.empty:
             missing_comp_df[EMP_HIRE_DATE] = missing_comp_df[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
             for _, row in missing_comp_df.head(5).iterrows():
                 logger.warning(f"Employee {row[EMP_ID]} (hired {row[EMP_HIRE_DATE]}, role {row[EMP_ROLE]}) is missing compensation data")
-            
+
             if len(missing_comp_df) > 5:
                 logger.warning(f"... and {len(missing_comp_df) - 5} more employees with missing compensation")
-        
+
         # Assign default compensation based on role if available, otherwise use a reasonable default
         role_comp_defaults = getattr(global_params, 'compensation', {})
         if hasattr(role_comp_defaults, 'new_hire') and hasattr(role_comp_defaults.new_hire, 'comp_base_salary'):
             default_comp = role_comp_defaults.new_hire.comp_base_salary
         else:
             default_comp = 50000.0  # Fallback default
-            
+
         logger.info(f"Using default compensation of {default_comp} for employees with missing values")
         snapshot_with_hires.loc[missing_comp_mask, EMP_GROSS_COMP] = default_comp
 
     # --- 8. Run new-hire termination ---
     logger.info("[STEP] Deterministic new-hire terminations")
-    
+
     # Diagnostic logging before new hire termination
     if not snapshot_with_hires.empty:
         diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Before new-hire termination:")
@@ -531,7 +532,7 @@ def run_one_year(
                     level_na_by_source = snapshot_with_hires[snapshot_with_hires['employee_level'].isna()]\
                         .groupby('job_level_source', dropna=False).size().to_dict()
                     logger.warning(f"  NA levels by job_level_source: {level_na_by_source}")
-                    
+
                 # Check tenure of employees with NA levels
                 if 'employee_tenure_band' in snapshot_with_hires.columns:
                     level_na_by_tenure = snapshot_with_hires[snapshot_with_hires['employee_level'].isna()]\
@@ -539,17 +540,177 @@ def run_one_year(
                     logger.warning(f"  NA levels by tenure band: {level_na_by_tenure}")
         else:
             logger.warning(f"  'employee_level' column not found in pre-termination snapshot! Columns: {snapshot_with_hires.columns.tolist()}")
-    
+
     from cost_model.engines.nh_termination import run_new_hires
     nh_term_events, nh_term_comp_events = run_new_hires(snapshot_with_hires, hz_slice, year_rng, year, deterministic=True)
     terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
     final_snapshot = snapshot_with_hires.loc[~snapshot_with_hires.index.isin(terminated_ids)]
     logger.info(f"[NH-TERM] Terminated {len(terminated_ids)} new hires")
 
+    # --- 8.5. Apply contribution calculations and eligibility to final snapshot ---
+    logger.info("[STEP] Apply contribution calculations and eligibility to final snapshot")
+
+    # Ensure required columns exist before applying contributions
+    from cost_model.state.schema import EMP_BIRTH_DATE, EMP_STATUS_EOY, ACTIVE_STATUS
+
+    # Add EMP_STATUS_EOY if missing (determine from active status)
+    if EMP_STATUS_EOY not in final_snapshot.columns:
+        final_snapshot[EMP_STATUS_EOY] = final_snapshot.get(EMP_ACTIVE, True).map({True: ACTIVE_STATUS, False: "Terminated"})
+        logger.info(f"Added {EMP_STATUS_EOY} column based on active status")
+
+    # EMP_BIRTH_DATE should already exist from census data, but add default if missing
+    if EMP_BIRTH_DATE not in final_snapshot.columns:
+        # Use a default birth date (will result in age calculation issues, but prevents crashes)
+        final_snapshot[EMP_BIRTH_DATE] = pd.Timestamp("1980-01-01")
+        logger.warning(f"Added default {EMP_BIRTH_DATE} column - age calculations may be inaccurate")
+
+    # Apply contribution calculations to the final snapshot
+    from cost_model.rules.contributions import apply as apply_contributions
+    from cost_model.state.schema import EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH, IS_ELIGIBLE
+    from cost_model.rules.validators import ContributionsRule, MatchRule, NonElectiveRule
+    from types import SimpleNamespace
+
+    def namespace_to_dict(obj):
+        """Recursively convert SimpleNamespace objects to dictionaries."""
+        if isinstance(obj, SimpleNamespace):
+            return {k: namespace_to_dict(v) for k, v in vars(obj).items()}
+        elif isinstance(obj, list):
+            return [namespace_to_dict(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {k: namespace_to_dict(v) for k, v in obj.items()}
+        else:
+            return obj
+
+    # Get contribution rules from plan_rules and convert to Pydantic models
+    # Handle both dict and SimpleNamespace plan_rules
+    if isinstance(plan_rules, SimpleNamespace):
+        contrib_config = getattr(plan_rules, 'contributions', {})
+        match_config = getattr(plan_rules, 'employer_match', {})
+        nec_config = getattr(plan_rules, 'employer_nec', {})  # Note: 'employer_nec' not 'non_elective'
+        irs_limits = getattr(plan_rules, 'irs_limits', {})
+    else:
+        contrib_config = plan_rules.get('contributions', {})
+        match_config = plan_rules.get('employer_match', {})
+        nec_config = plan_rules.get('employer_nec', {})  # Note: 'employer_nec' not 'non_elective'
+        irs_limits = plan_rules.get('irs_limits', {})
+
+    # Convert SimpleNamespace objects to dictionaries for Pydantic model instantiation
+    contrib_config = namespace_to_dict(contrib_config)
+    match_config = namespace_to_dict(match_config)
+    nec_config = namespace_to_dict(nec_config)
+    irs_limits = namespace_to_dict(irs_limits)
+
+    # Special handling for IRS limits: convert _YYYY keys to integer YYYY keys
+    if isinstance(irs_limits, dict):
+        converted_irs_limits = {}
+        for key, value in irs_limits.items():
+            if isinstance(key, str) and key.startswith('_') and key[1:].isdigit():
+                # Convert _2024 -> 2024
+                year_key = int(key[1:])
+                converted_irs_limits[year_key] = value
+            elif isinstance(key, (int, str)) and str(key).isdigit():
+                # Handle direct year keys like 2024 or "2024"
+                converted_irs_limits[int(key)] = value
+            else:
+                # Keep other keys as-is
+                converted_irs_limits[key] = value
+        irs_limits = converted_irs_limits
+
+    logger.debug(f"Configuration types after conversion:")
+    logger.debug(f"  contrib_config: {type(contrib_config)} = {contrib_config}")
+    logger.debug(f"  match_config: {type(match_config)} = {match_config}")
+    logger.debug(f"  nec_config: {type(nec_config)} = {nec_config}")
+    logger.debug(f"  irs_limits: {type(irs_limits)} = {irs_limits}")
+
+    # Create Pydantic model instances with proper defaults
+    try:
+        contrib_rules = ContributionsRule(**contrib_config) if contrib_config else ContributionsRule(enabled=True)
+
+        # Handle match rules - need at least one tier for validation
+        if match_config and match_config.get('tiers'):
+            match_rules = MatchRule(**match_config)
+        else:
+            # Create a default tier with 0% match to satisfy validation
+            from cost_model.rules.validators import Tier
+            default_tier = Tier(match_rate=0.0, cap_deferral_pct=0.01)  # Minimal tier
+            match_rules = MatchRule(tiers=[default_tier], dollar_cap=None)
+
+        nec_rules = NonElectiveRule(**nec_config) if nec_config else NonElectiveRule(rate=0.0)
+
+        logger.debug(f"Created rule objects: contrib_rules={contrib_rules}, match_rules={match_rules}, nec_rules={nec_rules}")
+        logger.debug(f"IRS limits available for years: {list(irs_limits.keys())}")
+
+    except Exception as e:
+        logger.warning(f"Error creating rule objects: {e}. Using defaults.")
+        contrib_rules = ContributionsRule(enabled=True)
+        # Create default match rule with minimal tier
+        from cost_model.rules.validators import Tier
+        default_tier = Tier(match_rate=0.0, cap_deferral_pct=0.01)
+        match_rules = MatchRule(tiers=[default_tier], dollar_cap=None)
+        nec_rules = NonElectiveRule(rate=0.0)
+
+    # Apply contribution calculations
+    try:
+        final_snapshot = apply_contributions(
+            df=final_snapshot,
+            contrib_rules=contrib_rules,
+            match_rules=match_rules,
+            nec_rules=nec_rules,
+            irs_limits=irs_limits,
+            simulation_year=year,
+            year_start=pd.Timestamp(f"{year}-01-01"),
+            year_end=pd.Timestamp(f"{year}-12-31")
+        )
+        logger.info(f"Applied contribution calculations to {len(final_snapshot)} employees")
+    except Exception as e:
+        logger.warning(f"Error applying contribution calculations: {e}")
+        # Ensure contribution columns exist with defaults
+        for col in [EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH]:
+            if col not in final_snapshot.columns:
+                final_snapshot[col] = 0.0
+
+    # Apply eligibility determination
+    try:
+        # Get eligibility config from plan_rules or use defaults
+        min_age = plan_rules.get('min_age', 21)
+        min_service_months = plan_rules.get('min_service_months', 0)
+
+        # Calculate eligibility for each employee
+        from cost_model.utils.date_utils import calculate_age
+
+        # Initialize eligibility column
+        final_snapshot[IS_ELIGIBLE] = False
+
+        # Calculate eligibility for each employee
+        for idx, row in final_snapshot.iterrows():
+            birth_date = row.get('employee_birth_date')
+            hire_date = row.get('employee_hire_date')
+
+            if pd.notna(birth_date) and pd.notna(hire_date):
+                # Calculate age at end of year
+                eoy_date = pd.Timestamp(f"{year}-12-31")
+                age = calculate_age(birth_date, eoy_date)
+
+                # Calculate service in months
+                service_months = (eoy_date.year - hire_date.year) * 12 + (eoy_date.month - hire_date.month)
+
+                # Check eligibility criteria
+                if age >= min_age and service_months >= min_service_months:
+                    final_snapshot.loc[idx, IS_ELIGIBLE] = True
+
+        eligible_count = final_snapshot[IS_ELIGIBLE].sum()
+        logger.info(f"Determined eligibility for {len(final_snapshot)} employees: {eligible_count} eligible")
+
+    except Exception as e:
+        logger.warning(f"Error determining eligibility: {e}")
+        # Ensure eligibility column exists with default
+        if IS_ELIGIBLE not in final_snapshot.columns:
+            final_snapshot.loc[:, IS_ELIGIBLE] = False
+
     # --- 9. Final snapshot + validation ---
     logger.info("[STEP] Final snapshot + validation")
     logger.info(f"[FINAL] Final headcount: {len(final_snapshot)}")
-    
+
     # Comprehensive diagnostic logging for final snapshot
     if not final_snapshot.empty:
         diag_logger.info(f"[ORCHESTRATOR DIAGNOSTIC YR={year}] Final snapshot analysis:")
@@ -557,31 +718,31 @@ def run_one_year(
             level_na_count = final_snapshot['employee_level'].isna().sum()
             diag_logger.debug(f"  Final snapshot['employee_level'] NA count: {level_na_count}")
             diag_logger.debug(f"  Final snapshot['employee_level'] dtype: {final_snapshot['employee_level'].dtype}")
-            
+
             # Detailed analysis if NA values exist
             if level_na_count > 0:
                 # Get sample of employees with NA levels
                 na_sample = final_snapshot[final_snapshot['employee_level'].isna()]
                 if not na_sample.empty:
                     logger.warning(f"  Sample of employee IDs with NA levels: {na_sample[EMP_ID].head().tolist()}")
-                    
+
                     # Check other important columns for these employees
                     if 'employee_hire_date' in na_sample.columns:
                         hire_year_counts = na_sample['employee_hire_date'].dt.year.value_counts().to_dict()
                         logger.warning(f"  Hire years for employees with NA levels: {hire_year_counts}")
-                        
+
                     if 'simulation_year' in na_sample.columns:
                         sim_year_counts = na_sample['simulation_year'].value_counts().to_dict()
                         logger.warning(f"  Simulation years for employees with NA levels: {sim_year_counts}")
-                    
+
                     if 'job_level_source' in na_sample.columns:
                         source_counts = na_sample['job_level_source'].value_counts(dropna=False).to_dict()
                         logger.warning(f"  Job level sources for employees with NA levels: {source_counts}")
-            
+
             # Show distribution of level values
             level_counts = final_snapshot['employee_level'].value_counts(dropna=False).to_dict()
             diag_logger.info(f"  Level distribution in final snapshot: {level_counts}")
-            
+
             # Check for any level=0 employees (possibly from demotions)
             if 0 in level_counts:
                 level0_count = level_counts[0]
@@ -591,10 +752,10 @@ def run_one_year(
 
     # --- 9. Aggregate event log ---
     logger.info("[STEP] Build event log")
-    
+
     # Initialize a list to collect all events
     events_to_concat = []
-    
+
     # Add each event type if it's not empty
     if not promotions_df.empty:
         logger.info(f"Adding {len(promotions_df)} promotion events")
@@ -621,14 +782,14 @@ def run_one_year(
         logger.info(f"Adding {len(nh_term_comp_events)} new hire compensation events")
         events_to_concat.append(nh_term_comp_events)
     # Removed duplicate append of nh_term_comp_events
-    
+
     # 1. Filter out empty DataFrames before concatenation
     non_empty_events = [df for df in events_to_concat if not df.empty]
-    
+
     # 1b. Pre-validation: Ensure all event DataFrames have required columns with proper types
     required_cols = ['event_time', 'event_type', EMP_ID]
     validated_events = []
-    
+
     for i, df in enumerate(non_empty_events):
         # Only proceed with validation if DataFrame has events
         if not df.empty:
@@ -639,70 +800,148 @@ def run_one_year(
                     logger.warning(f"DataFrame {i} is missing required column '{col}'. Skipping.")
                     is_valid = False
                     break
-                    
+
             # Check for NAs in required columns
             if is_valid:
                 for col in required_cols:
                     if df[col].isna().any():
                         na_count = df[col].isna().sum()
                         logger.warning(f"DataFrame {i} has {na_count} NA values in required column '{col}'. Fixing.")
-                        
+
                         # For event_time, fill with year timestamp
                         if col == 'event_time' and na_count > 0:
-                            df[col] = df[col].fillna(pd.Timestamp(f"{year}-01-01"))
-                            
+                            df.loc[:, col] = df[col].fillna(pd.Timestamp(f"{year}-01-01"))
+
                         # For event_type and employee_id, drop rows with NA values
                         if (col == 'event_type' or col == EMP_ID) and na_count > 0:
                             df = df.dropna(subset=[col])
-                
+
                 # Only add valid, non-empty DataFrames
                 if not df.empty:
                     validated_events.append(df)
-            
+
     # 2. Create this year's new events
-    if validated_events:
-        logger.info(f"Concatenating {len(validated_events)} validated event DataFrames for year {year}")
+    # Filter out genuinely empty DataFrames before concatenation
+    actual_valid_events = [df for df in validated_events if not df.empty]
+
+    if actual_valid_events:
+        logger.info(f"Concatenating {len(actual_valid_events)} validated event DataFrames for year {year}")
         try:
-            new_events = pd.concat(validated_events, ignore_index=True)
+            new_events = pd.concat(actual_valid_events, ignore_index=True)
             logger.info(f"Successfully created {len(new_events)} new events for year {year}")
         except Exception as e:
             logger.error(f"Error concatenating events for year {year}: {e}")
-            logger.debug(f"Event DataFrames being concatenated: {[df.shape for df in validated_events]}")
+            logger.debug(f"Event DataFrames being concatenated: {[df.shape for df in actual_valid_events]}")
             raise
     else:
         logger.warning(f"No valid event DataFrames to concatenate for year {year}")
         # Create an empty DataFrame with the correct columns and dtypes
-        new_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object) 
+        new_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object)
                                  for col, t in EVENT_PANDAS_DTYPES.items()})
-    
+
     # 2. Ensure all required columns are present in the new events
     for col in EVENT_COLS:
         if col not in new_events.columns:
-            new_events[col] = None
-    
-    # 3. Ensure proper data types for new events
-    for col, dtype in EVENT_PANDAS_DTYPES.items():
+            new_events.loc[:, col] = None
+
+    # 3. Ensure proper data types for new events with explicit extension dtype handling
+    for col, dtype_target in EVENT_PANDAS_DTYPES.items():
         if col in new_events.columns:
+            current_column_series = new_events[col]
+            current_dtype = current_column_series.dtype
+
             try:
-                new_events[col] = new_events[col].astype(dtype)
+                # Check if current dtype is a Pandas extension array
+                if pd.api.types.is_extension_array_dtype(current_dtype):
+                    logger.debug(f"Column '{col}' has extension dtype {current_dtype}, target: {dtype_target}")
+
+                    # Handle Float64Dtype -> float64 conversion
+                    if isinstance(current_dtype, pd.Float64Dtype) and str(dtype_target) == 'float64':
+                        # Explicitly convert pd.NA to np.nan for numpy float64
+                        new_events.loc[:, col] = current_column_series.to_numpy(dtype=np.float64, na_value=np.nan)
+                        logger.debug(f"Converted {col} from Float64Dtype to float64 with pd.NA -> np.nan")
+
+                    # Handle Float64Dtype -> Float64Dtype (no conversion needed)
+                    elif isinstance(current_dtype, pd.Float64Dtype) and isinstance(dtype_target, pd.Float64Dtype):
+                        # No conversion needed, types already match
+                        logger.debug(f"Column {col} already has correct Float64Dtype")
+
+                    # Handle Int32Dtype -> Int32Dtype (no conversion needed)
+                    elif isinstance(current_dtype, pd.Int32Dtype) and isinstance(dtype_target, pd.Int32Dtype):
+                        # No conversion needed, types already match
+                        logger.debug(f"Column {col} already has correct Int32Dtype")
+
+                    # Handle Int32Dtype -> int32 conversion (if target is numpy int)
+                    elif isinstance(current_dtype, pd.Int32Dtype) and str(dtype_target) == 'int32':
+                        # Convert to numpy int32, handling pd.NA appropriately
+                        # For integers, we need to decide how to handle NA - typically raise error or use sentinel
+                        if current_column_series.isna().any():
+                            logger.warning(f"Column {col} has NA values but target is numpy int32. Filling with -1 as sentinel.")
+                            new_events.loc[:, col] = current_column_series.fillna(-1).astype(np.int32)
+                        else:
+                            new_events.loc[:, col] = current_column_series.to_numpy(dtype=np.int32)
+                        logger.debug(f"Converted {col} from Int32Dtype to int32")
+
+                    # Handle StringDtype conversions
+                    elif isinstance(current_dtype, pd.StringDtype):
+                        if isinstance(dtype_target, pd.StringDtype):
+                            # No conversion needed
+                            logger.debug(f"Column {col} already has correct StringDtype")
+                        elif str(dtype_target) == 'object':
+                            # Convert StringDtype to object dtype
+                            new_events.loc[:, col] = current_column_series.astype('object')
+                            logger.debug(f"Converted {col} from StringDtype to object")
+                        else:
+                            # General conversion for StringDtype to other types
+                            new_events.loc[:, col] = current_column_series.astype(dtype_target)
+                            logger.debug(f"Converted {col} from StringDtype to {dtype_target}")
+
+                    # Handle other extension types with general conversion
+                    else:
+                        logger.debug(f"General extension type conversion for {col}: {current_dtype} -> {dtype_target}")
+                        new_events.loc[:, col] = current_column_series.astype(dtype_target)
+
+                else:
+                    # Standard (non-extension) dtype conversion
+                    logger.debug(f"Standard dtype conversion for {col}: {current_dtype} -> {dtype_target}")
+                    new_events.loc[:, col] = current_column_series.astype(dtype_target)
+
             except Exception as e:
-                logger.error(f"Failed to cast {col} to {dtype} for new events: {e}")
-    
+                logger.error(f"Failed to cast column '{col}' from {current_dtype} to {dtype_target}: {e}")
+                logger.error(f"Column '{col}' sample values: {current_column_series.head().tolist()}")
+
+                # For numeric target types, do NOT use risky string conversion fallback
+                if isinstance(dtype_target, (pd.Float64Dtype, pd.Int32Dtype)) or str(dtype_target) in ['float64', 'int32', 'int64', 'float32']:
+                    logger.error(f"Skipping risky string conversion for numeric target type {dtype_target}")
+                    # Let the error propagate or use a safe default
+                    continue
+
+                # For non-numeric types, string conversion might be acceptable as last resort
+                elif str(dtype_target) in ['object', 'string'] or isinstance(dtype_target, pd.StringDtype):
+                    try:
+                        logger.warning(f"Attempting string conversion fallback for {col}")
+                        new_events.loc[:, col] = current_column_series.astype(str).astype(dtype_target)
+                        logger.warning(f"String conversion fallback succeeded for {col}")
+                    except Exception as fallback_e:
+                        logger.error(f"String conversion fallback also failed for {col}: {fallback_e}")
+                else:
+                    logger.error(f"No safe fallback available for {col} with target type {dtype_target}")
+
     # 4. Ensure event_time is properly set for new events
     if 'event_time' in new_events.columns and new_events['event_time'].isna().any():
         logger.warning(f"Found NA values in event_time for new events, filling with current year {year}")
-        new_events['event_time'] = new_events['event_time'].fillna(pd.Timestamp(f"{year}-01-01"))
-    
+        new_events.loc[:, 'event_time'] = new_events['event_time'].fillna(pd.Timestamp(f"{year}-01-01"))
+
     # 5. Ensure event_type is properly set for new events
     if 'event_type' in new_events.columns and new_events['event_type'].isna().any():
         logger.warning("Found NA values in event_type for new events, dropping these events")
         new_events = new_events.dropna(subset=['event_type'])
-    
+
     # 6. Ensure employee_id is present for all new events
     if EMP_ID in new_events.columns and new_events[EMP_ID].isna().any():
         logger.warning(f"Found NA values in {EMP_ID} for new events, dropping these events")
         new_events = new_events.dropna(subset=[EMP_ID])
-    
+
     # 7. Ensure event_id is unique and present for all new events
     if 'event_id' in new_events.columns:
         if new_events['event_id'].isna().any():
@@ -711,41 +950,48 @@ def run_one_year(
             new_events.loc[mask, 'event_id'] = [str(uuid.uuid4()) for _ in range(mask.sum())]
     else:
         logger.warning("event_id column missing in new events, generating new event_ids")
-        new_events['event_id'] = [str(uuid.uuid4()) for _ in range(len(new_events))]
-    
+        new_events.loc[:, 'event_id'] = [str(uuid.uuid4()) for _ in range(len(new_events))]
+
     # 8. Ensure new events have all required columns in the correct order
     if not new_events.empty:
         new_events = new_events[EVENT_COLS]
-    
+
     # 9. Append new events to the incoming event log
     logger.info(f"Appending {len(new_events)} new events to the cumulative event log")
     if not event_log.empty:
         logger.info(f"Incoming event log has {len(event_log)} events")
-        cumulative_events = pd.concat([event_log, new_events], ignore_index=True)
+        # Filter out empty DataFrames before concatenation
+        dfs_to_concat = [df for df in [event_log, new_events] if not df.empty]
+        if dfs_to_concat:
+            cumulative_events = pd.concat(dfs_to_concat, ignore_index=True)
+        else:
+            # Create empty DataFrame with correct schema if both are empty
+            cumulative_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object)
+                                            for col, t in EVENT_PANDAS_DTYPES.items()})
     else:
         logger.info("No incoming event log, using new events as cumulative")
         cumulative_events = new_events
-    
+
     # 10. Sort all events by timestamp for chronological order
     if 'event_time' in cumulative_events.columns and not cumulative_events.empty:
         logger.info("Sorting events chronologically")
-        cumulative_events['event_time'] = pd.to_datetime(cumulative_events['event_time'], errors='coerce')
+        cumulative_events.loc[:, 'event_time'] = pd.to_datetime(cumulative_events['event_time'], errors='coerce')
         cumulative_events = cumulative_events.sort_values('event_time', ignore_index=True)
-    
+
     logger.info(f"[RUN_ONE_YEAR] Year {year} complete. Final headcount: {len(final_snapshot)}, "
                 f"New events: {len(new_events)}, Total events: {len(cumulative_events)}")
-    
+
     # Log some statistics about the new events
     if not new_events.empty:
         new_event_counts = new_events['event_type'].value_counts()
         logger.info(f"New event type counts for year {year}:\n{new_event_counts.to_string()}")
-    
+
     # Log some statistics about the cumulative events
     if not cumulative_events.empty:
         cumulative_event_counts = cumulative_events['event_type'].value_counts()
         logger.info(f"Cumulative event type counts (all years):\n{cumulative_event_counts.to_string()}")
-    
+
     logger.info(f"[RESULT] EOY={final_snapshot['active'].sum() if 'active' in final_snapshot.columns else 'unknown'} (target={target_eoy})")
-    
+
     # Return the cumulative event log and final snapshot
     return cumulative_events, final_snapshot

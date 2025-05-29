@@ -185,29 +185,7 @@ except ImportError:  # pragma: no cover
     EVT_CONTRIB = "EVT_CONTRIB"
     EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM"
 
-except ImportError:  # pragma: no cover
-    # Define all event types as fallback
-    EVT_HIRE = "EVT_HIRE"
-    EVT_TERM = "EVT_TERM"
-    EVT_COMP = "EVT_COMP"
-    EVT_COLA = "EVT_COLA"
-    EVT_PROMOTION = "EVT_PROMOTION"
-    EVT_RAISE = "EVT_RAISE"
-    EVT_CONTRIB = "EVT_CONTRIB"
-    EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM"
 
-    # Define remaining column constants as fallback
-    EMP_HIRE_DATE = "employee_hire_date"
-    EMP_BIRTH_DATE = "employee_birth_date"
-    EMP_GROSS_COMP = "employee_gross_compensation"
-    EMP_TERM_DATE = "employee_termination_date"
-    EMP_DEFERRAL_RATE = "employee_deferral_rate"
-    EMP_TENURE = "employee_tenure"
-    EMP_LEVEL = "employee_level"
-    EMP_LEVEL_SOURCE = "job_level_source"
-    EMP_ACTIVE = "active"
-    EMP_EXITED = "exited"
-    TERM_RATE = "term_rate"
 
 EVENT_COLS: List[str] = [
     "event_id",
@@ -264,6 +242,12 @@ SNAPSHOT_COLS: List[str] = [
     EMP_EXITED,
     EMP_STATUS_EOY,  # Employee status at end of year for yearly snapshots
     SIMULATION_YEAR,  # Ensure simulation_year is included in all snapshots
+    # Contribution columns required for summary metrics
+    EMP_CONTR,  # Employee contribution amount
+    EMPLOYER_CORE,  # Employer core contribution amount
+    EMPLOYER_MATCH,  # Employer match contribution amount
+    # Eligibility and participation columns
+    IS_ELIGIBLE,  # Employee eligibility status
 ]
 
 SNAPSHOT_DTYPES: dict[str, object] = {
@@ -288,6 +272,12 @@ SNAPSHOT_DTYPES: dict[str, object] = {
         ordered=False,
     ),
     SIMULATION_YEAR: 'int64',  # Use standard int64 for simulation year
+    # Contribution column types
+    EMP_CONTR: pd.Float64Dtype(),  # Employee contribution amount
+    EMPLOYER_CORE: pd.Float64Dtype(),  # Employer core contribution amount
+    EMPLOYER_MATCH: pd.Float64Dtype(),  # Employer match contribution amount
+    # Eligibility and participation column types
+    IS_ELIGIBLE: pd.BooleanDtype(),  # Employee eligibility status
 }
 
 __all__ = [
@@ -316,6 +306,15 @@ __all__ = [
     "EMP_EXITED",
     "EMP_STATUS_EOY",
     "SIMULATION_YEAR",
+    # contribution columns
+    "EMP_CONTR",
+    "EMPLOYER_CORE",
+    "EMPLOYER_MATCH",
+    "EMPLOYER_CORE_CONTRIB",
+    "EMPLOYER_MATCH_CONTRIB",
+    # eligibility columns
+    "IS_ELIGIBLE",
+    "IS_PARTICIPATING",
     # config defaults
     "TERM_RATE",
     "COMP_RAISE_PCT",
