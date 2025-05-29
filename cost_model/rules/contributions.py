@@ -185,7 +185,7 @@ def apply(
         )
 
     # Calculate days_worked based on the effective employment period within the year
-    df["days_worked"] = (
+    df.loc[:, "days_worked"] = (
         effective_end_date_in_year - effective_start_date_in_year
     ).dt.days + 1
 

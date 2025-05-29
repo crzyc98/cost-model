@@ -827,8 +827,23 @@ def run_one_year(
     if actual_valid_events:
         logger.info(f"Concatenating {len(actual_valid_events)} validated event DataFrames for year {year}")
         try:
-            new_events = pd.concat(actual_valid_events, ignore_index=True)
-            logger.info(f"Successfully created {len(new_events)} new events for year {year}")
+            # Filter out any DataFrames that might have become empty or all-NA during validation
+            # to prevent FutureWarning about concatenation with empty/all-NA entries
+            final_valid_events = []
+            for df in actual_valid_events:
+                if not df.empty and not df.isna().all().all():
+                    final_valid_events.append(df)
+                else:
+                    logger.debug(f"Skipping empty or all-NA DataFrame during concatenation")
+
+            if final_valid_events:
+                new_events = pd.concat(final_valid_events, ignore_index=True)
+                logger.info(f"Successfully created {len(new_events)} new events for year {year}")
+            else:
+                logger.warning(f"All event DataFrames were empty or all-NA after filtering")
+                # Create an empty DataFrame with the correct columns and dtypes
+                new_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object)
+                                         for col, t in EVENT_PANDAS_DTYPES.items()})
         except Exception as e:
             logger.error(f"Error concatenating events for year {year}: {e}")
             logger.debug(f"Event DataFrames being concatenated: {[df.shape for df in actual_valid_events]}")
@@ -904,7 +919,18 @@ def run_one_year(
                 else:
                     # Standard (non-extension) dtype conversion
                     logger.debug(f"Standard dtype conversion for {col}: {current_dtype} -> {dtype_target}")
-                    new_events.loc[:, col] = current_column_series.astype(dtype_target)
+
+                    # Handle FloatingArray -> float64 conversion specifically
+                    if hasattr(current_column_series, 'array') and hasattr(current_column_series.array, 'dtype'):
+                        array_dtype = current_column_series.array.dtype
+                        if hasattr(array_dtype, 'name') and 'Float' in str(array_dtype) and str(dtype_target) == 'float64':
+                            # Convert FloatingArray to numpy float64 with explicit NA handling
+                            new_events.loc[:, col] = current_column_series.to_numpy(dtype=np.float64, na_value=np.nan)
+                            logger.debug(f"Converted {col} from FloatingArray to float64 with pd.NA -> np.nan")
+                        else:
+                            new_events.loc[:, col] = current_column_series.astype(dtype_target)
+                    else:
+                        new_events.loc[:, col] = current_column_series.astype(dtype_target)
 
             except Exception as e:
                 logger.error(f"Failed to cast column '{col}' from {current_dtype} to {dtype_target}: {e}")
@@ -963,7 +989,18 @@ def run_one_year(
         # Filter out empty DataFrames before concatenation
         dfs_to_concat = [df for df in [event_log, new_events] if not df.empty]
         if dfs_to_concat:
-            cumulative_events = pd.concat(dfs_to_concat, ignore_index=True)
+            # Additional filtering to prevent FutureWarning about empty/all-NA entries
+            final_dfs_to_concat = []
+            for df in dfs_to_concat:
+                if not df.empty and not df.isna().all().all():
+                    final_dfs_to_concat.append(df)
+
+            if final_dfs_to_concat:
+                cumulative_events = pd.concat(final_dfs_to_concat, ignore_index=True)
+            else:
+                # Create empty DataFrame with correct schema if all are empty/all-NA
+                cumulative_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object)
+                                                for col, t in EVENT_PANDAS_DTYPES.items()})
         else:
             # Create empty DataFrame with correct schema if both are empty
             cumulative_events = pd.DataFrame({col: pd.Series(dtype=str(t) if t != 'object' else object)
