@@ -18,7 +18,7 @@ from cost_model.state.schema import (
 )
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
 from cost_model.utils.tenure_utils import standardize_tenure_band
-from ..utils import compute_headcount_targets
+from ..utils import compute_headcount_targets, manage_headcount_to_exact_target
 from .base import YearContext, safe_get_meta, filter_valid_employee_ids
 
 
@@ -27,10 +27,11 @@ class HiringOrchestrator:
     Orchestrates all hiring-related activities for a simulation year.
 
     This includes:
-    - Computing headcount targets based on growth and attrition
+    - Computing headcount targets based on exact growth targeting
     - Generating hire events through the hire engine
     - Creating new employee records in the snapshot
     - Handling compensation events for new hires
+    - Calculating forced terminations when survivors exceed targets
     """
 
     def __init__(self, logger: Optional[logging.Logger] = None):
@@ -41,6 +42,7 @@ class HiringOrchestrator:
             logger: Optional logger instance. If None, creates a new one.
         """
         self.logger = logger or logging.getLogger(__name__)
+        self._last_forced_terminations = 0  # Track forced terminations from last calculation
 
     def get_events(
         self,
@@ -64,15 +66,27 @@ class HiringOrchestrator:
         """
         self.logger.info("[STEP] Computing headcount targets and generating hires")
 
-        # Calculate headcount targets
-        start_count_calc, survivor_count, target_eoy, net_hires, gross_hires = self._compute_targets(
+        # Calculate headcount targets using exact targeting
+        start_count_calc, survivor_count, target_eoy, gross_hires, forced_terminations = self._compute_targets(
             snapshot, year_context, start_count
         )
 
         self.logger.info(
             f"[HIRING] Start: {start_count_calc}, Survivors: {survivor_count}, "
-            f"Net Hires: {net_hires}, Gross Hires: {gross_hires}, Target EOY: {target_eoy}"
+            f"Gross Hires: {gross_hires}, Forced Terms: {forced_terminations}, Target EOY: {target_eoy}"
         )
+
+        # Store forced terminations for access by main orchestrator
+        self._last_forced_terminations = forced_terminations
+
+        # Handle forced terminations if needed (when survivors exceed target)
+        if forced_terminations > 0:
+            self.logger.warning(
+                f"[HIRING] Exact targeting requires {forced_terminations} forced terminations "
+                f"from existing survivors to meet target. This should be handled by termination orchestrator."
+            )
+            # Note: Forced terminations should be handled by the termination orchestrator
+            # in the main run_one_year flow, not here in the hiring orchestrator
 
         if gross_hires <= 0:
             self.logger.info("[HIRING] No hires needed")
@@ -92,6 +106,18 @@ class HiringOrchestrator:
 
         return [hire_events, comp_events], updated_snapshot
 
+    def get_required_forced_terminations(self) -> int:
+        """
+        Get the number of forced terminations required from the last targeting calculation.
+
+        This should be called after get_events() to determine if additional terminations
+        are needed to meet the exact target.
+
+        Returns:
+            Number of forced terminations required from existing survivors
+        """
+        return self._last_forced_terminations
+
     def _compute_targets(
         self,
         snapshot: pd.DataFrame,
@@ -99,32 +125,61 @@ class HiringOrchestrator:
         start_count: Optional[int] = None
     ) -> Tuple[int, int, int, int, int]:
         """
-        Compute hiring targets based on growth parameters and attrition.
+        Compute hiring targets using exact headcount targeting logic.
 
         Args:
-            snapshot: Current workforce snapshot
+            snapshot: Current workforce snapshot (survivors after experienced terminations)
             year_context: Year-specific context
+            start_count: Number of employees at start of year (before any terminations)
 
         Returns:
-            Tuple of (start_count, survivor_count, target_eoy, net_hires, gross_hires)
+            Tuple of (start_count, survivor_count, target_eoy, gross_hires, forced_terminations)
         """
-        # Get parameters from global_params
+        # Get parameters from global_params with robust fallback logic
         target_growth = getattr(year_context.global_params, 'target_growth', 0.0)
-        nh_term_rate = getattr(year_context.global_params, 'new_hire_termination_rate', 0.0)
+
+        # Try multiple locations for new_hire_termination_rate (matching hazard.py logic)
+        nh_term_rate = 0.25  # Default fallback
+        if hasattr(year_context.global_params, 'attrition') and hasattr(year_context.global_params.attrition, 'new_hire_termination_rate'):
+            nh_term_rate = year_context.global_params.attrition.new_hire_termination_rate
+        elif hasattr(year_context.global_params, 'new_hire_termination_rate'):
+            nh_term_rate = year_context.global_params.new_hire_termination_rate
+        else:
+            self.logger.warning(
+                f"Could not find new_hire_termination_rate in global_params. "
+                f"Using default {nh_term_rate}. Available attributes: {dir(year_context.global_params)}"
+            )
 
         # Calculate counts
         survivor_count = snapshot[EMP_ACTIVE].sum() if EMP_ACTIVE in snapshot.columns else len(snapshot)
 
-        # Use provided start count or estimate it
+        # Validate start_count
         if start_count is None:
-            # Estimate start count (this is a simplification - ideally passed from caller)
-            start_count = int(survivor_count / (1 - 0.1))  # Assume ~10% attrition for estimation
+            self.logger.error("start_count is required for exact targeting but was not provided")
+            # Emergency fallback - estimate from survivors (this should not happen in normal flow)
+            start_count = int(survivor_count / (1 - 0.15))  # Assume ~15% experienced attrition
+            self.logger.warning(f"Using estimated start_count: {start_count}")
 
-        target_eoy, net_hires, gross_hires = compute_headcount_targets(
-            start_count, survivor_count, target_growth, nh_term_rate
+        # Calculate number of experienced terminations that occurred
+        num_markov_exits = start_count - survivor_count
+
+        # Use exact targeting logic
+        gross_hires, forced_terminations = manage_headcount_to_exact_target(
+            soy_actives=start_count,
+            target_growth_rate=target_growth,
+            num_markov_exits_existing=num_markov_exits,
+            new_hire_termination_rate=nh_term_rate
         )
 
-        return start_count, survivor_count, target_eoy, net_hires, gross_hires
+        # Calculate target EOY for logging
+        target_eoy = round(start_count * (1 + target_growth))
+
+        self.logger.info(
+            f"[EXACT TARGETING] SOY: {start_count}, Survivors: {survivor_count}, "
+            f"Target EOY: {target_eoy}, Gross hires: {gross_hires}, Forced terms: {forced_terminations}"
+        )
+
+        return start_count, survivor_count, target_eoy, gross_hires, forced_terminations
 
     def _generate_hire_events(
         self,

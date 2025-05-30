@@ -17,7 +17,7 @@ from typing import Optional
 # Configuration Loading & Access
 from cost_model.config.models import MainConfig, GlobalParameters # Needed for type hints
 from cost_model.config.accessors import get_scenario_config # Import the actual function
-from cost_model.utils.columns import EMP_ID, EMP_ROLE, EMP_TENURE_BAND
+from cost_model.utils.columns import EMP_ID, EMP_TENURE_BAND
 
 # Data I/O
 # TODO: Update these imports if readers/writers structure changes
@@ -146,10 +146,10 @@ def run_simulation(
     events = pd.DataFrame()
     # Build snapshot
     from cost_model.state.snapshot import build_full as snapmod_build_full
-    snap = snapmod_build_full(census_df, year)
-    # Patch in role and tenure_band if present using standardized names
+    snap = snapmod_build_full(census_df, start_year)
+    # Patch in tenure_band if present using standardized names
+    # Note: EMP_ROLE has been removed as part of schema refactoring
     col_map = {
-        EMP_ROLE: 'role',
         EMP_TENURE_BAND: EMP_TENURE_BAND
     }
     for std_col, census_col in col_map.items():

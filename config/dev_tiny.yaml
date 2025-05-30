@@ -70,7 +70,7 @@ global_parameters:
     use_expected_attrition: false
 
   new_hires:
-    new_hire_rate: 0.17
+    new_hire_rate: 0.06  # 6% hiring rate for more moderate growth
 
   # Onboarding parameters
   onboarding:

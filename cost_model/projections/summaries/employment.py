@@ -30,14 +30,27 @@ def make_yearly_status(prev_snap, eoy_snap, event_log, year):
     active_start = int(prev_snap['active'].sum())
     active_end = int(eoy_snap['active'].sum())
 
-    # Slice the log to this plan year
-    yr = event_log[pd.to_datetime(event_log['event_time']).dt.year == year]
+    # Use robust snapshot-based counting (same logic as make_yearly_summaries fix)
+    # Add hire year to end-of-year snapshot for cohort analysis
+    eoy_snap = eoy_snap.copy()
+    eoy_snap["hire_year"] = pd.to_datetime(eoy_snap["employee_hire_date"]).dt.year
 
-    hires = set(yr.loc[yr['event_type'] == EVT_HIRE, 'employee_id'])
-    term = yr.loc[yr['event_type'] == EVT_TERM]
-    nh_terms = term['employee_id'].isin(hires).sum()
-    experienced_terms = (~term['employee_id'].isin(hires)).sum()
-    nh_actives = len(hires) - nh_terms
+    # Identify current year hires (both active and terminated are in snapshot!)
+    is_curr_year_hire = eoy_snap["hire_year"] == year
+    curr_year_active = eoy_snap["active"] & is_curr_year_hire
+    curr_year_terminated = (~eoy_snap["active"]) & is_curr_year_hire
+
+    # Count from snapshot (ground truth)
+    nh_actives = int(curr_year_active.sum())
+    nh_terms = int(curr_year_terminated.sum())
+
+    # Calculate experienced terminations from events
+    if not event_log.empty:
+        yr = event_log[pd.to_datetime(event_log['event_time']).dt.year == year]
+        total_terms = int((yr['event_type'] == EVT_TERM).sum())
+        experienced_terms = max(0, total_terms - nh_terms)
+    else:
+        experienced_terms = 0
 
     # Import canonical column names from schema
     from cost_model.state.schema import SUMMARY_YEAR

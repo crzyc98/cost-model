@@ -3,14 +3,13 @@
 Handles computation of various metrics and summaries for the projection.
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 import pandas as pd
-from datetime import datetime
 
 from cost_model.state.schema import (
     EMP_ACTIVE, EMP_CONTR, EMP_DEFERRAL_RATE, EMP_LEVEL, EMP_TENURE_BAND,
     EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB, EVENT_TYPE,
-    EVT_HIRE, EVT_TERM, EVT_NEW_HIRE_TERM, EVT_CONTRIB, SIMULATION_YEAR, EMP_GROSS_COMP
+    EVT_HIRE, EVT_TERM, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_ID
 )
 
 
@@ -97,6 +96,37 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
     else:
         active_snapshot = snapshot.copy()
 
+    # ---------------------------------------------------------------------
+    # Cohort helpers - Robust counting logic
+    # ---------------------------------------------------------------------
+    # Add hire year to snapshot for cohort analysis
+    snapshot["hire_year"] = pd.to_datetime(snapshot[EMP_HIRE_DATE]).dt.year
+
+    # Identify current year hires (both active and terminated are in snapshot!)
+    is_curr_year_hire = snapshot["hire_year"] == year
+    curr_year_active = snapshot[EMP_ACTIVE] & is_curr_year_hire
+    curr_year_terminated = (~snapshot[EMP_ACTIVE]) & is_curr_year_hire
+
+    # All current year hires from snapshot (ground truth)
+    gross_hires = int(is_curr_year_hire.sum())
+
+    # Surviving hires from snapshot
+    nh_actives = int(curr_year_active.sum())
+
+    # Terminated new hires from snapshot
+    nh_terms = int(curr_year_terminated.sum())
+
+    # Calculate terminations from events
+    if not year_events.empty:
+        # Total terminations
+        total_term = int((year_events[EVENT_TYPE] == EVT_TERM).sum())
+
+        # Experienced terminations = all EVT_TERM minus NH-TERM
+        experienced_terms = max(0, total_term - nh_terms)
+    else:
+        total_term = 0
+        experienced_terms = 0
+
     # Core metrics with robust DataFrame handling
     try:
         # Debug log the snapshot structure
@@ -160,30 +190,18 @@ def make_yearly_summaries(snapshot: pd.DataFrame,
         actives_at_year_start = max(0, actives_at_year_end + terms_count - hires_count)
         logger.warning(f"start_headcount not provided, calculated as {actives_at_year_start} based on end + terms - hires")
 
-    # Gross hires = every EVT_HIRE event
-    hires = int((year_events[EVENT_TYPE] == EVT_HIRE).sum() if not year_events.empty else 0)
-
-    # New hire terminations are specifically EVT_NEW_HIRE_TERM
-    new_hire_terminations = int((year_events[EVENT_TYPE] == EVT_NEW_HIRE_TERM).sum() if not year_events.empty else 0)
-
-    # All terminations (includes regular and new hire terms)
-    terminations = int(((year_events[EVENT_TYPE] == EVT_TERM) | (year_events[EVENT_TYPE] == EVT_NEW_HIRE_TERM)).sum() if not year_events.empty else 0)
-
-    # How many of our hires survived
-    new_hire_actives = hires - new_hire_terminations
-
-    # Calculate experienced terminations (total terminations - new hire terminations)
-    experienced_terminations = max(0, terminations - new_hire_terminations)
+    # Use robust counting logic from cohort helpers above
+    # (All values already calculated: gross_hires, nh_terms, nh_actives, experienced_terms, total_term)
 
     employment_summary = {
         SUMMARY_YEAR: year,  # Use canonical year column name from schema
         "actives_at_year_start": actives_at_year_start,
         "actives_at_year_end": actives_at_year_end,
-        "terminations": terminations,
-        "new_hires": hires,
-        "new_hire_terminations": new_hire_terminations,
-        "new_hire_actives": new_hire_actives,
-        "experienced_terminations": experienced_terminations,
+        "terminations": total_term,
+        "new_hires": gross_hires,
+        "new_hire_terminations": nh_terms,
+        "new_hire_actives": nh_actives,
+        "experienced_terminations": experienced_terms,
         "by_level": snapshot[EMP_LEVEL].value_counts().to_dict() if not snapshot.empty and EMP_LEVEL in snapshot.columns else {},
         "by_tenure_band": snapshot[EMP_TENURE_BAND].value_counts().to_dict() if not snapshot.empty and EMP_TENURE_BAND in snapshot.columns else {}
     }

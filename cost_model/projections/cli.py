@@ -284,7 +284,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             # Store the start-of-year snapshot before applying any events
             start_of_year_snapshot = current_snapshot.copy()
 
-            # Run the projection for one year
+            # Run the projection for one year with exact targeting support
             cumulative_event_log, eoy_snapshot = run_one_year(
                 event_log=current_event_log,
                 prev_snapshot=current_snapshot,
@@ -293,7 +293,9 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                 plan_rules=plan_rules,
                 hazard_table=hazard_table,
                 rng=rng,
-                census_template_path=census_template_path
+                census_template_path=census_template_path,
+                rng_seed_offset=year,  # Add year-specific seed offset
+                deterministic_term=getattr(global_params, 'deterministic_termination', True)  # Enable deterministic terminations
             )
 
             # Log performance metrics
@@ -306,22 +308,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
 
             logger.info(f"Projection engine run completed for year {year} in {elapsed:.2f} seconds")
 
-            # Generate employment status summary
-            employment_summary = make_yearly_status(
-                current_snapshot,  # Start of year snapshot
-                eoy_snapshot,      # End of year snapshot
-                cumulative_event_log,
-                year
-            )
-
-            # Log employment summary
-            logger.info(
-                f"Year {year} - Active: {employment_summary.get('active', 0)}, "
-                f"New Hires: {employment_summary.get('new_hire_actives', 0) + employment_summary.get('new_hire_terms', 0)}, "
-                f"Terminations: {employment_summary.get('experienced_terms', 0) + employment_summary.get('new_hire_terms', 0)}"
-            )
-
-            # Build enhanced yearly snapshot using the approved solution
+            # Build enhanced yearly snapshot using the approved solution FIRST
             from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
 
             # Get events for this year from the cumulative event log
@@ -335,6 +322,21 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                 end_of_year_snapshot=eoy_snapshot,
                 year_events=year_events,
                 simulation_year=year
+            )
+
+            # Generate employment status summary using the enhanced snapshot (contains terminated employees)
+            employment_summary = make_yearly_status(
+                current_snapshot,        # Start of year snapshot
+                enhanced_yearly_snapshot,  # Enhanced snapshot with terminated employees
+                cumulative_event_log,
+                year
+            )
+
+            # Log employment summary
+            logger.info(
+                f"Year {year} - Active: {employment_summary.get('active', 0)}, "
+                f"New Hires: {employment_summary.get('new_hire_actives', 0) + employment_summary.get('new_hire_terms', 0)}, "
+                f"Terminations: {employment_summary.get('experienced_terms', 0) + employment_summary.get('new_hire_terms', 0)}"
             )
 
             # Save enhanced snapshot for this year

@@ -123,6 +123,20 @@ class TerminationOrchestrator:
         # Update snapshot to remove terminated new hires
         terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
 
+        # CRITICAL FIX: Set EMP_ACTIVE to False for terminated new hires before removal
+        # This ensures the active count is correct for diagnostic logging
+        if terminated_ids:
+            from cost_model.state.schema import EMP_ACTIVE
+            if EMP_ACTIVE in snapshot.columns:
+                # Set active flag to False for terminated employees
+                if EMP_ID in snapshot.columns:
+                    snapshot.loc[snapshot[EMP_ID].isin(terminated_ids), EMP_ACTIVE] = False
+                else:
+                    # If EMP_ID is in the index
+                    snapshot.loc[snapshot.index.isin(terminated_ids), EMP_ACTIVE] = False
+
+                self.logger.info(f"[NH-TERM] Set EMP_ACTIVE=False for {len(terminated_ids)} terminated new hires")
+
         # Handle both index-based and column-based employee ID filtering
         if EMP_ID in snapshot.columns:
             updated_snapshot = snapshot[~snapshot[EMP_ID].isin(terminated_ids)].copy()
@@ -182,20 +196,20 @@ class TerminationOrchestrator:
             if df.isna().all().all():
                 self.logger.debug(f"[TERMINATION] Skipping all-NA DataFrame at index {i}")
                 continue
-                
+
             # Clean the DataFrame by removing all-NA columns BEFORE adding to the list
             df_clean = df.copy()
             all_na_cols = df_clean.columns[df_clean.isna().all()]
             if not all_na_cols.empty:
                 self.logger.debug(f"[TERMINATION] Dropping {len(all_na_cols)} all-NA columns from DataFrame at index {i}")
                 df_clean = df_clean.drop(columns=all_na_cols)
-                
+
             # Only add if the cleaned DataFrame is not empty
             if not df_clean.empty:
                 valid_dfs_to_concat.append(df_clean)
             else:
                 self.logger.debug(f"[TERMINATION] DataFrame at index {i} became empty after cleaning, skipping")
-                
+
         self.logger.debug(f"[TERMINATION] {len(valid_dfs_to_concat)} DataFrames will be concatenated.")
 
         if valid_dfs_to_concat:
@@ -212,7 +226,7 @@ class TerminationOrchestrator:
             self.logger.debug("[TERMINATION] No valid DataFrames to concatenate; returning empty DataFrame.")
             term_events = pd.DataFrame(columns=EVENT_COLS)
 
-        
+
         # Validate and clean the (potentially empty) concatenated DataFrame
         term_events = self._validate_events(term_events, "termination")
 
@@ -288,6 +302,13 @@ class TerminationOrchestrator:
         if EMP_ID not in snapshot.columns:
             self.logger.error(f"[TERMINATION] EMP_ID column missing in snapshot. Cannot remove terminated employees.")
             return snapshot # Or handle if EMP_ID could be index
+
+        # CRITICAL FIX: Set EMP_ACTIVE to False for terminated employees before removal
+        # This ensures the active count is correct for diagnostic logging
+        from cost_model.state.schema import EMP_ACTIVE
+        if EMP_ACTIVE in snapshot.columns:
+            snapshot.loc[snapshot[EMP_ID].isin(terminated_ids), EMP_ACTIVE] = False
+            self.logger.info(f"[TERMINATION] Set EMP_ACTIVE=False for {len(terminated_ids)} terminated employees")
 
         survivors = snapshot[~snapshot[EMP_ID].isin(terminated_ids)].copy()
 

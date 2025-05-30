@@ -11,7 +11,8 @@ import numpy as np
 # Import canonical column names from schema
 from cost_model.state.schema import (
     SUMMARY_YEAR, EMP_ID, EMP_GROSS_COMP, EMP_STATUS_EOY, EMP_BIRTH_DATE, EMP_DEFERRAL_RATE,
-    EMP_CONTR, EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB, SIMULATION_YEAR, ACTIVE_STATUS
+    EMP_CONTR, EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB, SIMULATION_YEAR, ACTIVE_STATUS,
+    EMP_PLAN_YEAR_COMP
 )
 
 # Define status constants for employee_status_eoy
@@ -114,6 +115,7 @@ def calculate_summary_metrics(
         EMPLOYER_MATCH_CONTRIB: ["employer_match_contribution", EMPLOYER_MATCH_CONTRIB],
         EMPLOYER_CORE_CONTRIB: ["employer_core_contribution", EMPLOYER_CORE_CONTRIB],
         EMP_GROSS_COMP: ["employee_gross_compensation", EMP_GROSS_COMP],
+        EMP_PLAN_YEAR_COMP: ["employee_plan_year_compensation", EMP_PLAN_YEAR_COMP],
     }
 
     for canonical_name, possible_names in numeric_col_mapping.items():
@@ -231,10 +233,12 @@ def calculate_summary_metrics(
             eligible_count=(eligibility_col, "sum"),
             participant_count=("is_participant", "sum"),
             total_employee_gross_compensation=(EMP_GROSS_COMP, "sum"),
+            total_plan_year_compensation=(EMP_PLAN_YEAR_COMP, "sum"),
             total_ee_contribution=(EMP_CONTR, "sum"),
             total_er_contribution=("total_er_contribution", "sum"),
             total_compensation=("total_compensation", "sum"),
             avg_compensation=(EMP_GROSS_COMP, "mean"),  # Use expected output name
+            avg_plan_year_compensation=(EMP_PLAN_YEAR_COMP, "mean"),
             avg_age_active=("age", "mean"),
         )
         .reset_index()
@@ -247,7 +251,9 @@ def calculate_summary_metrics(
         logger.info(f"  Year {year}:")
         logger.info(f"    - active_headcount: {row['active_headcount']}")
         logger.info(f"    - total_employee_gross_compensation: {row['total_employee_gross_compensation']}")
+        logger.info(f"    - total_plan_year_compensation: {row['total_plan_year_compensation']}")
         logger.info(f"    - avg_compensation: {row['avg_compensation']}")
+        logger.info(f"    - avg_plan_year_compensation: {row['avg_plan_year_compensation']}")
         logger.info(f"    - total_compensation: {row['total_compensation']}")
 
     # Add terminations data
@@ -296,12 +302,14 @@ def calculate_summary_metrics(
     # Round values for presentation
     rounding_dict = {
         "avg_compensation": 0,  # Updated to match our output column name
+        "avg_plan_year_compensation": 0,  # New prorated compensation average
         "avg_age_active": 1,
         "participation_rate": 4,
         "avg_deferral_rate_participants": 4,
         "total_ee_contribution": 0,
         "total_er_contribution": 0,
         "total_employee_gross_compensation": 0,
+        "total_plan_year_compensation": 0,  # New prorated compensation total
         "total_compensation": 0,
     }
 
@@ -329,9 +337,12 @@ def calculate_summary_metrics(
         active_hc = row.get('active_headcount', 'N/A')
         total_terms = row.get('total_terminations', 'N/A')
         avg_comp = row.get('avg_compensation', 'N/A')
+        avg_plan_comp = row.get('avg_plan_year_compensation', 'N/A')
         total_comp = row.get('total_compensation', 'N/A')
+        total_plan_comp = row.get('total_plan_year_compensation', 'N/A')
         logger.info(f"  Year {year}: active_headcount={active_hc}, total_terminations={total_terms}, "
-                   f"avg_compensation={avg_comp}, total_compensation={total_comp}")
+                   f"avg_compensation={avg_comp}, avg_plan_year_compensation={avg_plan_comp}, "
+                   f"total_compensation={total_comp}, total_plan_year_compensation={total_plan_comp}")
 
     # Set index to simulation_year for consistency with existing code
     summary_metrics.set_index(SIMULATION_YEAR, inplace=True)

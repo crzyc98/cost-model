@@ -5,7 +5,7 @@
 
 global:
   simulation_years: [2025, 2026, 2027, 2028, 2029]
-  job_levels: [0, 1, 2, 3, 4, 5]         # Numeric job levels
+  job_levels: [0, 1, 2, 3, 4]         # Numeric job levels
   tenure_bands: ["<1", "1-3", "3-5", "5-10", "10-15", "15+"]
   cfg_scenario_name: "baseline"      # Default scenario name for the 'cfg' column
 

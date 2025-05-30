@@ -18,7 +18,8 @@ from logging_config import get_logger, get_diagnostic_logger
 from cost_model.state.event_log import EVENT_COLS
 from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_STATUS_EOY,
-    ACTIVE_STATUS, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH, IS_ELIGIBLE
+    ACTIVE_STATUS, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH, IS_ELIGIBLE,
+    EMP_ACTIVE
 )
 
 # Import validation and utility functions
@@ -30,6 +31,65 @@ from .hiring import HiringOrchestrator
 from .termination import TerminationOrchestrator
 from .promotion import PromotionOrchestrator
 from .validator import SnapshotValidator
+
+
+# Diagnostic helper functions for headcount debugging
+def n_active(df: pd.DataFrame) -> int:
+    """
+    Count active employees in snapshot.
+
+    Args:
+        df: Snapshot DataFrame
+
+    Returns:
+        Number of active employees (EMP_ACTIVE == True)
+    """
+    if df.empty or EMP_ACTIVE not in df.columns:
+        return 0
+    return int(df[EMP_ACTIVE].sum())
+
+
+def check_duplicates(df: pd.DataFrame, stage: str, logger: logging.Logger) -> None:
+    """
+    Check for duplicate employee IDs and assert if found.
+
+    Args:
+        df: Snapshot DataFrame
+        stage: Stage name for error reporting
+        logger: Logger instance
+
+    Raises:
+        AssertionError: If duplicate employee IDs are found
+    """
+    if df.empty or EMP_ID not in df.columns:
+        return
+
+    dupes = df[EMP_ID].duplicated().sum()
+    if dupes > 0:
+        logger.error(f"[{stage}] Found {dupes} duplicate employee_id rows!")
+        # Log the duplicate IDs for debugging
+        duplicate_ids = df[df[EMP_ID].duplicated(keep=False)][EMP_ID].tolist()
+        logger.error(f"[{stage}] Duplicate employee IDs: {duplicate_ids}")
+        raise AssertionError(f"{dupes} duplicate employee_id rows detected at stage: {stage}")
+
+
+def log_headcount_stage(df: pd.DataFrame, stage: str, year: int, logger: logging.Logger) -> None:
+    """
+    Log headcount diagnostics for a specific stage.
+
+    Args:
+        df: Snapshot DataFrame
+        stage: Stage name
+        year: Simulation year
+        logger: Logger instance
+    """
+    total_rows = len(df)
+    active_count = n_active(df)
+
+    logger.info(f"[{year}] {stage}: total_rows={total_rows}, actives={active_count}")
+
+    # Check for duplicates
+    check_duplicates(df, stage, logger)
 
 
 def run_one_year(
@@ -102,9 +162,15 @@ def run_one_year(
         deterministic_term=deterministic_term
     )
 
-    # Track all events generated this year and the start count
+    # Track all events generated this year
     all_events = []
-    start_count = len(snapshot)  # Count before any changes
+
+    # DIAGNOSTIC: Log initial state
+    log_headcount_stage(snapshot, "SOY_INITIAL", year, logger)
+
+    # Track the initial start count for exact targeting (before any events)
+    initial_start_count = n_active(snapshot)  # Use active count, not total rows
+    logger.info(f"[{year}] Initial start count for exact targeting: {initial_start_count}")
 
     # Step 1: Compensation events (annual raises and COLA) - Apply FIRST so promotions use updated compensation
     compensation_events = _generate_compensation_events(snapshot, year_context, logger)
@@ -113,10 +179,16 @@ def run_one_year(
     # Step 1b: Apply compensation events to snapshot
     snapshot = _apply_compensation_events_to_snapshot(snapshot, compensation_events, year_context, logger)
 
+    # DIAGNOSTIC: Log after compensation
+    log_headcount_stage(snapshot, "AFTER_COMPENSATION", year, logger)
+
     # Step 2: Markov promotions/exits (experienced only) - Apply AFTER compensation so raises use updated values
     promotion_events, snapshot = promotion_orchestrator.get_events(snapshot, year_context)
     all_events.extend(promotion_events)
     validator.validate(snapshot, "markov_promotions", year_context)
+
+    # DIAGNOSTIC: Log after promotions/exits
+    log_headcount_stage(snapshot, "AFTER_PROMOTIONS", year, logger)
 
     # Step 3: Hazard-based terminations (experienced only)
     termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
@@ -125,7 +197,13 @@ def run_one_year(
     all_events.extend(termination_events)
     validator.validate(snapshot, "experienced_terminations", year_context)
 
-    # Step 4: Hiring
+    # DIAGNOSTIC: Log after experienced terminations (this is the survivor count for exact targeting)
+    log_headcount_stage(snapshot, "AFTER_EXPERIENCED_TERMS", year, logger)
+
+    # Step 4: Hiring (with exact targeting)
+    # For exact targeting, we need the count BEFORE any terminations/promotions occurred
+    # The hiring logic will calculate experienced terminations as: start_count - survivor_count
+
     # Extract the first termination events DataFrame if available
     term_events_for_hiring = None
     if termination_events and len(termination_events) > 0 and not termination_events[0].empty:
@@ -134,10 +212,29 @@ def run_one_year(
     hiring_events, snapshot = hiring_orchestrator.get_events(
         snapshot, year_context,
         terminated_events=term_events_for_hiring,
-        start_count=start_count
+        start_count=initial_start_count  # Use the count before any changes
     )
     all_events.extend(hiring_events)
     validator.validate(snapshot, "hiring", year_context)
+
+    # DIAGNOSTIC: Log after hiring
+    log_headcount_stage(snapshot, "AFTER_HIRING", year, logger)
+
+    # Step 4b: Handle forced terminations if required by exact targeting
+    forced_terminations_needed = hiring_orchestrator.get_required_forced_terminations()
+    if forced_terminations_needed > 0:
+        logger.warning(
+            f"[EXACT TARGETING] Applying {forced_terminations_needed} forced terminations "
+            f"to existing survivors to meet exact target"
+        )
+        forced_term_events, snapshot = _apply_forced_terminations(
+            snapshot, forced_terminations_needed, year_context, logger
+        )
+        all_events.extend(forced_term_events)
+        validator.validate(snapshot, "forced_terminations", year_context)
+
+        # DIAGNOSTIC: Log after forced terminations
+        log_headcount_stage(snapshot, "AFTER_FORCED_TERMS", year, logger)
 
     # Step 5: New hire terminations
     nh_termination_events, snapshot = termination_orchestrator.get_new_hire_termination_events(
@@ -146,18 +243,49 @@ def run_one_year(
     all_events.extend(nh_termination_events)
     validator.validate(snapshot, "new_hire_terminations", year_context)
 
+    # DIAGNOSTIC: Log after new hire terminations
+    log_headcount_stage(snapshot, "AFTER_NH_TERMS", year, logger)
+
     # Step 6: Apply contribution calculations and eligibility
     snapshot = _apply_contribution_calculations(snapshot, year_context, logger)
 
+    # DIAGNOSTIC: Log after contribution calculations
+    log_headcount_stage(snapshot, "AFTER_CONTRIBUTIONS", year, logger)
+
     # Step 7: Final validation
     validator.validate_eoy(snapshot)
+
+    # DIAGNOSTIC: Final EOY headcount check with exact targeting assertion
+    final_active_count = n_active(snapshot)
+    log_headcount_stage(snapshot, "FINAL_EOY", year, logger)
+
+    # Calculate expected target for assertion
+    target_growth = getattr(year_context.global_params, 'target_growth', 0.03)
+    expected_target = round(initial_start_count * (1 + target_growth))
+
+    # Hard assertion to catch headcount overruns
+    tolerance = 1  # Allow 1 employee tolerance for rounding
+    if final_active_count > expected_target + tolerance:
+        logger.error(
+            f"[EOY ASSERTION] Final active headcount {final_active_count} exceeds target {expected_target} "
+            f"(tolerance: {tolerance}). Initial: {initial_start_count}, Growth: {target_growth:.1%}"
+        )
+        raise ValueError(
+            f"EOY active headcount {final_active_count} exceeds target {expected_target} "
+            f"(initial: {initial_start_count}, growth: {target_growth:.1%})"
+        )
+
+    logger.info(
+        f"[EOY SUCCESS] Target achieved: {final_active_count}/{expected_target} active employees "
+        f"({initial_start_count} → {final_active_count}, {target_growth:.1%} growth)"
+    )
 
     # Step 8: Consolidate and return events
     new_events = _consolidate_events(all_events, event_log, year, logger)
 
     logger.info(
         f"[RUN_ONE_YEAR] Year {year} complete. Final headcount: {len(snapshot)}, "
-        f"New events: {len(new_events)}"
+        f"Active employees: {final_active_count}, New events: {len(new_events)}"
     )
 
     return new_events, snapshot
@@ -380,6 +508,91 @@ def _apply_contribution_calculations(
     return snapshot_copy
 
 
+def _apply_forced_terminations(
+    snapshot: pd.DataFrame,
+    num_forced_terminations: int,
+    year_context: YearContext,
+    logger: logging.Logger
+) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
+    """
+    Apply forced terminations to existing employees to meet exact headcount targets.
+
+    This function is called when exact targeting determines that the number of
+    survivors after natural attrition exceeds the target EOY headcount.
+
+    Args:
+        snapshot: Current workforce snapshot
+        num_forced_terminations: Number of employees to terminate
+        year_context: Year-specific context
+        logger: Logger instance
+
+    Returns:
+        Tuple of (termination_events_list, updated_snapshot)
+    """
+    from cost_model.state.event_log import create_event, EVT_TERM, EVENT_COLS
+    from cost_model.state.schema import EMP_ID, EMP_ACTIVE, EMP_HIRE_DATE
+    import json
+
+    logger.info(f"[FORCED TERMS] Applying {num_forced_terminations} forced terminations for exact targeting")
+
+    # Filter to active employees who are NOT new hires (hired before this year)
+    active_mask = snapshot[EMP_ACTIVE] == True
+    not_new_hire_mask = snapshot[EMP_HIRE_DATE] < year_context.as_of
+    eligible_for_forced_term = snapshot[active_mask & not_new_hire_mask]
+
+    if len(eligible_for_forced_term) < num_forced_terminations:
+        logger.error(
+            f"[FORCED TERMS] Not enough eligible employees for forced termination. "
+            f"Need {num_forced_terminations}, have {len(eligible_for_forced_term)}"
+        )
+        # Terminate as many as possible
+        num_forced_terminations = len(eligible_for_forced_term)
+
+    if num_forced_terminations <= 0:
+        logger.info("[FORCED TERMS] No forced terminations to apply")
+        return [pd.DataFrame(columns=EVENT_COLS)], snapshot
+
+    # Randomly select employees for forced termination
+    selected_for_termination = eligible_for_forced_term.sample(
+        n=num_forced_terminations,
+        random_state=year_context.year_rng.integers(0, 2**31)
+    )
+
+    # Create termination events
+    term_events = []
+    term_date = year_context.end_of_year  # Terminate at end of year
+
+    for _, employee in selected_for_termination.iterrows():
+        emp_id = employee[EMP_ID]
+
+        term_event = create_event(
+            event_time=term_date,
+            employee_id=emp_id,
+            event_type=EVT_TERM,
+            value_num=None,
+            value_json=json.dumps({
+                "reason": "forced_termination_exact_targeting",
+                "note": "Terminated to meet exact EOY headcount target"
+            }),
+            meta=f"Forced termination for exact targeting in {year_context.year}"
+        )
+        term_events.append(term_event)
+
+    # Create events DataFrame
+    term_events_df = pd.DataFrame(term_events, columns=EVENT_COLS) if term_events else pd.DataFrame(columns=EVENT_COLS)
+
+    # Update snapshot to remove terminated employees
+    terminated_ids = set(selected_for_termination[EMP_ID])
+    updated_snapshot = snapshot[~snapshot[EMP_ID].isin(terminated_ids)].copy()
+
+    logger.info(
+        f"[FORCED TERMS] Applied {len(term_events)} forced terminations. "
+        f"Snapshot size: {len(snapshot)} → {len(updated_snapshot)}"
+    )
+
+    return [term_events_df], updated_snapshot
+
+
 def _apply_compensation_events_to_snapshot(
     snapshot: pd.DataFrame,
     compensation_events: List[pd.DataFrame],
@@ -433,57 +646,7 @@ def _apply_compensation_events_to_snapshot(
     return updated_snapshot
 
 
-def _apply_compensation_events_to_snapshot(
-    snapshot: pd.DataFrame,
-    compensation_events: List[pd.DataFrame],
-    year_context: YearContext,
-    logger: logging.Logger
-) -> pd.DataFrame:
-    """
-    Apply compensation events to update employee compensation in the snapshot.
 
-    Args:
-        snapshot: Current workforce snapshot
-        compensation_events: List of compensation event DataFrames
-        year_context: Year-specific context and parameters
-        logger: Logger instance
-
-    Returns:
-        Updated snapshot with compensation changes applied
-    """
-    logger.info("[STEP] Applying compensation events to snapshot")
-
-    # Collect all compensation events into a single DataFrame
-    events_to_apply = []
-    for event_df in compensation_events:
-        if isinstance(event_df, pd.DataFrame) and not event_df.empty:
-            events_to_apply.append(event_df)
-
-    if not events_to_apply:
-        logger.info("[COMP] No compensation events to apply")
-        return snapshot
-
-    # Concatenate all events
-    all_comp_events = pd.concat(events_to_apply, ignore_index=True)
-
-    # Apply events using the snapshot update mechanism
-    from cost_model.state.snapshot_update import update
-    updated_snapshot = update(
-        prev_snapshot=snapshot,
-        new_events=all_comp_events,
-        snapshot_year=year_context.year
-    )
-
-    # Count how many employees had compensation updated
-    comp_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COMP']
-    cola_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COLA']
-
-    comp_count = len(comp_events) if not comp_events.empty else 0
-    cola_count = len(cola_events) if not cola_events.empty else 0
-
-    logger.info(f"[COMP] Applied {comp_count} compensation updates and {cola_count} COLA updates to snapshot")
-
-    return updated_snapshot
 
 
 def _generate_compensation_events(
