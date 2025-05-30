@@ -13,7 +13,6 @@ from typing import Set, Generator  # Added Union
 try:
     from utils.columns import (
         EMP_SSN,
-        EMP_ROLE,
         EMP_BIRTH_DATE,
         EMP_HIRE_DATE,
         EMP_TERM_DATE,
@@ -29,9 +28,8 @@ except ImportError:
     print(
         "Warning: Could not import column constants from utils. Using string literals."
     )
-    EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE = (
+    EMP_SSN, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE = (
         "employee_ssn",
-        "employee_role",
         "employee_birth_date",
         "employee_hire_date",
         "employee_termination_date",
@@ -80,11 +78,9 @@ def generate_employee_record(
     deferral_rates = [float(k) for k in deferral_distribution.keys()]
     deferral_probs = list(deferral_distribution.values())
 
-    # Assign Role
-    assigned_role = rng.choice(roles, p=role_probs)
-    record[EMP_ROLE] = assigned_role
-    # Get role params safely, provide empty dict if role missing
-    role_params = role_compensation_params.get(assigned_role, {})
+    # Role assignment removed as part of schema refactoring
+    # Use default compensation parameters for all employees
+    role_params = {}
 
     # Generate SSN (ensure uniqueness)
     prefix = "NH" if is_new_hire else "EX"  # EX for initial population
@@ -389,7 +385,6 @@ def calculate_derived_fields(
     # Select and order final columns
     final_cols = [
         EMP_SSN,
-        EMP_ROLE,
         EMP_BIRTH_DATE,
         EMP_HIRE_DATE,
         EMP_TERM_DATE,
@@ -436,40 +431,20 @@ def select_weighted_terminations(
         < LOW_TENURE_THRESHOLD
     )
 
-    # Compensation Risk
+    # Compensation Risk (simplified - no longer role-based)
     eligible_df["low_comp"] = False  # Default
     comp_col = EMP_GROSS_COMP
-    role_col = EMP_ROLE
     if comp_col in eligible_df.columns and pd.api.types.is_numeric_dtype(
         eligible_df[comp_col]
     ):
-        if role_col in eligible_df.columns and eligible_df[role_col].nunique() > 1:
-            try:
-                eligible_df["comp_percentile_rank"] = eligible_df.groupby(role_col)[
-                    comp_col
-                ].rank(pct=True, method="average")
-                eligible_df["low_comp"] = (
-                    eligible_df["comp_percentile_rank"] < LOW_COMP_PERCENTILE
-                )
-                logger.debug("Calculated comp risk by role.")
-            except Exception as e:
-                logger.warning(
-                    f"Error calculating comp percentile by role: {e}. Falling back to global."
-                )
-                eligible_df["comp_percentile_rank"] = eligible_df[comp_col].rank(
-                    pct=True, method="average"
-                )
-                eligible_df["low_comp"] = (
-                    eligible_df["comp_percentile_rank"] < LOW_COMP_PERCENTILE
-                )
-        else:  # Fallback or initial calc
-            eligible_df["comp_percentile_rank"] = eligible_df[comp_col].rank(
-                pct=True, method="average"
-            )
-            eligible_df["low_comp"] = (
-                eligible_df["comp_percentile_rank"] < LOW_COMP_PERCENTILE
-            )
-            logger.debug("Calculated comp risk globally.")
+        # Calculate global compensation percentile rank
+        eligible_df["comp_percentile_rank"] = eligible_df[comp_col].rank(
+            pct=True, method="average"
+        )
+        eligible_df["low_comp"] = (
+            eligible_df["comp_percentile_rank"] < LOW_COMP_PERCENTILE
+        )
+        logger.debug("Calculated comp risk globally.")
     else:
         logger.warning(
             f"Column '{comp_col}' not found or not numeric. Cannot calculate comp risk."

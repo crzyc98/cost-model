@@ -51,7 +51,7 @@ def _ensure_level_and_band(df: pd.DataFrame, year: int) -> pd.DataFrame:
         tenure_years = ((jan1 - hire_dates).dt.days / 365.25).fillna(0)
 
         def band(t):
-            if t < 1:  return '0-1'
+            if t < 1:  return '<1'
             elif t < 3: return '1-3'
             elif t < 5: return '3-5'
             elif t < 10: return '5-10'

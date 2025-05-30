@@ -60,7 +60,7 @@ def build_hazard_table(
 
     # Define all possible employee levels (0-4) and standard tenure bands
     all_employee_levels = set(range(5))  # 0, 1, 2, 3, 4
-    standard_tenure_bands = {'0-1', '1-3', '3-5', '5+'}
+    standard_tenure_bands = {'<1', '1-3', '3-5', '5+'}
 
     # Create a set of all possible (level, tenure_band) combinations
     all_combinations = set()

@@ -186,7 +186,7 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
     if EMP_TENURE in initial_data:
         # Define tenure bands
         bands = {
-            '0-1': (0, 1),
+            '<1': (0, 1),
             '1-3': (1, 3),
             '3-5': (3, 5),
             '5+': (5, float('inf'))

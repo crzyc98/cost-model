@@ -30,10 +30,10 @@ def infer_job_level_by_percentile(
                          (e.g., [0.2, 0.5, 0.8, 0.95] for 5 levels)
         target_level_col: Column name to store the imputed levels
         source_col: Column name to track the source of level assignments
-        
+
     Returns:
         DataFrame with imputed levels and source tracking
-        
+
     Note:
         - For edge cases (0 or 1 row), returns level 0
         - Uses quantile interpolation for small datasets to maintain consistency
@@ -41,7 +41,7 @@ def infer_job_level_by_percentile(
     # Input validation
     if salary_col not in df.columns:
         raise ValueError(f"Salary column '{salary_col}' not found in dataframe")
-        
+
     # Handle empty dataframe
     if len(df) == 0:
         out = df.copy()
@@ -61,15 +61,15 @@ def infer_job_level_by_percentile(
 
     # Create working copy
     out = df.copy()
-    
+
     # Calculate percentiles and assign levels
     out["_pct"] = out[salary_col].rank(pct=True)
     bins = [0.0, *sorted(level_percentiles), 1.0]  # Ensure percentiles are sorted
-    labels = list(range(len(bins) - 1))
+    labels = list(range(1, len(bins)))  # Start from 1 instead of 0 to match hazard table
     out[target_level_col] = pd.cut(
-        out["_pct"], 
-        bins=bins, 
-        labels=labels, 
+        out["_pct"],
+        bins=bins,
+        labels=labels,
         include_lowest=True
     ).astype('Int64')
 
@@ -79,7 +79,7 @@ def infer_job_level_by_percentile(
 
     # Determine which rows need level imputation
     needs_imputation = pd.Series(True, index=out.index)
-    
+
     # Check for existing level columns
     level_col = None
     level_cols_to_check = [EMP_LEVEL, 'level_id', 'job_level']  # Common column names for job levels
@@ -87,7 +87,7 @@ def infer_job_level_by_percentile(
         if col in out.columns:
             level_col = col
             break
-            
+
     if level_col is None:
         # No existing level column found, mark all as imputed
         out[source_col] = "percentile-impute"
@@ -95,7 +95,7 @@ def infer_job_level_by_percentile(
         # Only mark rows with missing levels as imputed
         missing_mask = out[level_col].isna()
         out.loc[missing_mask, source_col] = "percentile-impute"
-    
+
     # Clean up temporary columns and return
     return out.drop(columns=["_pct"], errors='ignore')
 

@@ -52,7 +52,6 @@ except ImportError:  # pragma: no cover
 # Employee column constants (fully defined here; single source of truth)
 # -----------------------------------------------------------------------------
 EMP_SSN = "employee_ssn"
-EMP_ROLE = "employee_role"
 EMP_BIRTH_DATE = "employee_birth_date"
 EMP_HIRE_DATE = "employee_hire_date"
 EMP_TERM_DATE = "employee_termination_date"
@@ -137,7 +136,6 @@ DATE_COLS = [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE]
 # Central raw→standard mapping
 RAW_TO_STD_COLS = {
     "ssn": EMP_SSN,
-    "role": EMP_ROLE,
     "birth_date": EMP_BIRTH_DATE,
     "employee_birth_date": EMP_BIRTH_DATE,
     "hire_date": EMP_HIRE_DATE,
@@ -234,7 +232,6 @@ SNAPSHOT_COLS: List[str] = [
     EMP_ID,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_ROLE,  # FIXED: Added missing employee_role column to match SNAPSHOT_DTYPES
     EMP_GROSS_COMP,
     EMP_TERM_DATE,
     EMP_ACTIVE,
@@ -258,7 +255,6 @@ SNAPSHOT_DTYPES: dict[str, object] = {
     EMP_ID: pd.StringDtype(),
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
-    EMP_ROLE: pd.StringDtype(),  # FIXED: Added missing employee_role column type
     EMP_GROSS_COMP: pd.Float64Dtype(),
     EMP_TERM_DATE: "datetime64[ns]",
     EMP_ACTIVE: pd.BooleanDtype(),
@@ -298,7 +294,6 @@ __all__ = [
     "EMP_ID",
     "EMP_HIRE_DATE",
     "EMP_BIRTH_DATE",
-    "EMP_ROLE",
     "EMP_GROSS_COMP",
     "EMP_TERM_DATE",
     "EMP_DEFERRAL_RATE",

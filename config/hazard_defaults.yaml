@@ -4,17 +4,19 @@
 # They should be reviewed and calibrated against specific company data or more detailed benchmarks.
 
 global:
-  simulation_years: [2024, 2025, 2026]
-  job_levels: [1, 2, 3, 4, 5]         # Numeric job levels
+  simulation_years: [2025, 2026, 2027, 2028, 2029]
+  job_levels: [0, 1, 2, 3, 4, 5]         # Numeric job levels
   tenure_bands: ["<1", "1-3", "3-5", "5-10", "10-15", "15+"]
   cfg_scenario_name: "baseline"      # Default scenario name for the 'cfg' column
 
 cola:
   # Year-specific Cost of Living Adjustments
-  by_year: 
-    2024: 0.025
+  by_year:
     2025: 0.020
     2026: 0.018
+    2027: 0.016
+    2028: 0.015
+    2029: 0.014
 
 termination:
   # Base termination rate for new hires (<1 year tenure)

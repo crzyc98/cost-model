@@ -274,7 +274,7 @@ class HiringOrchestrator:
             'employee_termination_date': pd.NaT,
             EMP_ACTIVE: True,
             EMP_DEFERRAL_RATE: 0.0,
-            EMP_TENURE_BAND: '0-1',  # New hires
+            EMP_TENURE_BAND: '<1',  # New hires
             EMP_TENURE: 0.0,
             EMP_LEVEL: pd.to_numeric(extracted_levels, errors='coerce').fillna(1).astype('Int64'),
             EMP_LEVEL_SOURCE: 'new_hire',

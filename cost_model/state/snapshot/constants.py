@@ -12,14 +12,14 @@ except ImportError:
     # Fallbacks if running standalone
     EVT_HIRE, EVT_TERM, EVT_COMP = "EVT_HIRE", "EVT_TERM", "EVT_COMP"
     EVENT_COLS = [
-        "event_id", "event_time", "employee_id", 
+        "event_id", "event_time", "employee_id",
         "event_type", "value_num", "value_json", "meta"
     ]
 
 # Import column name constants
 try:
     from ...utils.columns import (
-        EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE,
+        EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE,
         EMP_GROSS_COMP, EMP_TERM_DATE, EMP_DEFERRAL_RATE,
         EMP_TENURE, EMP_TENURE_BAND, EMP_ACTIVE,
         EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED
@@ -29,7 +29,6 @@ except ImportError:
     EMP_ID = "employee_id"
     EMP_HIRE_DATE = "employee_hire_date"
     EMP_BIRTH_DATE = "employee_birth_date"
-    EMP_ROLE = "employee_role"
     EMP_GROSS_COMP = "employee_gross_compensation"
     EMP_TERM_DATE = "employee_termination_date"
     EMP_DEFERRAL_RATE = "employee_deferral_rate"
@@ -37,7 +36,7 @@ except ImportError:
     EMP_TENURE_BAND = "employee_tenure_band"
     EMP_ACTIVE = "active"
     EMP_LEVEL = "employee_level"
-    EMP_LEVEL_SOURCE = "job_level_source" 
+    EMP_LEVEL_SOURCE = "job_level_source"
     EMP_EXITED = "exited"
 
 # Import additional column constants
@@ -48,7 +47,6 @@ SNAPSHOT_COLS = [
     EMP_ID,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_ROLE,
     EMP_GROSS_COMP,
     EMP_TERM_DATE,
     EMP_ACTIVE,
@@ -66,7 +64,6 @@ SNAPSHOT_DTYPES = {
     EMP_ID: pd.StringDtype(),
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
-    EMP_ROLE: pd.StringDtype(),
     EMP_GROSS_COMP: pd.Float64Dtype(),
     EMP_TERM_DATE: "datetime64[ns]",
     EMP_ACTIVE: pd.BooleanDtype(),

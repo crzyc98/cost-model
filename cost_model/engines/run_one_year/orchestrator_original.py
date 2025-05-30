@@ -345,7 +345,7 @@ def run_one_year(
             'employee_termination_date': pd.NaT,
             'active': True,
             'employee_deferral_rate': 0.0,  # Default value, adjust as needed
-            'employee_tenure_band': '0-1',  # New hires have 0-1 year tenure
+            'employee_tenure_band': '<1',  # New hires have <1 year tenure
             'employee_tenure': 0.0,  # New hires have 0 years tenure
             'employee_level': extracted_levels.fillna(1).astype('Int64'),  # Use extracted levels, default to 1 where missing
             'job_level_source': 'new_hire',

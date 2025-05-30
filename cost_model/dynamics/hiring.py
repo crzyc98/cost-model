@@ -94,19 +94,19 @@ def _calculate_birth_dates(
     """
     Calculate birth dates by subtracting exact years and adding random jitter.
     This ensures unique birth dates and proper date arithmetic.
-    
+
     Args:
         hire_dates: Series of hire dates
         ages: Array of ages
         rng: Random number generator
-        
+
     Returns:
         Series of birth dates with datetime64[ns] dtype
     """
     # Generate random month and day for each hire
     months = rng.integers(1, 13, size=len(hire_dates))
     days = rng.integers(1, 29, size=len(hire_dates))
-    
+
     # Calculate birth dates by subtracting exact years and using random month/day
     birth_dates = []
     for hire_date, age, month, day in zip(hire_dates, ages, months, days):
@@ -118,16 +118,16 @@ def _calculate_birth_dates(
             # If the date is invalid (like Feb 30), use the first day of the month
             birth_date = pd.Timestamp(year=birth_year, month=month, day=1)
             birth_dates.append(birth_date)
-    
+
     # Create Series with explicit datetime64[ns] dtype
     birth_dates_series = pd.Series(birth_dates, index=hire_dates.index, name=EMP_BIRTH_DATE, dtype='datetime64[ns]')
-    
+
     # Debug logging
     if not pd.api.types.is_datetime64_any_dtype(birth_dates_series):
         logger.warning(f"Birth dates not in datetime format: {birth_dates_series.dtype}")
     if birth_dates_series.isna().any():
         logger.warning(f"Found NA values in birth dates: {birth_dates_series.isna().sum()}")
-    
+
     return birth_dates_series
 
 
@@ -206,18 +206,18 @@ def _calculate_compensation(
             age_factor = get_param_value(current_params, "comp_age_factor", 0.01)
             min_salary = get_param_value(current_params, "comp_min_salary", 40000.0)
             max_salary = get_param_value(current_params, "comp_max_salary", base * 1.5)
-            
+
             age_comp = base * (age - min_age_config) * age_factor
             initial_comp = max(base + age_comp, min_salary)
-            
+
             log_mean = np.log(initial_comp) - (stochastic_std_dev**2) / 2
             raw_comp = np.exp(rng.normal(log_mean, stochastic_std_dev))
             raw_comps.append(raw_comp)
-        
+
         raw_min = min(raw_comps)
         raw_max = max(raw_comps)
         raw_avg = np.mean(raw_comps)
-        
+
         logger.info(
             f"Raw compensation stats (before clamping): "
             f"Avg: {raw_avg:.0f}, Min: {raw_min:.0f}, Max: {raw_max:.0f}"
@@ -246,7 +246,6 @@ def generate_new_hires(
         id_col_name,
         EMP_HIRE_DATE,
         EMP_BIRTH_DATE,
-        "employee_role",
         EMP_GROSS_COMP,
         "employment_status",
         EMP_TERM_DATE,
@@ -270,13 +269,12 @@ def generate_new_hires(
             return cfg.get(key, default)
         return getattr(cfg, key, default)
 
-    role_comp_params = get_config_val(scenario_config, "role_compensation_params", {})
+    # Role-based compensation removed as part of schema refactoring
     age_mean = float(get_config_val(scenario_config, "new_hire_average_age", 30.0))
     age_std_dev = float(get_config_val(scenario_config, "new_hire_age_std_dev", 5.0))
     min_age_cfg = int(get_config_val(scenario_config, "min_working_age", 18))
     max_age_cfg = int(get_config_val(scenario_config, "max_working_age", 65))
     gender_dist = get_config_val(scenario_config, "gender_distribution", None)
-    role_dist = get_config_val(scenario_config, "role_distribution", {})
 
     # --- Definition of default_comp_params_as_dict ---
     # This is the dictionary that will be passed as default to _calculate_compensation
@@ -297,46 +295,45 @@ def generate_new_hires(
         existing_ids if existing_ids is not None else [], num_hires
     )
     hire_dates = _generate_hire_dates(num_hires, hire_year, rng)
-    roles = _assign_roles(num_hires, role_dist, rng)
+    # Role assignment removed as part of schema refactoring
     ages = _generate_ages(
         num_hires, age_mean, age_std_dev, min_age_cfg, max_age_cfg, rng
     )
-    
+
     # Debug logging for age distribution
     logger.debug(f"[NEW-HIRE] Age distribution - avg={ages.mean():.1f}, min={ages.min()}, max={ages.max()}, std={ages.std():.1f}")
     logger.debug(f"[NEW-HIRE] Age histogram: {pd.Series(ages).value_counts().sort_index().to_dict()}")
-    
+
     print("Generated Ages:", ages)
     # Defensive check: warn if all ages are identical (could cause identical birth dates)
     if len(set(ages)) == 1:
         logger.warning(f"All generated ages are identical ({ages[0]}). This may cause identical birth dates. Check scenario_config or RNG usage.")
     birth_dates = _calculate_birth_dates(hire_dates, ages, rng)
     print("Calculated Birth Dates:", birth_dates.tolist())
-    
+
     # Debug: Verify birth date types and values
     if not pd.api.types.is_datetime64_any_dtype(birth_dates):
         logger.warning(f"Birth dates not in datetime format: {birth_dates.dtype}")
     if birth_dates.isna().any():
         logger.warning(f"Found NA values in birth dates: {birth_dates.isna().sum()}")
-    
+
     # Ensure birth dates are properly converted to datetime
     birth_dates = pd.to_datetime(birth_dates)
-    
+
     # Debug: Verify final birth date values
     unique_dates = birth_dates.unique()
     if len(unique_dates) < len(birth_dates):
         logger.warning(f"Only {len(unique_dates)} unique birth dates among {len(birth_dates)} hires")
     if (unique_dates == pd.Timestamp('1990-01-01')).any():
         logger.warning("Found default birth date 1990-01-01 in birth dates")
-    
+
     # Ensure birth dates are explicitly included in the DataFrame
     nh_df_data = {
         id_col_name: ids,
         EMP_HIRE_DATE: hire_dates,
         EMP_BIRTH_DATE: birth_dates,
-        "employee_role": roles,
-        EMP_GROSS_COMP: _calculate_compensation(
-            roles, ages, role_comp_params, default_comp_params_as_dict, min_age_cfg, rng
+        EMP_GROSS_COMP: _calculate_compensation_simple(
+            ages, default_comp_params_as_dict, min_age_cfg, rng
         ),
         "employment_status": "Active",
         EMP_TERM_DATE: pd.NaT,

@@ -19,7 +19,7 @@ from cost_model.state.schema import (
     EVENT_COLS
 )
 from cost_model.state.schema import (
-    EMP_ROLE, EMP_SSN, EMP_CAPPED_COMP, EMP_PLAN_YEAR_COMP, EMP_CONTR,
+    EMP_SSN, EMP_CAPPED_COMP, EMP_PLAN_YEAR_COMP, EMP_CONTR,
     EMPLOYER_CORE, EMPLOYER_MATCH, EVT_CONTRIB_INCR, IS_ELIGIBLE, IS_PARTICIPATING,
     ELIGIBILITY_ENTRY_DATE, STATUS_COL, ACTIVE_STATUS, INACTIVE_STATUS, HOURS_WORKED,
     AE_OPTED_OUT, PROACTIVE_ENROLLED, AUTO_ENROLLED, AI_OPTED_OUT, AI_ENROLLED,
@@ -162,8 +162,7 @@ def apply_new_hire_terminations(
             except (ValueError, TypeError):
                 compensation = None
 
-        # Get employee role if available
-        emp_role = snap_with_hires.loc[idx, EMP_ROLE] if EMP_ROLE in snap_with_hires.columns else None
+        # Employee role is no longer tracked - removed as part of schema refactoring
 
         # Safely get values with NA handling
         def safe_get_float(col, default=None):
@@ -202,7 +201,6 @@ def apply_new_hire_terminations(
                 "term_date": term_date.strftime('%Y-%m-%d') if not pd.isna(term_date) else None,
                 "job_level": job_level,
                 "job_family": job_family,
-                "employee_role": emp_role,
                 "gross_compensation": compensation,
                 "comp_raise_pct": comp_raise_pct,
                 "deferral_rate": deferral_rate,
