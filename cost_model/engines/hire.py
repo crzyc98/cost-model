@@ -11,7 +11,7 @@ import numpy as np
 import datetime
 
 from cost_model.state.event_log import EVT_TERM, EVENT_COLS, EVT_HIRE, EVT_COMP, create_event
-from cost_model.state.schema import EMP_ID, EMP_TERM_DATE, EMP_ROLE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL, SIMULATION_YEAR
+from cost_model.state.schema import EMP_ID, EMP_TERM_DATE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_LEVEL, SIMULATION_YEAR
 from cost_model.dynamics.sampling.new_hires import sample_new_hire_compensation
 from cost_model.dynamics.sampling.salary import DefaultSalarySampler
 from logging_config import get_logger, get_diagnostic_logger
@@ -27,7 +27,7 @@ from cost_model.state.schema import EMP_BIRTH_DATE
 def run(
     snapshot: pd.DataFrame,
     hires_to_make: int,
-    hazard_slice: pd.DataFrame, 
+    hazard_slice: pd.DataFrame,
     rng: np.random.Generator,
     census_template_path: str,
     global_params: SimpleNamespace,
@@ -43,17 +43,17 @@ def run(
     if hazard_slice.empty:
         logger.warning("[HIRE.RUN] Hazard slice is empty. Cannot determine simulation year or new hire term rates. Returning no hires.")
         return [pd.DataFrame(columns=EVENT_COLS), pd.DataFrame(columns=EVENT_COLS)]
-    
+
     simulation_year = int(hazard_slice[SIMULATION_YEAR].iloc[0])  # Use constant and ensure it's an int
     logger.info(f"[HIRE.RUN YR={simulation_year}] Hires to make (passed-in): {hires_to_make}")
-    
+
     # No need to recalculate hires_to_make - the caller has already done this math
     # including the gross-up for new hire termination rate if needed
-    
+
     # Get role and default compensation parameters from various possible locations
     role_comp_params = {}
     default_params = {}
-    
+
     # Try to get role_compensation_params from different possible locations
     # 1. Try from global_params.compensation.roles (nested structure in dev_tiny.yaml)
     if hasattr(global_params, 'compensation') and hasattr(global_params.compensation, 'roles'):
@@ -67,7 +67,7 @@ def run(
         role_comp_params = global_params.role_compensation_params
         if not isinstance(role_comp_params, dict):
             role_comp_params = vars(role_comp_params) if hasattr(role_comp_params, '__dict__') else {}
-    
+
     # Try to get new_hire_compensation_params from different possible locations
     # 1. Try from global_params.compensation.new_hire (nested structure in dev_tiny.yaml)
     if hasattr(global_params, 'compensation') and hasattr(global_params.compensation, 'new_hire'):
@@ -81,7 +81,7 @@ def run(
         default_params = global_params.new_hire_compensation_params
         if not isinstance(default_params, dict):
             default_params = vars(default_params) if hasattr(default_params, '__dict__') else {}
-            
+
     # Log available roles for debugging
     diag_logger.debug(f"[HIRE.RUN YR={simulation_year}] Available roles in role_comp_params: {list(role_comp_params.keys()) if isinstance(role_comp_params, dict) else 'None'}")
 
@@ -99,22 +99,22 @@ def run(
     existing_ids = (
         set(snapshot[EMP_ID])
         if EMP_ID in snapshot.columns
-        else set(snapshot.index) 
+        else set(snapshot.index)
     )
     new_ids = []
-    i = 1 
-    # Maximum attempts to prevent potential infinite loops if existing_ids is extremely dense 
+    i = 1
+    # Maximum attempts to prevent potential infinite loops if existing_ids is extremely dense
     # or if f-string somehow generates problematic IDs repeatedly (unlikely for f-string itself).
     max_attempts = hires_to_make * 2 + 20 # Allow a generous number of retries
 
     if hires_to_make > 0: # Only attempt to generate IDs if hires are needed
         while len(new_ids) < hires_to_make and i <= max_attempts:
             candidate_eid = f"NH_{simulation_year}_{i:04d}"
-            
+
             # Validate the candidate_eid string before adding it
             # It should be non-empty, not a representation of NA, and unique.
             is_problematic_string = candidate_eid.lower() in ['nan', 'na', '<na>', 'none', 'null', '']
-            
+
             if not is_problematic_string and candidate_eid not in existing_ids:
                 new_ids.append(candidate_eid)
             # else: # Optional: log if a candidate was skipped
@@ -138,9 +138,8 @@ def run(
         start + pd.Timedelta(days=int(d))
         for d in rng.integers(0, days, size=hires_to_make)
     ]
-    
-    # Initialize role_choices with default values
-    role_choices = ['Employee'] * hires_to_make
+
+    # Role assignment removed as part of schema refactoring
     # ----- Termination-based sampling with parameterized premium and age jitter -----
     ext_prem = getattr(global_params, 'replacement_hire_premium', 0.02)
     age_sd = getattr(global_params, 'replacement_hire_age_sd', 2)
@@ -183,7 +182,7 @@ def run(
         new_hire_age_std = default_params.get("new_hire_age_std_dev", None)
         new_hire_age_min = default_params.get("new_hire_age_min", None)
         new_hire_age_max = default_params.get("new_hire_age_max", None)
-        
+
         # 2. If not found, try direct attributes on global_params
         if new_hire_age_mean is None:
             new_hire_age_mean = getattr(global_params, "new_hire_average_age", 30)
@@ -205,7 +204,7 @@ def run(
             # In the future, we can add level-specific compensation parameters if needed
             params = default_params
             logger.info(f"[HIRE.RUN YR={simulation_year}] Using default params for level {level}")
-            
+
             comp = sampler.sample_new_hires(
                 size=1,
                 params=params,
@@ -219,15 +218,15 @@ def run(
         for hire_date, age in zip(hire_dates, ages):
             # Calculate birth year by subtracting age from hire date year
             birth_year = hire_date.year - int(age)
-            
+
             # Random month and day
             month = rng.integers(1, 13)  # 1-12
             max_days = 28 if month == 2 else 30 if month in [4, 6, 9, 11] else 31
             day = rng.integers(1, max_days + 1)  # 1-28/30/31
-            
+
             # Create birth date
             birth_date = pd.Timestamp(f"{birth_year}-{month:02d}-{day:02d}")
-            
+
             # Adjust if the birth date would make them older/younger than intended
             # by checking if their birthday has occurred yet this year
             actual_age = hire_date.year - birth_date.year - ((hire_date.month, hire_date.day) < (birth_date.month, birth_date.day))
@@ -235,18 +234,15 @@ def run(
                 # Adjust the year up or down by 1 to get the correct age
                 birth_year += (int(age) - actual_age)
                 birth_date = pd.Timestamp(f"{birth_year}-{month:02d}-{day:02d}")
-            
+
             birth_dates.append(birth_date.strftime('%Y-%m-%d'))
-        
+
         clone_of = [''] * hires_to_make
-    # Assign roles based on the level_choices if available
-    if 'level_choices' in locals() and level_choices is not None and len(level_choices) == hires_to_make:
-        role_choices = level_choices
-    
+    # Role assignment removed as part of schema refactoring
+
     # Build a DataFrame with one row per new hire for output
     hires_df = pd.DataFrame({
-        EMP_ID: new_ids, 
-        EMP_ROLE: role_choices,
+        EMP_ID: new_ids,
         'sampled_comp': starting_comps,
         EMP_HIRE_DATE: hire_dates,
         EMP_BIRTH_DATE: birth_dates,
@@ -281,10 +277,10 @@ def run(
 
     # Generate hire events
     hire_events = []
-    for i, (eid, role, dt, bd_raw, co) in enumerate(zip(new_ids, role_choices, hire_dates, birth_dates, clone_of)):
+    for i, (eid, dt, bd_raw, co) in enumerate(zip(new_ids, hire_dates, birth_dates, clone_of)):
         # Debug: Log birth date values and types
         logger.debug(f"Processing birth date for {eid}: type={type(bd_raw)}, value={bd_raw}")
-        
+
         # Ensure birth date is properly converted to datetime
         try:
             if pd.isna(bd_raw):
@@ -297,24 +293,22 @@ def run(
                 # Try to parse string as datetime
                 bd = pd.to_datetime(bd_raw, errors='coerce')
                 bd_str = bd.strftime("%Y-%m-%d") if not pd.isna(bd) else None
-                
+
             # Debug: Log final birth date value
             logger.debug(f"Processed birth date for {eid}: final={bd}, str={bd_str}")
-            
+
             # Convert NumPy types to native Python types for JSON serialization
-            if isinstance(role, (np.integer, np.floating)):
-                role = int(role) if isinstance(role, np.integer) else float(role)
             if isinstance(co, (np.integer, np.floating)):
                 co = int(co) if isinstance(co, np.integer) else float(co)
-                
+
             # Include compensation in the JSON payload to avoid providing both value_num and value_json
             payload = {
-                'role': role,
+                # role removed as part of schema refactoring
                 'birth_date': bd_str,
                 'clone_of': str(co) if co is not None else '',
                 'compensation': float(starting_comps[i])  # Include compensation in the payload
             }
-            
+
             hire_events.append(create_event(
                 event_time=dt,
                 employee_id=eid,
@@ -328,7 +322,7 @@ def run(
             raise
     hire_df = pd.DataFrame(hire_events, columns=EVENT_COLS).sort_values("event_time", ignore_index=True)
     # Only return hire events; compensation will be sampled in run_one_year
-    
+
     # Rename for clarity from general 'hire_df' to 'hires_events_df' if this is the final events DF
     hires_events_df = hire_df
 
@@ -355,10 +349,10 @@ def run(
                         all_valid_strings = False
                         logger.error(f"[HIRE.RUN VALIDATION] CRITICAL: EMP_ID column in returned hires_events contains invalid string at index {idx}: Value='{val}', Type={type(val)}.")
                         # Break or collect all problematic ones
-                        break 
+                        break
                 if not all_valid_strings:
                     # Consider raising an error
                     # raise ValueError("EMP_ID column in hires_events contains non-string or empty string values.")
                     pass # Logged above
 
-    return [hires_events_df]  
+    return [hires_events_df]

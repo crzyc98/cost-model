@@ -38,26 +38,45 @@ def _generate_hire_dates(num: int, year: int, rng: np.random.Generator) -> pd.Se
     return year_start + pd.to_timedelta(random_day_offsets, unit="D")
 
 
-def _assign_roles(
-    num: int, dist: Dict[str, float], rng: np.random.Generator
+def _calculate_compensation_simple(
+    ages: np.ndarray,
+    comp_params: Dict[str, Any],
+    min_age_cfg: int,
+    rng: np.random.Generator
 ) -> np.ndarray:
-    """Assigns roles based on a probability distribution."""
-    roles = list(dist.keys()) if dist else ["DefaultRole"]
-    role_probs = list(dist.values()) if dist else [1.0]
-    if not roles:
-        logger.error("No roles available for assignment. Assigning 'UnknownRole'.")
-        return np.array(["UnknownRole"] * num)
-    if dist:
-        total_prob = sum(role_probs)
-        if not np.isclose(total_prob, 1.0) and total_prob > 0:
-            logger.warning(f"Role distribution sums to {total_prob:.4f}; normalizing.")
-            role_probs = [p / total_prob for p in role_probs]
-        elif total_prob <= 0:
-            logger.error(
-                "Role distribution probabilities sum to zero or less. Using uniform distribution."
-            )
-            role_probs = [1.0 / len(roles)] * len(roles)
-    return rng.choice(roles, size=num, p=role_probs)
+    """Calculate compensation based on age without role-based logic."""
+    def get_param_value(params: Dict[str, Any], key: str, default: float) -> float:
+        return float(params.get(key, default))
+
+    base = get_param_value(comp_params, "comp_base_salary", 50000.0)
+    age_factor = get_param_value(comp_params, "comp_age_factor", 0.01)
+    min_salary = get_param_value(comp_params, "comp_min_salary", 40000.0)
+    max_salary = get_param_value(comp_params, "comp_max_salary", base * 1.5)
+    stochastic_std_dev = get_param_value(comp_params, "comp_stochastic_std_dev", 0.0)
+
+    compensation_list = []
+
+    for age in ages:
+        age_comp = base * (age - min_age_cfg) * age_factor
+        initial_comp = max(base + age_comp, min_salary)
+
+        if stochastic_std_dev > 0:
+            if initial_comp <= 0:
+                logger.warning(
+                    f"Initial comp for age {age} is {initial_comp:.2f}. Using min_salary ({min_salary}) for log-normal base."
+                )
+                initial_comp_for_log = max(min_salary, 1.0)
+            else:
+                initial_comp_for_log = initial_comp
+
+            log_mean = np.log(initial_comp_for_log) - (stochastic_std_dev**2) / 2
+            raw_comp = np.exp(rng.normal(log_mean, stochastic_std_dev))
+            clamped_comp = max(min_salary, min(raw_comp, max_salary))
+            compensation_list.append(clamped_comp)
+        else:
+            compensation_list.append(initial_comp)
+
+    return np.array(compensation_list)
 
 
 def _generate_ages(
@@ -131,107 +150,7 @@ def _calculate_birth_dates(
     return birth_dates_series
 
 
-# --- MODIFIED FUNCTION ---
-def _calculate_compensation(
-    roles: Sequence[str],
-    ages: np.ndarray,
-    role_comp_params: Dict[
-        str, Any
-    ],  # Values can be CompensationParams objects or dicts
-    default_comp_params_as_dict: Dict[str, float],  # This is explicitly a dict
-    min_age_config: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    logger = logging.getLogger(__name__)
-    logger.info(f"[calculate_comp] 🔥 entered with N={len(roles)} hires, roles={set(roles)}")
-    """Calculates initial compensation based on role, age, and config parameters."""
-    compensation_list = []
-    for role, age in zip(roles, ages):
-        # current_params can be a CompensationParams object (or other object type)
-        # OR it can be the default_comp_params_as_dict.
-        current_params = role_comp_params.get(role, default_comp_params_as_dict)
-
-        # Helper to get values correctly based on type of current_params
-        def get_param_value(
-            param_source: Union[Dict[str, float], object], key: str, default_val: float
-        ) -> float:
-            if isinstance(param_source, dict):
-                return float(param_source.get(key, default_val))
-            else:  # Assume it's an object with attributes (like CompensationParams)
-                return float(getattr(param_source, key, default_val))
-
-        base = get_param_value(current_params, "comp_base_salary", 50000.0)
-        age_factor = get_param_value(current_params, "comp_age_factor", 0.01)
-        min_salary = get_param_value(current_params, "comp_min_salary", 40000.0)
-        max_salary = get_param_value(current_params, "comp_max_salary", base * 1.5)  # Default to 1.5x base
-        stochastic_std_dev = get_param_value(
-            current_params, "comp_stochastic_std_dev", 0.0
-        )
-
-        age_comp = base * (age - min_age_config) * age_factor
-        initial_comp = max(base + age_comp, min_salary)
-
-        if stochastic_std_dev > 0:
-            if initial_comp <= 0:
-                logger.warning(
-                    f"Initial comp for role '{role}' age {age} is {initial_comp:.2f}. Using min_salary ({min_salary}) for log-normal base."
-                )
-                initial_comp_for_log = max(
-                    min_salary, 1.0
-                )  # Ensure positive for np.log
-            else:
-                initial_comp_for_log = initial_comp
-
-            log_mean = np.log(initial_comp_for_log) - (stochastic_std_dev**2) / 2
-            raw_comp = np.exp(rng.normal(log_mean, stochastic_std_dev))
-            # Clamp between min and max salary
-            clamped_comp = max(min_salary, min(raw_comp, max_salary))
-            compensation_list.append(clamped_comp)
-        else:
-            compensation_list.append(initial_comp)
-
-    if compensation_list:
-        avg_comp = np.mean(compensation_list)
-        min_comp = min(compensation_list)
-        max_comp = max(compensation_list)
-        logger.info(
-            f"Calculated initial compensations for {len(roles)} hires. "
-            f"Avg: {avg_comp:.0f}, Min: {min_comp:.0f}, Max: {max_comp:.0f}"
-        )
-        # Log clamping stats
-        raw_comps = []
-        for role, age in zip(roles, ages):
-            current_params = role_comp_params.get(role, default_comp_params_as_dict)
-            base = get_param_value(current_params, "comp_base_salary", 50000.0)
-            age_factor = get_param_value(current_params, "comp_age_factor", 0.01)
-            min_salary = get_param_value(current_params, "comp_min_salary", 40000.0)
-            max_salary = get_param_value(current_params, "comp_max_salary", base * 1.5)
-
-            age_comp = base * (age - min_age_config) * age_factor
-            initial_comp = max(base + age_comp, min_salary)
-
-            log_mean = np.log(initial_comp) - (stochastic_std_dev**2) / 2
-            raw_comp = np.exp(rng.normal(log_mean, stochastic_std_dev))
-            raw_comps.append(raw_comp)
-
-        raw_min = min(raw_comps)
-        raw_max = max(raw_comps)
-        raw_avg = np.mean(raw_comps)
-
-        logger.info(
-            f"Raw compensation stats (before clamping): "
-            f"Avg: {raw_avg:.0f}, Min: {raw_min:.0f}, Max: {raw_max:.0f}"
-        )
-        logger.info(
-            f"Clamping stats: "
-            f"Min salary: {min_salary:.0f}, Max salary: {max_salary:.0f}"
-        )
-    else:
-        logger.info("No compensations calculated (empty list)")
-    return np.array(compensation_list)
-
-
-# --- END OF MODIFIED FUNCTION ---
+# --- REMOVED: Role-based compensation function no longer needed ---
 
 
 def generate_new_hires(

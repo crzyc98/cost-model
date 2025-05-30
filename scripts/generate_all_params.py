@@ -77,7 +77,7 @@ def generate_compensation_params(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Select employees with 1-3 years tenure for new hire parameters
     new_hires = df[(df["tenure"] >= 1) & (df["tenure"] < 4)].copy()
-    
+
     # Calculate new hire compensation parameters
     all_comp = new_hires["employee_gross_compensation"]
     med = all_comp.median()
@@ -98,31 +98,12 @@ def generate_compensation_params(df: pd.DataFrame) -> Dict[str, Any]:
         "new_hire_age_std": float(new_hires["age"].std().round(1)),
     }
 
-    # Per-role breakdown
-    role_params = {}
-    for role, sub in df.groupby("employee_role"):
-        # apply same $10k minimum filter per role
-        subs = sub[sub["employee_gross_compensation"] >= 10000]
-        comps = subs["employee_gross_compensation"]
-        med_r = comps.median()
-        p10_r = np.percentile(comps, 10)
-        p90_r = np.percentile(comps, 90)
-        log_dev_r = np.log(comps / med_r).std()
-
-        model_r = LinearRegression().fit(subs[["age"]], comps)
-        age_factor_r = model_r.coef_[0] / med_r
-
-        role_params[role] = {
-            "comp_base_salary": float(med_r),
-            "comp_min_salary": float(p10_r),
-            "comp_max_salary": float(p90_r),
-            "comp_age_factor": float(age_factor_r),
-            "comp_stochastic_std_dev": float(log_dev_r),
-        }
+    # Role-based compensation parameters removed as part of schema refactoring
+    # All compensation is now based on employee_level instead of employee_role
 
     return {
         "new_hire_compensation_params": new_hire_params,
-        "role_compensation_params": role_params,
+        # role_compensation_params removed
     }
 
 
@@ -131,7 +112,7 @@ def generate_attrition_rates(df: pd.DataFrame) -> Dict[str, Any]:
     # Compute tenure for terminated employees
     df_term = df.dropna(subset=["employee_termination_date"]).copy()
     df_term["tenure_at_term"] = (
-        (pd.to_datetime(df_term["employee_termination_date"]) - 
+        (pd.to_datetime(df_term["employee_termination_date"]) -
          pd.to_datetime(df_term["employee_hire_date"]))
         .dt.days / 365.25
     )
@@ -142,9 +123,9 @@ def generate_attrition_rates(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Bin terminated employees
     df_term["tenure_band"] = pd.cut(
-        df_term["tenure_at_term"], 
-        bins=bins, 
-        labels=labels, 
+        df_term["tenure_at_term"],
+        bins=bins,
+        labels=labels,
         right=False
     )
 
@@ -152,9 +133,9 @@ def generate_attrition_rates(df: pd.DataFrame) -> Dict[str, Any]:
     ref = pd.Timestamp(f"{datetime.today().year}-01-01")
     df["tenure"] = ((ref - df["employee_hire_date"]).dt.days / 365.25).astype(int)
     df["tenure_band"] = pd.cut(
-        df["tenure"], 
-        bins=bins, 
-        labels=labels, 
+        df["tenure"],
+        bins=bins,
+        labels=labels,
         right=False
     )
 
@@ -225,7 +206,7 @@ def generate_productivity_curve(df: pd.DataFrame) -> dict:
 
 
 def generate_all_parameters(
-    eoy_df: pd.DataFrame, 
+    eoy_df: pd.DataFrame,
     boy_df: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """Generate all simulation parameters from census data."""
@@ -251,11 +232,11 @@ def generate_all_parameters(
     # Generate compensation parameters and nest under global_parameters.compensation
     comp_params = generate_compensation_params(eoy_df)
     out["global_parameters"]["compensation"]["new_hire"] = comp_params["new_hire_compensation_params"]
-    out["global_parameters"]["compensation"]["roles"] = comp_params["role_compensation_params"]
+    # roles section removed as part of schema refactoring
 
     # Generate attrition rates and nest under global_parameters.attrition
     out["global_parameters"]["attrition"] = generate_attrition_rates(eoy_df)
-    
+
     # Generate new hire parameters if BOY data is available
     if boy_df is not None:
         out["global_parameters"]["new_hires"] = generate_new_hire_params(boy_df, eoy_df)
@@ -276,7 +257,7 @@ def main():
     # Load data
     eoy_df = pd.read_parquet("data/census_preprocessed.parquet")
     boy_df = None
-    
+
     # Try to load beginning of year data if available
     try:
         boy_df = pd.read_parquet("data/census_boy.parquet")
@@ -289,10 +270,10 @@ def main():
     # Save to YAML
     output_path = Path("config/simulation_params.yaml")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(output_path, "w") as f:
         yaml.dump(params, f, sort_keys=False)
-    
+
     print(f"Generated parameters saved to {output_path}")
 
 

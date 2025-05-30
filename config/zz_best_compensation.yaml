@@ -23,10 +23,7 @@ global_parameters:
   max_working_age: 65
   new_hire_average_age: 30
   new_hire_age_std_dev: 5
-  role_distribution:
-    Staff: 0.5
-    Manager: 0.35
-    Executive: 0.15
+  # role_distribution removed as part of schema refactoring
 
   # Compensation parameters
   compensation:

@@ -13,7 +13,7 @@ import pandas as pd
 from cost_model.engines import hire
 from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_LEVEL,
-    EMP_ACTIVE, EMP_TENURE_BAND, EMP_ROLE, EMP_DEFERRAL_RATE, EMP_TENURE,
+    EMP_ACTIVE, EMP_TENURE_BAND, EMP_DEFERRAL_RATE, EMP_TENURE,
     EMP_LEVEL_SOURCE, EMP_EXITED, SIMULATION_YEAR, EVENT_COLS
 )
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
@@ -269,7 +269,7 @@ class HiringOrchestrator:
             EMP_ID: employee_ids,
             EMP_HIRE_DATE: pd.to_datetime(hire_events['event_time']),
             EMP_BIRTH_DATE: pd.to_datetime('1990-01-01'),  # Default
-            EMP_ROLE: 'UNKNOWN',  # Default
+            # EMP_ROLE removed as part of schema refactoring
             EMP_GROSS_COMP: compensation_values,
             'employee_termination_date': pd.NaT,
             EMP_ACTIVE: True,
@@ -282,14 +282,12 @@ class HiringOrchestrator:
             SIMULATION_YEAR: year_context.year
         }
 
-        # Try to get birth date and role from meta if available
+        # Try to get birth date from meta if available (role removed as part of schema refactoring)
         if 'meta' in hire_events.columns:
             new_hires_data[EMP_BIRTH_DATE] = hire_events['meta'].apply(
                 lambda x: pd.to_datetime(safe_get_meta(x, 'birth_date', '1990-01-01'))
             )
-            new_hires_data[EMP_ROLE] = hire_events['meta'].apply(
-                lambda x: safe_get_meta(x, 'role', 'UNKNOWN')
-            )
+            # Role extraction removed as part of schema refactoring
 
         # Create new hires DataFrame
         new_hires = pd.DataFrame(new_hires_data)

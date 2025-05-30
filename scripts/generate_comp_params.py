@@ -74,7 +74,7 @@ df["age"] = ((ref - df["employee_birth_date"]).dt.days / 365.25).astype(int)
 
 out = {
     "new_hire_compensation_params": {},
-    "role_compensation_params": {},
+    # role_compensation_params removed as part of schema refactoring
 }
 
 # 3) Overall “default” (all roles combined)
@@ -100,26 +100,8 @@ out["new_hire_compensation_params"] = {
     "new_hire_age_std": float(df["age"].std().round(1))
 }
 
-# 4) Per-role breakdown
-for role, sub in df.groupby("employee_role"):
-    comps = sub["employee_gross_compensation"]
-    med = comps.median()
-    p10 = np.percentile(comps, 10)
-    p90 = np.percentile(comps, 90)
-    log_dev = np.log(comps / med).std()
-
-    X = sub[["age"]]
-    y = comps
-    model = LinearRegression().fit(X, y)
-    age_factor = model.coef_[0] / med
-
-    out["role_compensation_params"][role] = {
-        "comp_base_salary": float(med),
-        "comp_min_salary": float(p10),
-        "comp_max_salary": float(p90),
-        "comp_age_factor": float(age_factor),
-        "comp_stochastic_std_dev": float(log_dev),
-    }
+# 4) Role-based compensation parameters removed as part of schema refactoring
+# All compensation is now based on employee_level instead of employee_role
 
 # 5) Dump YAML
 print(yaml.dump(out, sort_keys=False))

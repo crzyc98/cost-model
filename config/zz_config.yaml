@@ -26,8 +26,7 @@ global_parameters:
   monthly_transition:                false
   maintain_headcount:                false
 
-  role_distribution:
-    Staff: 1.0
+  # role_distribution and role_compensation_params removed as part of schema refactoring
 
   new_hire_compensation_params:
     comp_base_salary:            55000
@@ -37,16 +36,6 @@ global_parameters:
     comp_log_mean_factor:          1.0
     comp_spread_sigma:             0.3
     comp_min_salary:             40000
-
-  role_compensation_params:
-    Staff:
-      comp_base_salary:            55000
-      comp_std:                    10000
-      comp_increase_per_age_year:    500
-      comp_increase_per_tenure_year: 1000
-      comp_log_mean_factor:          1.0
-      comp_spread_sigma:             0.3
-      comp_min_salary:             40000
 
   onboarding:
     enabled: true

@@ -13,7 +13,7 @@ from typing import Union, Dict, Tuple, List
 from cost_model.state.snapshot.constants import SNAPSHOT_COLS as SNAPSHOT_COL_NAMES, SNAPSHOT_DTYPES
 from cost_model.state.job_levels.loader import ingest_with_imputation
 from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_ROLE,
+    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE,
     EMP_GROSS_COMP, EMP_DEFERRAL_RATE, EMP_TENURE_BAND, EMP_TENURE,
     EMP_TERM_DATE, EMP_ACTIVE, EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED, SIMULATION_YEAR
 ) # Import all required column constants
@@ -89,14 +89,14 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         'hire_date': EMP_HIRE_DATE,
         'termination_date': EMP_TERM_DATE,
         'gross_compensation': EMP_GROSS_COMP,
-        'role': EMP_ROLE,
+        # role mapping removed as part of schema refactoring
 
         # Additional mappings specific to our CSV structure
         'employee_birth_date': EMP_BIRTH_DATE,
         'employee_hire_date': EMP_HIRE_DATE,
         'employee_termination_date': EMP_TERM_DATE,
         'employee_gross_compensation': EMP_GROSS_COMP,
-        'employee_role': EMP_ROLE,
+        # employee_role mapping removed as part of schema refactoring
         'employee_deferral_rate': EMP_DEFERRAL_RATE
     }
 
@@ -174,11 +174,11 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         # Initialize with default values that will be calculated below
         EMP_TENURE: 0.0,
         EMP_TENURE_BAND: pd.NA,
-        # Initialize with default values for employee level and role
+        # Initialize with default values for employee level
         EMP_LEVEL: pd.Series([pd.NA] * len(census_df), dtype='Int64'),
         EMP_LEVEL_SOURCE: pd.Series([pd.NA] * len(census_df), dtype='string'),
         EMP_EXITED: False,  # Will be updated based on termination status
-        EMP_ROLE: pd.NA,  # Will be set to a default value if not in census
+        # EMP_ROLE removed as part of schema refactoring
         SIMULATION_YEAR: start_year  # Set simulation year for all employees
     }
 
@@ -269,13 +269,7 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         initial_data[EMP_LEVEL] = pd.Series([1] * len(initial_data[EMP_ID]), dtype='Int64')
         initial_data[EMP_LEVEL_SOURCE] = pd.Series(['default'] * len(initial_data[EMP_ID]), dtype='string')
 
-    # Set employee role if it exists in census, otherwise use default 'Regular'
-    if EMP_ROLE in census_df.columns:
-        initial_data[EMP_ROLE] = census_df[EMP_ROLE].astype('string')
-        logger.info(f"Using '{EMP_ROLE}' column from census data")
-    else:
-        logger.warning(f"No {EMP_ROLE} column found in census. Initializing with default role 'Regular'.")
-        initial_data[EMP_ROLE] = 'Regular'
+    # Employee role logic removed as part of schema refactoring
 
     # Create snapshot_df with all required columns, ensuring simulation_year is included
     snapshot_df = pd.DataFrame(initial_data)

@@ -12,25 +12,7 @@ global_parameters:
       comp_stochastic_std_dev: 0.4109273141111264
       new_hire_age_mean: 46.0
       new_hire_age_std: 10.9
-    roles:
-      Executive:
-        comp_base_salary: 315679.72
-        comp_min_salary: 263614.81
-        comp_max_salary: 466086.79400000005
-        comp_age_factor: -0.00253871005010324
-        comp_stochastic_std_dev: 0.3064158769318981
-      Manager:
-        comp_base_salary: 180794.77000000002
-        comp_min_salary: 127302.723
-        comp_max_salary: 233636.56200000003
-        comp_age_factor: 0.006341263706526061
-        comp_stochastic_std_dev: 0.24242303385044559
-      Staff:
-        comp_base_salary: 61473.45
-        comp_min_salary: 44677.962
-        comp_max_salary: 76200.24799999999
-        comp_age_factor: 0.007474783993533746
-        comp_stochastic_std_dev: 0.2129779339831023
+    # roles section removed as part of schema refactoring
   attrition:
     annual_termination_rate: 0.3333333333333333
     termination_rate_by_tenure:
