@@ -70,7 +70,6 @@ Thumbs.db
 # =============================
 # (keep raw input data under version control)
 output/
-output_dev/
 
 # =============================
 # Local configuration overrides

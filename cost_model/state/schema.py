@@ -231,6 +231,7 @@ SNAPSHOT_COLS: List[str] = [
     EMP_ID,
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
+    EMP_ROLE,  # FIXED: Added missing employee_role column to match SNAPSHOT_DTYPES
     EMP_GROSS_COMP,
     EMP_TERM_DATE,
     EMP_ACTIVE,

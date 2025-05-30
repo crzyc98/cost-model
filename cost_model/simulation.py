@@ -46,7 +46,7 @@ try:
 except ImportError as e:
     print(f"Error importing reporting components: {e}")
     # Temporarily define a placeholder if calculate_summary_metrics is missing
-    def calculate_summary_metrics(*args, **kwargs): 
+    def calculate_summary_metrics(*args, **kwargs):
         print("Warning: calculate_summary_metrics not implemented yet.")
         return pd.DataFrame() # Return empty DataFrame
 
@@ -92,6 +92,15 @@ def run_simulation(
         Exception: For errors during simulation steps (dynamics, rules, etc.).
     """
     logger.info(f"===== Starting Simulation for Scenario: '{scenario_name}' =====")
+
+    # Clear compensation warning cache for this new simulation run
+    try:
+        from cost_model.engines.comp import clear_warning_cache
+        clear_warning_cache()
+        logger.debug("Cleared compensation conflict warning cache for new simulation")
+    except ImportError:
+        # Gracefully handle if the function doesn't exist in older versions
+        pass
 
     # 1. Get Resolved Scenario Configuration
     try:
@@ -147,9 +156,41 @@ def run_simulation(
         if census_col in census_df.columns:
             snap[std_col] = snap.index.map(census_df.set_index(EMP_ID)[census_col].to_dict()).astype(str)
 
-    # 4. Load hazard table
-    hazard_path = Path('cost_model/state/hazard_table.csv')
-    hazard = pd.read_csv(hazard_path)
+    # 4. Load hazard table using proper loading function
+    try:
+        from cost_model.projections.hazard import load_and_expand_hazard_table
+        hazard = load_and_expand_hazard_table('data/hazard_table.parquet')
+        if hazard.empty:
+            logger.warning("Hazard table from parquet is empty, falling back to CSV")
+            # Fallback to CSV if parquet doesn't exist or is empty
+            hazard_path = Path('cost_model/state/hazard_table.csv')
+            hazard = pd.read_csv(hazard_path)
+            # Apply basic column renaming for CSV
+            column_mapping = {
+                'year': 'simulation_year',
+                'employee_level': 'employee_level',
+                'tenure_band': 'employee_tenure_band',
+                'term_rate': 'term_rate',
+                'comp_raise_pct': 'comp_raise_pct',
+                'cola_pct': 'cola_pct',
+                'new_hire_termination_rate': 'new_hire_termination_rate'
+            }
+            hazard = hazard.rename(columns={k: v for k, v in column_mapping.items() if k in hazard.columns})
+    except ImportError:
+        # Fallback if import fails
+        hazard_path = Path('cost_model/state/hazard_table.csv')
+        hazard = pd.read_csv(hazard_path)
+        # Apply basic column renaming for CSV
+        column_mapping = {
+            'year': 'simulation_year',
+            'employee_level': 'employee_level',
+            'tenure_band': 'employee_tenure_band',
+            'term_rate': 'term_rate',
+            'comp_raise_pct': 'comp_raise_pct',
+            'cola_pct': 'cola_pct',
+            'new_hire_termination_rate': 'new_hire_termination_rate'
+        }
+        hazard = hazard.rename(columns={k: v for k, v in column_mapping.items() if k in hazard.columns})
 
     # 5. Prepare output dir
     scenario_output_dir = output_dir_base / scenario_output_name
@@ -185,7 +226,7 @@ def run_simulation(
 
     # 7. Calculate Summary Metrics (Optional)
     summary_metrics_df = None
-    if save_summary_metrics and yearly_snapshots: 
+    if save_summary_metrics and yearly_snapshots:
         logger.info("Calculating summary metrics...")
         try:
             all_results_df = pd.concat(yearly_snapshots.values(), ignore_index=True)

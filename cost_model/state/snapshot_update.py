@@ -298,17 +298,7 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
     current[SIMULATION_YEAR] = year
     logger.debug("Updated simulation_year=%d for %d existing employees", year, len(current))
 
-    # Compensation updates
-    comp_upd = new_events[new_events["event_type"] == EVT_COMP]
-    if not comp_upd.empty:
-        last_comp = comp_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
-        # Only update employees that exist in current
-        valid_emp_ids = last_comp[last_comp[EMP_ID].isin(current.index)][EMP_ID]
-        if not valid_emp_ids.empty:
-            current.loc[valid_emp_ids, EMP_GROSS_COMP] = last_comp.set_index(EMP_ID).loc[valid_emp_ids, "value_num"]
-            logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
-
-    # COLA updates - apply the COLA amount to the current compensation
+    # COLA updates - apply the COLA amount to the current compensation FIRST
     cola_upd = new_events[new_events["event_type"] == EVT_COLA]
     if not cola_upd.empty:
         # Group by employee and get the last COLA for each
@@ -321,6 +311,16 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
                 updated_count += 1
         if updated_count > 0:
             logger.debug("Applied COLA updates to %d employees", updated_count)
+
+    # Compensation updates - process AFTER COLA so prorated compensation is final
+    comp_upd = new_events[new_events["event_type"] == EVT_COMP]
+    if not comp_upd.empty:
+        last_comp = comp_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
+        # Only update employees that exist in current
+        valid_emp_ids = last_comp[last_comp[EMP_ID].isin(current.index)][EMP_ID]
+        if not valid_emp_ids.empty:
+            current.loc[valid_emp_ids, EMP_GROSS_COMP] = last_comp.set_index(EMP_ID).loc[valid_emp_ids, "value_num"]
+            logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
 
     # Raise updates - apply raise amount to current compensation
     raise_upd = new_events[new_events["event_type"] == EVT_RAISE]

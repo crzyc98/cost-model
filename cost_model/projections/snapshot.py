@@ -293,9 +293,9 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
     current_date_for_tenure = pd.Timestamp(f"{start_year}-01-01")
     snapshot_df[EMP_TENURE] = (current_date_for_tenure - snapshot_df[EMP_HIRE_DATE]).dt.days / 365.25
 
-    # Calculate tenure bands
+    # Calculate tenure bands (match hazard table format exactly)
     bins = [0, 1, 3, 5, 10, float('inf')]  # Tenure bins in years
-    labels = ['0-1yr', '1-3yrs', '3-5yrs', '5-10yrs', '10+yrs']
+    labels = ['0-1', '1-3', '3-5', '5-10', '10+']  # Match hazard table format
     snapshot_df[EMP_TENURE_BAND] = pd.cut(
         snapshot_df[EMP_TENURE],
         bins=bins,

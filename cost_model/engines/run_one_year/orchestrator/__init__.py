@@ -106,14 +106,17 @@ def run_one_year(
     all_events = []
     start_count = len(snapshot)  # Count before any changes
 
-    # Step 1: Markov promotions/exits (experienced only)
+    # Step 1: Compensation events (annual raises and COLA) - Apply FIRST so promotions use updated compensation
+    compensation_events = _generate_compensation_events(snapshot, year_context, logger)
+    all_events.extend(compensation_events)
+
+    # Step 1b: Apply compensation events to snapshot
+    snapshot = _apply_compensation_events_to_snapshot(snapshot, compensation_events, year_context, logger)
+
+    # Step 2: Markov promotions/exits (experienced only) - Apply AFTER compensation so raises use updated values
     promotion_events, snapshot = promotion_orchestrator.get_events(snapshot, year_context)
     all_events.extend(promotion_events)
     validator.validate(snapshot, "markov_promotions", year_context)
-
-    # Step 2: Compensation events (annual raises and COLA)
-    compensation_events = _generate_compensation_events(snapshot, year_context, logger)
-    all_events.extend(compensation_events)
 
     # Step 3: Hazard-based terminations (experienced only)
     termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
@@ -377,16 +380,121 @@ def _apply_contribution_calculations(
     return snapshot_copy
 
 
+def _apply_compensation_events_to_snapshot(
+    snapshot: pd.DataFrame,
+    compensation_events: List[pd.DataFrame],
+    year_context: YearContext,
+    logger: logging.Logger
+) -> pd.DataFrame:
+    """
+    Apply compensation events to update employee compensation in the snapshot.
+
+    Args:
+        snapshot: Current workforce snapshot
+        compensation_events: List of compensation event DataFrames
+        year_context: Year-specific context and parameters
+        logger: Logger instance
+
+    Returns:
+        Updated snapshot with compensation changes applied
+    """
+    logger.info("[STEP] Applying compensation events to snapshot")
+
+    # Collect all compensation events into a single DataFrame
+    events_to_apply = []
+    for event_df in compensation_events:
+        if isinstance(event_df, pd.DataFrame) and not event_df.empty:
+            events_to_apply.append(event_df)
+
+    if not events_to_apply:
+        logger.info("[COMP] No compensation events to apply")
+        return snapshot
+
+    # Concatenate all events
+    all_comp_events = pd.concat(events_to_apply, ignore_index=True)
+
+    # Apply events using the snapshot update mechanism
+    from cost_model.state.snapshot_update import update
+    updated_snapshot = update(
+        prev_snapshot=snapshot,
+        new_events=all_comp_events,
+        snapshot_year=year_context.year
+    )
+
+    # Count how many employees had compensation updated
+    comp_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COMP']
+    cola_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COLA']
+
+    comp_count = len(comp_events) if not comp_events.empty else 0
+    cola_count = len(cola_events) if not cola_events.empty else 0
+
+    logger.info(f"[COMP] Applied {comp_count} compensation updates and {cola_count} COLA updates to snapshot")
+
+    return updated_snapshot
+
+
+def _apply_compensation_events_to_snapshot(
+    snapshot: pd.DataFrame,
+    compensation_events: List[pd.DataFrame],
+    year_context: YearContext,
+    logger: logging.Logger
+) -> pd.DataFrame:
+    """
+    Apply compensation events to update employee compensation in the snapshot.
+
+    Args:
+        snapshot: Current workforce snapshot
+        compensation_events: List of compensation event DataFrames
+        year_context: Year-specific context and parameters
+        logger: Logger instance
+
+    Returns:
+        Updated snapshot with compensation changes applied
+    """
+    logger.info("[STEP] Applying compensation events to snapshot")
+
+    # Collect all compensation events into a single DataFrame
+    events_to_apply = []
+    for event_df in compensation_events:
+        if isinstance(event_df, pd.DataFrame) and not event_df.empty:
+            events_to_apply.append(event_df)
+
+    if not events_to_apply:
+        logger.info("[COMP] No compensation events to apply")
+        return snapshot
+
+    # Concatenate all events
+    all_comp_events = pd.concat(events_to_apply, ignore_index=True)
+
+    # Apply events using the snapshot update mechanism
+    from cost_model.state.snapshot_update import update
+    updated_snapshot = update(
+        prev_snapshot=snapshot,
+        new_events=all_comp_events,
+        snapshot_year=year_context.year
+    )
+
+    # Count how many employees had compensation updated
+    comp_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COMP']
+    cola_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COLA']
+
+    comp_count = len(comp_events) if not comp_events.empty else 0
+    cola_count = len(cola_events) if not cola_events.empty else 0
+
+    logger.info(f"[COMP] Applied {comp_count} compensation updates and {cola_count} COLA updates to snapshot")
+
+    return updated_snapshot
+
+
 def _generate_compensation_events(
     snapshot: pd.DataFrame,
     year_context: YearContext,
     logger: logging.Logger
-) -> List[List[pd.DataFrame]]:
+) -> List[pd.DataFrame]:
     """
     Generate comprehensive compensation events (annual raises and COLA) for active employees.
 
-    This function calls the bump() function from cost_model.engines.comp which generates
-    both EVT_COMP (standard raises) and EVT_COLA (cost of living adjustments) events.
+    This function generates both EVT_COMP (standard raises) and EVT_COLA (cost of living adjustments) events.
 
     Args:
         snapshot: Current workforce snapshot
@@ -394,42 +502,69 @@ def _generate_compensation_events(
         logger: Logger instance
 
     Returns:
-        List containing the event DataFrames from bump() function
+        List containing the event DataFrames for both raise and COLA events
     """
     logger.info("[STEP] Generating compensation events (annual raises and COLA)")
+    import traceback
+    all_events = []
 
     try:
-        # Import the comprehensive compensation function from comp engine
+        # Import the compensation function
         from cost_model.engines.comp import bump
 
-        # Generate both EVT_COMP and EVT_COLA events using the bump function
-        compensation_events = bump(
-            snapshot=snapshot,
-            hazard_slice=year_context.hazard_slice,
-            as_of=year_context.as_of,
-            rng=year_context.year_rng
-        )
+        # Generate both standard compensation events (raises) and COLA events
+        # The bump() function now handles both EVT_COMP and EVT_COLA events internally
+        try:
+            comp_events = bump(
+                snapshot=snapshot,
+                hazard_slice=year_context.hazard_slice,
+                as_of=year_context.as_of,
+                rng=year_context.year_rng
+            )
+            all_events.extend(comp_events)
 
-        # Log summary of generated events
-        total_events = sum(len(df) for df in compensation_events if not df.empty)
-        event_types = []
-        for df in compensation_events:
-            if not df.empty and 'event_type' in df.columns:
-                event_types.extend(df['event_type'].unique())
+            # Count events by type for logging
+            total_comp_events = 0
+            total_cola_events = 0
+            for df in comp_events:
+                if not df.empty and 'event_type' in df.columns:
+                    comp_count = (df['event_type'] == 'EVT_COMP').sum()
+                    cola_count = (df['event_type'] == 'EVT_COLA').sum()
+                    total_comp_events += comp_count
+                    total_cola_events += cola_count
 
-        logger.info(f"[COMP] Generated {total_events} compensation events for year {year_context.year}")
-        logger.info(f"[COMP] Event types generated: {list(set(event_types))}")
+            logger.info(f"[COMP] Generated {total_comp_events} standard compensation events and {total_cola_events} COLA events")
 
-        return [compensation_events]
+        except KeyError as e:
+            if 'cola_pct' in str(e):
+                logger.warning("[COMP] No COLA events generated: 'cola_pct' not found in hazard slice")
+            else:
+                logger.error(f"[COMP] Error in compensation generation: {e}")
+                logger.error(f"[COMP] Hazard columns: {year_context.hazard_slice.columns.tolist()}")
+                logger.error(f"[COMP] Traceback: {traceback.format_exc()}")
+        except Exception as e:
+            logger.error(f"[COMP] Error in compensation generation: {e}")
+            logger.error(f"[COMP] Traceback: {traceback.format_exc()}")
 
     except Exception as e:
-        logger.error(f"[COMP] Error generating compensation events: {e}")
-        # Return empty events to maintain flow
-        return [[pd.DataFrame(columns=EVENT_COLS)]]
+        logger.error(f"[COMP] Unexpected error in compensation event generation: {e}")
+        logger.error(f"[COMP] Traceback: {traceback.format_exc()}")
+
+    # Log summary of all generated events
+    total_events = sum(len(df) for df in all_events if not df.empty)
+    event_types = []
+    for df in all_events:
+        if not df.empty and 'event_type' in df.columns:
+            event_types.extend(df['event_type'].unique())
+
+    logger.info(f"[COMP] Total compensation events for year {year_context.year}: {total_events}")
+    logger.info(f"[COMP] Event types generated: {sorted(list(set(event_types)))}")
+
+    return all_events
 
 
 def _consolidate_events(
-    all_events: List[List[pd.DataFrame]],
+    all_events: List[pd.DataFrame],
     event_log: pd.DataFrame,
     year: int,
     logger: logging.Logger
@@ -438,7 +573,7 @@ def _consolidate_events(
     Consolidate all events generated during the year into a single DataFrame.
 
     Args:
-        all_events: List of event lists from each orchestrator
+        all_events: List of event DataFrames from each orchestrator
         event_log: Existing cumulative event log
         year: Current simulation year
         logger: Logger instance
@@ -448,17 +583,12 @@ def _consolidate_events(
     """
     logger.info("[STEP] Consolidating events")
 
-    # Flatten the list of event lists
+    # Collect all non-empty DataFrames
     events_to_concat = []
-    for event_list in all_events:
-        if isinstance(event_list, list):
-            for event_df in event_list:
-                # Ensure we only process DataFrame objects
-                if isinstance(event_df, pd.DataFrame) and not event_df.empty:
-                    events_to_concat.append(event_df)
-        elif isinstance(event_list, pd.DataFrame) and not event_list.empty:
-            # Handle case where event_list is directly a DataFrame
-            events_to_concat.append(event_list)
+    for event_df in all_events:
+        # Ensure we only process DataFrame objects
+        if isinstance(event_df, pd.DataFrame) and not event_df.empty:
+            events_to_concat.append(event_df)
 
     # Filter out empty DataFrames before concatenation to avoid FutureWarning
     non_empty_events = [df for df in events_to_concat if not df.empty]

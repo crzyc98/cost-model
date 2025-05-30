@@ -6,6 +6,7 @@ global_parameters:
   log_level: DEBUG
   projection_years: 5
   random_seed: 42
+  dev_mode: true
 
   annual_compensation_increase_rate: 0.05
   annual_termination_rate:           0.15

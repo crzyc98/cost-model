@@ -8,7 +8,7 @@ import pandas as pd
 import logging
 import os
 from typing import List, Dict, Optional, Union, Tuple
-from cost_model.utils.tenure_utils import standardize_tenure_band
+# Removed standardize_tenure_band import - hazard table should have correct format
 from cost_model.state.schema import (
     EMP_LEVEL,
     EMP_TENURE_BAND,
@@ -67,9 +67,9 @@ def build_hazard_table(
 
     # First, add all combinations from the initial snapshot
     for combo in unique_levels_tenures:
-        # Ensure tenure band is standardized
-        std_tenure = standardize_tenure_band(combo[EMP_TENURE_BAND])
-        all_combinations.add((combo[EMP_LEVEL], std_tenure))
+        # Use tenure band as-is (no standardization needed)
+        tenure_band = combo[EMP_TENURE_BAND]
+        all_combinations.add((combo[EMP_LEVEL], tenure_band))
 
     # Then add all missing combinations with standard tenure bands
     for level in all_employee_levels:
@@ -99,7 +99,17 @@ def build_hazard_table(
             })
     if records:
         df = pd.DataFrame(records)
-        logger.info(f"Hazard table with {len(records)} rows.")
+
+        # Remove any potential duplicates that might have been created
+        initial_rows = len(df)
+        df = df.drop_duplicates(subset=[SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND])
+        final_rows = len(df)
+
+        if final_rows < initial_rows:
+            removed_count = initial_rows - final_rows
+            logger.warning(f"Removed {removed_count} duplicate (year, level, tenure_band) combinations during hazard table generation")
+
+        logger.info(f"Generated hazard table with {final_rows} rows.")
     else:
         cols = [SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT, CFG]
         df = pd.DataFrame(columns=cols)
@@ -211,13 +221,11 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     if EMP_LEVEL in result.columns:
         result[EMP_LEVEL] = result[EMP_LEVEL].astype(int)
 
-    # Standardize tenure bands to ensure consistent format
+    # Log tenure bands in hazard table (no standardization needed - hazard table should have correct format)
     if EMP_TENURE_BAND in result.columns:
-        logger.info("Standardizing tenure band formats in hazard table")
-        result[EMP_TENURE_BAND] = result[EMP_TENURE_BAND].map(standardize_tenure_band)
-        logger.info(f"Unique tenure bands after standardization: {result[EMP_TENURE_BAND].unique().tolist()}")
+        logger.info(f"Tenure bands in hazard table: {sorted(result[EMP_TENURE_BAND].unique())}")
     else:
-        logger.warning(f"'{EMP_TENURE_BAND}' column not found in hazard table. Skipping standardization.")
+        logger.warning(f"'{EMP_TENURE_BAND}' column not found in hazard table.")
 
     # Ensure all key rate columns are numeric and handle potential NaNs by filling with 0
     # This is a safeguard, ideally the Parquet file should have clean data.
@@ -237,8 +245,31 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
 
     logger.info(f"Final processed hazard table has {len(result)} rows")
 
-    # Log the unique combinations in the processed hazard table
-    if EMP_LEVEL in result.columns and EMP_TENURE_BAND in result.columns:
+    # Check for and remove duplicates in the processed hazard table
+    if EMP_LEVEL in result.columns and EMP_TENURE_BAND in result.columns and SIMULATION_YEAR in result.columns:
+        # Check for duplicates within each year
+        initial_rows = len(result)
+
+        # Group by year and check for duplicates within each year
+        years_with_duplicates = []
+        for year in result[SIMULATION_YEAR].unique():
+            year_data = result[result[SIMULATION_YEAR] == year]
+            year_unique = year_data.drop_duplicates(subset=[EMP_LEVEL, EMP_TENURE_BAND])
+            if len(year_unique) < len(year_data):
+                years_with_duplicates.append(year)
+                duplicates_count = len(year_data) - len(year_unique)
+                logger.debug(f"Found {duplicates_count} duplicate (level, tenure_band) combinations in hazard table for year {year}")
+
+        # Remove duplicates across the entire table
+        result = result.drop_duplicates(subset=[SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND])
+        final_rows = len(result)
+
+        if final_rows < initial_rows:
+            removed_count = initial_rows - final_rows
+            logger.info(f"Removed {removed_count} duplicate (year, level, tenure_band) combinations from hazard table")
+            if years_with_duplicates:
+                logger.debug(f"Years with duplicates: {years_with_duplicates}")
+
         unique_combos = result[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates()
         logger.info(f"Processed hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations")
         logger.debug(f"Unique combinations: {unique_combos.to_dict('records')}")

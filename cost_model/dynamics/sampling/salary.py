@@ -51,14 +51,25 @@ class DefaultSalarySampler:
     ) -> pd.Series:
         rng = rng or self.rng
         comp = df[comp_col].astype(float)
-        mask = df.get("tenure", 0) == 1
+
+        # Create a proper boolean mask for second-year employees
+        # If no tenure column, apply to all employees (safer default)
+        if "tenure" in df.columns:
+            mask = df["tenure"] == 1
+        else:
+            # If no tenure column, apply to all employees in the DataFrame
+            mask = pd.Series([True] * len(df), index=df.index)
+
         bumped = comp.copy()
 
         if dist and dist.get("type") == "normal":
             mean = dist.get("mean", 0.0)
             std = dist.get("std", 0.0)
-            bumps = rng.normal(loc=mean, scale=std, size=mask.sum())
-            bumped.loc[mask] = (comp[mask] * (1 + bumps)).round(2)
+            # Ensure mask is a Series and can be summed
+            mask_count = mask.sum() if hasattr(mask, 'sum') else (1 if mask else 0)
+            if mask_count > 0:
+                bumps = rng.normal(loc=mean, scale=std, size=mask_count)
+                bumped.loc[mask] = (comp[mask] * (1 + bumps)).round(2)
         elif rate:
             bumped.loc[mask] = (comp[mask] * (1 + rate)).round(2)
 
@@ -88,7 +99,7 @@ class DefaultSalarySampler:
         return pd.Series(clamped_draws, index=range(size), dtype=draws.dtype)
 
     def sample_new_hires(
-        self, size: int, params: Dict[str, float], ages: Optional[np.ndarray] = None, 
+        self, size: int, params: Dict[str, float], ages: Optional[np.ndarray] = None,
         rng: Optional[Generator] = None
     ) -> pd.Series:
         """

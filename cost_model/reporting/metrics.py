@@ -98,7 +98,8 @@ def calculate_summary_metrics(
     for col in ["is_eligible", "eligible"]:
         if col in all_results_df.columns:
             eligibility_col = col
-            all_results_df[col] = all_results_df[col].astype(bool)
+            # Handle NaN values before converting to bool
+            all_results_df[col] = all_results_df[col].fillna(False).astype(bool)
             break
 
     if not eligibility_col:
