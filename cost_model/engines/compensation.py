@@ -17,8 +17,10 @@ def update_salary(
     rng: Optional[np.random.Generator] = None
 ) -> pd.DataFrame:
     """
-    Apply COLA, promotion raise, and merit distribution to EMP_GROSS_COMP in that order.
+    Apply promotion raise, merit distribution, and COLA to EMP_GROSS_COMP in that order.
     Logs EVT_RAISE events for each step and returns a new DataFrame of raise events.
+
+    NOTE: COLA is applied LAST to ensure it multiplies the post-merit/promotion compensation.
 
     params should include:
       - COLA_rate: float
@@ -78,7 +80,7 @@ def update_salary(
         # Convert SimpleNamespace to dict if needed
         if hasattr(merit_map, '__dict__'):
             merit_map = vars(merit_map)
-        
+
         for idx, row in df.iterrows():
             lvl = row.get(EMP_LEVEL)
             if pd.isna(lvl) or not lvl or lvl not in merit_map:

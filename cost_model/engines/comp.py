@@ -70,11 +70,13 @@ def bump(
     Generate granular compensation events based on hazard table data.
 
     Implements the conceptual mapping:
-    - EVT_COLA → cola_pct (inflation adjustment for everyone)
     - EVT_COMP → merit_raise_pct (merit increase for active employees)
+    - EVT_COLA → cola_pct (inflation adjustment for everyone, applied LAST)
     - EVT_PROMOTION → promotion_raise_pct (handled separately in promotion logic)
 
-    Returns list of event DataFrames: [cola_events, merit_events]
+    Returns list of event DataFrames: [merit_events, cola_events]
+
+    NOTE: COLA is generated LAST to ensure it applies to post-merit compensation values.
     """
     # 1) Derive year and filter active
     year = int(hazard_slice["simulation_year"].iloc[0])
@@ -94,15 +96,7 @@ def bump(
         else:
             raise ValueError(f"{EMP_ID} not found in active snapshot")
 
-    # 3) Generate COLA events first (applies to everyone)
-    cola_events = generate_cola_events(
-        snapshot=snapshot,
-        hazard_slice=hazard_slice,
-        as_of=as_of,
-        rng=rng
-    )
-
-    # 4) Generate merit raise events (EVT_COMP) using merit_raise_pct
+    # 3) Generate merit raise events (EVT_COMP) using merit_raise_pct FIRST
     merit_events = _generate_merit_events(
         active=active,
         hazard_slice=hazard_slice,
@@ -110,8 +104,16 @@ def bump(
         year=year
     )
 
-    # Return both event types
-    return cola_events + merit_events
+    # 4) Generate COLA events LAST (applies to everyone after merit raises)
+    cola_events = generate_cola_events(
+        snapshot=snapshot,
+        hazard_slice=hazard_slice,
+        as_of=as_of,
+        rng=rng
+    )
+
+    # Return merit events first, then COLA events (order matters for application)
+    return merit_events + cola_events
 
 
 def _generate_merit_events(
@@ -152,10 +154,19 @@ def _generate_merit_events(
         else:
             raise KeyError(f"No level column found in hazard_slice. Available columns: {hazard_slice.columns.tolist()}")
 
-    logger.debug(f"[COMP] Using column '{level_col}' as EMP_LEVEL merge key; hazard rows={len(hazard_slice)}")
+    # Determine tenure band column dynamically
+    tenure_col = 'tenure_band' if 'tenure_band' in hazard_slice.columns else EMP_TENURE_BAND
+    if tenure_col not in hazard_slice.columns:
+        possible_tenure_cols = [col for col in hazard_slice.columns if 'tenure' in col.lower()]
+        if possible_tenure_cols:
+            tenure_col = possible_tenure_cols[0]
+        else:
+            raise KeyError(f"No tenure band column found in hazard_slice. Available columns: {hazard_slice.columns.tolist()}")
+
+    logger.debug(f"[COMP] Using column '{level_col}' as EMP_LEVEL merge key and '{tenure_col}' as EMP_TENURE_BAND merge key; hazard rows={len(hazard_slice)}")
 
     # Prepare hazard slice for merge
-    hz = hazard_slice[[level_col, EMP_TENURE_BAND, merit_col]].rename(columns={level_col: EMP_LEVEL})
+    hz = hazard_slice[[level_col, tenure_col, merit_col]].rename(columns={level_col: EMP_LEVEL, tenure_col: EMP_TENURE_BAND})
 
     # Deduplicate hazard slice to prevent duplicate employee records after merge
     hz_dedup = hz.drop_duplicates(subset=[EMP_LEVEL, EMP_TENURE_BAND])
