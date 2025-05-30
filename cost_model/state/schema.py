@@ -17,6 +17,9 @@ from __future__ import annotations
 import pandas as pd
 from typing import List
 
+# Import tenure-related constants
+from .tenure import TENURE_BAND_CATEGORICAL_DTYPE
+
 # Core identifier and simulation constants
 EMP_ID = "employee_id"
 SIMULATION_YEAR = "simulation_year"
@@ -261,7 +264,7 @@ SNAPSHOT_DTYPES: dict[str, object] = {
     EMP_ACTIVE: pd.BooleanDtype(),
     EMP_DEFERRAL_RATE: pd.Float64Dtype(),
     EMP_TENURE: "float64",
-    EMP_TENURE_BAND: pd.StringDtype(),
+    EMP_TENURE_BAND: TENURE_BAND_CATEGORICAL_DTYPE,
     EMP_LEVEL: pd.Int64Dtype(),
     EMP_LEVEL_SOURCE: pd.CategoricalDtype(
         categories=["hire", "promotion", "demotion", "manual"],
@@ -325,6 +328,8 @@ __all__ = [
     # snapshot
     "SNAPSHOT_COLS",
     "SNAPSHOT_DTYPES",
+    # tenure
+    "TENURE_BAND_CATEGORICAL_DTYPE",
     # summary/reporting columns
     "SUMMARY_YEAR",
     "SUMMARY_ACTIVE_HEADCOUNT",

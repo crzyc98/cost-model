@@ -229,6 +229,10 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             'comp_raise_pct': COMP_RAISE_PCT,
             'new_hire_termination_rate': NEW_HIRE_TERM_RATE,
             'cola_pct': COLA_PCT,
+            # Add new granular compensation columns
+            'merit_raise_pct': 'merit_raise_pct',
+            'promotion_raise_pct': 'promotion_raise_pct',
+            'promotion_rate': 'promotion_rate',
         }
 
         for src, dst in column_mapping.items():

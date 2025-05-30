@@ -67,14 +67,20 @@ def bump(
     rng: np.random.Generator
 ) -> List[pd.DataFrame]:
     """
-    Apply the comp_raise_pct from hazard_slice for each active employee,
-    and emit one DataFrame of compensation bump events adhering to EVENT_COLS.
+    Generate granular compensation events based on hazard table data.
+
+    Implements the conceptual mapping:
+    - EVT_COLA → cola_pct (inflation adjustment for everyone)
+    - EVT_COMP → merit_raise_pct (merit increase for active employees)
+    - EVT_PROMOTION → promotion_raise_pct (handled separately in promotion logic)
+
+    Returns list of event DataFrames: [cola_events, merit_events]
     """
     # 1) Derive year and filter active
     year = int(hazard_slice["simulation_year"].iloc[0])
     as_of = pd.Timestamp(as_of)
 
-    # NEW – makes sure the two merge keys are always present
+    # Ensure the two merge keys are always present
     snapshot = _ensure_level_and_band(snapshot.copy(), year)
 
     active = snapshot[
@@ -88,11 +94,58 @@ def bump(
         else:
             raise ValueError(f"{EMP_ID} not found in active snapshot")
 
-    # 3) Merge in the raise pct
-    # Dynamically choose the level column based on what's present in hazard_slice
+    # 3) Generate COLA events first (applies to everyone)
+    cola_events = generate_cola_events(
+        snapshot=snapshot,
+        hazard_slice=hazard_slice,
+        as_of=as_of,
+        rng=rng
+    )
+
+    # 4) Generate merit raise events (EVT_COMP) using merit_raise_pct
+    merit_events = _generate_merit_events(
+        active=active,
+        hazard_slice=hazard_slice,
+        as_of=as_of,
+        year=year
+    )
+
+    # Return both event types
+    return cola_events + merit_events
+
+
+def _generate_merit_events(
+    active: pd.DataFrame,
+    hazard_slice: pd.DataFrame,
+    as_of: pd.Timestamp,
+    year: int
+) -> List[pd.DataFrame]:
+    """
+    Generate EVT_COMP events using merit_raise_pct from hazard table.
+
+    Args:
+        active: Active employees DataFrame
+        hazard_slice: Hazard table slice for the year
+        as_of: Event timestamp
+        year: Simulation year
+
+    Returns:
+        List containing merit event DataFrame
+    """
+    # Check if we have the new granular schema or need to fall back to legacy
+    if 'merit_raise_pct' in hazard_slice.columns:
+        merit_col = 'merit_raise_pct'
+        logger.info("[COMP] Using new granular schema: merit_raise_pct for EVT_COMP events")
+    elif 'comp_raise_pct' in hazard_slice.columns:
+        merit_col = 'comp_raise_pct'
+        logger.info("[COMP] Using legacy schema: comp_raise_pct for EVT_COMP events")
+    else:
+        logger.warning("[COMP] No merit raise column found in hazard slice. Returning empty events.")
+        return [pd.DataFrame(columns=EVENT_COLS)]
+
+    # Determine level column dynamically
     level_col = 'level' if 'level' in hazard_slice.columns else 'employee_level'
     if level_col not in hazard_slice.columns:
-        # Fallback to any column that might represent employee level
         possible_level_cols = [col for col in hazard_slice.columns if 'level' in col.lower()]
         if possible_level_cols:
             level_col = possible_level_cols[0]
@@ -101,168 +154,104 @@ def bump(
 
     logger.debug(f"[COMP] Using column '{level_col}' as EMP_LEVEL merge key; hazard rows={len(hazard_slice)}")
 
-    hz = hazard_slice[[level_col, EMP_TENURE_BAND, 'comp_raise_pct']].rename(columns={level_col: EMP_LEVEL})
+    # Prepare hazard slice for merge
+    hz = hazard_slice[[level_col, EMP_TENURE_BAND, merit_col]].rename(columns={level_col: EMP_LEVEL})
 
     # Deduplicate hazard slice to prevent duplicate employee records after merge
     hz_dedup = hz.drop_duplicates(subset=[EMP_LEVEL, EMP_TENURE_BAND])
     if len(hz_dedup) < len(hz):
-        # Provide more detailed diagnostic information about the duplicates
-        duplicates = hz[hz.duplicated(subset=[EMP_LEVEL, EMP_TENURE_BAND], keep=False)]
-        duplicate_combos = duplicates[[EMP_LEVEL, EMP_TENURE_BAND, 'comp_raise_pct']].drop_duplicates()
+        logger.debug(f"[COMP] Removed {len(hz) - len(hz_dedup)} duplicate (level, tenure_band) combinations in hazard slice for year {year}")
 
-        logger.debug(f"[COMP] Found {len(hz) - len(hz_dedup)} duplicate (level, tenure_band) combinations in hazard slice for year {year}")
-        logger.debug(f"[COMP] Duplicate combinations: {duplicate_combos.to_dict('records')}")
-
-        # Check if the duplicates have different comp_raise_pct values
-        conflicting_rates = duplicates.groupby([EMP_LEVEL, EMP_TENURE_BAND])['comp_raise_pct'].nunique()
-        conflicts = conflicting_rates[conflicting_rates > 1]
-
-        if not conflicts.empty:
-            # Create a unique signature for this set of conflicts to avoid repeated warnings
-            conflict_signature = tuple(sorted((level, tenure_band) for (level, tenure_band), _ in conflicts.items()))
-
-            if conflict_signature not in _warned_conflicts:
-                # Add to cache to prevent repeated warnings
-                _warned_conflicts.add(conflict_signature)
-
-                # Create a more concise summary of conflicts
-                conflict_summary = []
-                for (level, tenure_band), _ in conflicts.items():
-                    rates = duplicates[(duplicates[EMP_LEVEL] == level) & (duplicates[EMP_TENURE_BAND] == tenure_band)]['comp_raise_pct'].unique()
-                    rates_str = f"[{', '.join(f'{r:.3f}' for r in sorted(rates))}]"
-                    conflict_summary.append(f"Level {level}/Tenure {tenure_band}: {rates_str}")
-
-                logger.warning(f"[COMP] Hazard table has conflicting comp_raise_pct values for {len(conflicts)} combinations (using first occurrence):")
-                logger.warning(f"[COMP] Conflicts: {'; '.join(conflict_summary)}")
-                logger.warning(f"[COMP] Fix: Ensure hazard table has unique (year, level, tenure_band) combinations with consistent rates")
-            else:
-                # We've already warned about these conflicts, just log at debug level
-                logger.debug(f"[COMP] Skipping repeated warning for {len(conflicts)} known conflicting (level, tenure_band) combinations")
-        else:
-            # Duplicates have same rates, so this is just redundant data
-            logger.debug(f"[COMP] Duplicate (level, tenure_band) combinations have consistent comp_raise_pct values - removing redundant rows")
-
+    # Merge active employees with hazard data
     df = active.merge(
         hz_dedup,
         on=[EMP_LEVEL, EMP_TENURE_BAND],
         how='left'
-    ).fillna({'comp_raise_pct': 0})
+    ).fillna({merit_col: 0})
 
-    # 4) Only rows with a positive raise
+    # Only process employees with positive merit raises
     excluded = active[~active[EMP_ID].isin(df[EMP_ID])]
     if not excluded.empty:
-        logger.warning(f"[COMP.BUMP] {len(excluded)} active employees excluded from comp bump due to missing hazard table match. EMP_IDs: {excluded[EMP_ID].tolist()}")
-    df = df[df["comp_raise_pct"] > 0].copy()
+        logger.warning(f"[COMP.MERIT] {len(excluded)} active employees excluded from merit bump due to missing hazard table match. EMP_IDs: {excluded[EMP_ID].tolist()}")
+
+    df = df[df[merit_col] > 0].copy()
     if df.empty:
-        # Even if bump returns an empty list, keep a placeholder DataFrame
-        # so that snapshot.update() later still sees the COLA rows.
-        comp_events = [pd.DataFrame(columns=EVENT_COLS)]
-    else:
-        # Process the compensation events normally
-        # --- 3. compute old + new comp ---
-        df["old_comp"] = df[EMP_GROSS_COMP].astype(float).fillna(0.0)
-        df["new_comp"] = (df["old_comp"] * (1 + df["comp_raise_pct"])).round(2)
+        logger.info("[COMP.MERIT] No employees eligible for merit raises")
+        return [pd.DataFrame(columns=EVENT_COLS)]
 
-        # tenure in years as of Jan1
-        jan1 = pd.Timestamp(f"{year}-01-01")
-        hire_dates = pd.to_datetime(df[EMP_HIRE_DATE], errors="coerce")
-        tenure = ((jan1 - hire_dates).dt.days / 365.25).astype(int)
-        df[EMP_TENURE] = tenure  # REQUIRED for sampler's mask
-        mask_second = tenure == 1
-        if mask_second.any():
-            sampler = DefaultSalarySampler(rng=rng)
-            # Use normal distribution for second-year bumps
-            mean = df.loc[mask_second, "comp_raise_pct"].mean()
-            df.loc[mask_second, "new_comp"] = sampler.sample_second_year(
-                df.loc[mask_second],
-                comp_col="old_comp",
-                dist={"type": "normal", "mean": mean, "std": 0.01},
-                rng=rng
-            )
+    # Calculate new compensation based on merit raise percentage
+    df["old_comp"] = df[EMP_GROSS_COMP].astype(float).fillna(0.0)
+    df["new_comp"] = (df["old_comp"] * (1 + df[merit_col])).round(2)
 
-        df["event_id"]    = df.index.map(lambda i: f"evt_comp_{year}_{i:04d}")
-        df["event_time"]  = as_of
-        df["event_type"]  = EVT_COMP
-        # **this** is what snapshot.update will write into EMP_GROSS_COMP
-        df["value_num"]   = df["new_comp"]
-        # keep pct / audit in JSON
-        import json as json_module  # Import with different name to avoid scope issues
-        df["value_json"] = df.apply(lambda row: json_module.dumps({
-            "reason": "annual_raise",
-            "pct": row["comp_raise_pct"],
-            "old_comp": row["old_comp"],
-            "new_comp": row["new_comp"]
-        }), axis=1)
-        df["meta"] = df.apply(lambda row: f"Annual raise for {row[EMP_ID]}: {row['old_comp']} -> {row['new_comp']} (+{row['comp_raise_pct']*100:.2f}%)", axis=1)
-        # Add simulation year for EVENT_COLS compliance
-        df[SIMULATION_YEAR] = year
-        # Remove notes column if present
-        if "notes" in df.columns:
-            df = df.drop(columns=["notes"])
+    # Create EVT_COMP events
+    df["event_id"] = df.index.map(lambda i: f"evt_comp_{year}_{i:04d}")
+    df["event_time"] = as_of
+    df["event_type"] = EVT_COMP
+    df["value_num"] = df["new_comp"]  # New total compensation
 
-        # 6) Slice to exactly the EVENT_COLS schema
-        events = df[EVENT_COLS]
+    # Store metadata in JSON
+    import json as json_module
+    df["value_json"] = df.apply(lambda row: json_module.dumps({
+        "reason": "merit_raise",
+        "pct": row[merit_col],
+        "old_comp": row["old_comp"],
+        "new_comp": row["new_comp"]
+    }), axis=1)
 
-        # Assert/Log uniqueness of EMP_IDs
-        if events[EMP_ID].duplicated().any():
-            logger.error(f"[COMP.BUMP] Duplicate EMP_IDs found in comp bump events: {events[EMP_ID][events[EMP_ID].duplicated()].tolist()}")
-            raise ValueError("Duplicate EMP_IDs in comp bump events!")
+    df["meta"] = df.apply(lambda row: f"Merit raise for {row[EMP_ID]}: {row['old_comp']} -> {row['new_comp']} (+{row[merit_col]*100:.2f}%)", axis=1)
+    df[SIMULATION_YEAR] = year
 
-        # Debug log: summary of bumps
-        logger.debug(f"[COMP.BUMP] Applied {len(events)} comp bumps for year {year}. Pct range: {events['value_json'].apply(lambda x: json.loads(x)['pct']).min():.2%} to {events['value_json'].apply(lambda x: json.loads(x)['pct']).max():.2%}")
+    # Select only EVENT_COLS
+    events = df[EVENT_COLS]
 
-        comp_events = [events]
+    logger.info(f"[COMP.MERIT] Generated {len(events)} merit raise events for year {year}")
+    return [events]
 
-    # Generate COLA events FIRST and apply them to get updated compensation
-    cola_events_list = generate_cola_events(
-        snapshot=snapshot,
-        hazard_slice=hazard_slice,
-        as_of=as_of,
-        rng=rng
-    )
 
-    # Apply COLA events to snapshot to get updated compensation for annual raises
-    if cola_events_list and len(cola_events_list) > 0 and not cola_events_list[0].empty:
-        logger.debug("[COMP.BUMP] Applying COLA events to snapshot before calculating annual raises")
-        # Create a temporary snapshot with COLA applied
-        from cost_model.state.snapshot_update import _apply_existing_updates
-        temp_snapshot = snapshot.copy()
-        cola_df = cola_events_list[0]
-        temp_snapshot = _apply_existing_updates(temp_snapshot, cola_df, year)
+def extract_promotion_raise_config_from_hazard(hazard_slice: pd.DataFrame) -> dict:
+    """
+    Extract promotion raise configuration from hazard table's promotion_raise_pct column.
 
-        # Recalculate annual raises using COLA-adjusted compensation
-        if not df.empty:
-            # Update the compensation values in df to use COLA-adjusted values
-            for idx in df.index:
-                emp_id = df.at[idx, EMP_ID]
-                if emp_id in temp_snapshot.index:
-                    updated_comp = temp_snapshot.at[emp_id, EMP_GROSS_COMP]
-                    # Recalculate the raise using updated compensation
-                    old_comp = df.at[idx, "old_comp"]
-                    raise_pct = df.at[idx, "comp_raise_pct"]
-                    new_comp = updated_comp * (1 + raise_pct)
+    This function implements the conceptual mapping: EVT_PROMOTION → promotion_raise_pct
 
-                    # Update the event values
-                    df.at[idx, "old_comp"] = updated_comp
-                    df.at[idx, "new_comp"] = new_comp
-                    df.at[idx, "value_num"] = new_comp
+    Args:
+        hazard_slice: Hazard table slice containing promotion_raise_pct
 
-                    # Update the value_json
-                    import json as json_module
-                    value_json = json_module.loads(df.at[idx, "value_json"])
-                    value_json["old_comp"] = updated_comp
-                    value_json["new_comp"] = new_comp
-                    df.at[idx, "value_json"] = json_module.dumps(value_json)
+    Returns:
+        Dictionary mapping "{from_level}_to_{to_level}" to raise percentage
+        Compatible with existing promotion system expectations
+    """
+    if 'promotion_raise_pct' not in hazard_slice.columns:
+        logger.warning("[COMP.PROMOTION] No promotion_raise_pct column in hazard slice. Using default config.")
+        return {}
 
-                    logger.debug(f"[COMP.BUMP] Updated raise for {emp_id}: {old_comp:.2f} → {updated_comp:.2f} → {new_comp:.2f}")
+    # Determine level column dynamically
+    level_col = 'level' if 'level' in hazard_slice.columns else 'employee_level'
+    if level_col not in hazard_slice.columns:
+        possible_level_cols = [col for col in hazard_slice.columns if 'level' in col.lower()]
+        if possible_level_cols:
+            level_col = possible_level_cols[0]
+        else:
+            logger.warning("[COMP.PROMOTION] No level column found in hazard slice. Using default config.")
+            return {}
 
-            comp_events = [df]
+    # Extract unique promotion raise percentages by level
+    promo_config = {}
+    unique_levels = sorted(hazard_slice[level_col].unique())
 
-        logger.info(f"[COMP.BUMP] Recalculated {len(df) if not df.empty else 0} annual raises using COLA-adjusted compensation")
+    for level in unique_levels:
+        level_data = hazard_slice[hazard_slice[level_col] == level]
+        promotion_raise_pct = level_data['promotion_raise_pct'].iloc[0]  # Take first occurrence
 
-    # Combine COLA events with updated annual raise events
-    all_events = cola_events_list + comp_events
-    return all_events
+        # Create mapping for promotion from this level to next level
+        next_level = level + 1
+        key = f"{level}_to_{next_level}"
+        promo_config[key] = float(promotion_raise_pct)
+
+        logger.debug(f"[COMP.PROMOTION] Level {level} → {next_level}: {promotion_raise_pct:.1%}")
+
+    logger.info(f"[COMP.PROMOTION] Extracted promotion raise config from hazard table: {len(promo_config)} mappings")
+    return promo_config
 
 
 def generate_cola_events(

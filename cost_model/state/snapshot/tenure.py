@@ -22,26 +22,29 @@ def assign_tenure_band(tenure: Optional[Union[float, int]]) -> Optional[str]:
 
     Note:
         Tenure bands are standardized to match the hazard table format:
-        - '0-1' for <1 year
+        - '<1' for <1 year
         - '1-3' for 1-3 years
         - '3-5' for 3-5 years
         - '5-10' for 5-10 years
-        - '10+' for 10+ years
+        - '10-15' for 10-15 years
+        - '15+' for 15+ years
     """
     if pd.isna(tenure):
         return pd.NA
 
     # Map tenure to bands that match the hazard table format
     if tenure < 1:
-        return "0-1"
+        return "<1"
     elif tenure < 3:
         return "1-3"
     elif tenure < 5:
         return "3-5"
     elif tenure < 10:
         return "5-10"
+    elif tenure < 15:
+        return "10-15"
     else:
-        return "10+"
+        return "15+"
 
 def compute_tenure(
     df: pd.DataFrame,

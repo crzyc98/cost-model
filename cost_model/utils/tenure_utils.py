@@ -13,22 +13,24 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
         tenure_band: Tenure band string in various formats, or numeric tenure value
 
     Returns:
-        Standardized tenure band string in format: '0-1', '1-3', '3-5', '5-10', '10+'
+        Standardized tenure band string in format: '<1', '1-3', '3-5', '5-10', '10-15', '15+'
         Returns pd.NA if input is NA/None
 
     Examples:
-        >>> standardize_tenure_band('<1')
-        '0-1'
+        >>> standardize_tenure_band('0-1')
+        '<1'
         >>> standardize_tenure_band('0-1yr')
-        '0-1'
+        '<1'
         >>> standardize_tenure_band('1-3')  # Already standardized
         '1-3'
         >>> standardize_tenure_band('5+')   # Legacy format
-        '10+'
+        '15+'
         >>> standardize_tenure_band(0.5)    # Numeric input
-        '0-1'
+        '<1'
         >>> standardize_tenure_band(12.0)   # Numeric input
-        '10+'
+        '10-15'
+        >>> standardize_tenure_band(18.0)   # Numeric input
+        '15+'
     """
     if pd.isna(tenure_band):
         return pd.NA
@@ -36,15 +38,17 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
     # Handle numeric inputs by converting to standardized string format
     if isinstance(tenure_band, (int, float)):
         if tenure_band < 1:
-            return "0-1"
+            return "<1"
         elif tenure_band < 3:
             return "1-3"
         elif tenure_band < 5:
             return "3-5"
         elif tenure_band < 10:
             return "5-10"
+        elif tenure_band < 15:
+            return "10-15"
         else:
-            return "10+"
+            return "15+"
 
     # Handle string formats
     if not isinstance(tenure_band, str):
@@ -52,13 +56,13 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
 
     # Map variations to standard format
     mapping = {
-        # For tenure bands with '<1' or similar notation
-        '<1': '0-1',
-        '0-1yr': '0-1',
-        '0-1 yr': '0-1',
-        '0-1 yrs': '0-1',
-        '0-1years': '0-1',
-        '0-1 years': '0-1',
+        # Legacy '0-1' format maps to '<1'
+        '0-1': '<1',
+        '0-1yr': '<1',
+        '0-1 yr': '<1',
+        '0-1 yrs': '<1',
+        '0-1years': '<1',
+        '0-1 years': '<1',
 
         # For tenure bands with '1-3' or similar notation
         '1-3yr': '1-3',
@@ -81,43 +85,59 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
         '5-10years': '5-10',
         '5-10 years': '5-10',
 
-        # For tenure bands with '10+' or similar notation
-        '10+ yr': '10+',
-        '10+ yrs': '10+',
-        '10+yr': '10+',
-        '10+years': '10+',
-        '10+ years': '10+',
-        '>10': '10+',
+        # For tenure bands with '10-15' or similar notation
+        '10-15yr': '10-15',
+        '10-15 yr': '10-15',
+        '10-15 yrs': '10-15',
+        '10-15years': '10-15',
+        '10-15 years': '10-15',
 
-        # Legacy '5+' format maps to '10+' for backward compatibility
-        '5+': '10+',
-        '5+ yr': '10+',
-        '5+ yrs': '10+',
-        '5+yr': '10+',
-        '5+years': '10+',
-        '5+ years': '10+',
-        '>5': '10+'
+        # For tenure bands with '15+' or similar notation
+        '15+ yr': '15+',
+        '15+ yrs': '15+',
+        '15+yr': '15+',
+        '15+years': '15+',
+        '15+ years': '15+',
+        '>15': '15+',
+
+        # Legacy formats map to new format
+        '5+': '15+',  # Legacy '5+' format maps to '15+'
+        '5+ yr': '15+',
+        '5+ yrs': '15+',
+        '5+yr': '15+',
+        '5+years': '15+',
+        '5+ years': '15+',
+        '>5': '15+',
+        '10+': '15+',  # Legacy '10+' format maps to '15+'
+        '10+ yr': '15+',
+        '10+ yrs': '15+',
+        '10+yr': '15+',
+        '10+years': '15+',
+        '10+ years': '15+',
+        '>10': '15+'
     }
 
     # Return the standardized version if found in mapping, otherwise return the original
-    # if it's already in standard format ('0-1', '1-3', '3-5', '5-10', '10+')
+    # if it's already in standard format ('<1', '1-3', '3-5', '5-10', '10-15', '15+')
     if tenure_band in mapping:
         return mapping[tenure_band]
-    elif tenure_band in ('0-1', '1-3', '3-5', '5-10', '10+'):
+    elif tenure_band in ('<1', '1-3', '3-5', '5-10', '10-15', '15+'):
         return tenure_band
     else:
         # Log a warning about unexpected format here if desired
         # For now, try to determine the correct format based on patterns
         if tenure_band.startswith('0') or tenure_band.startswith('<'):
-            return '0-1'
+            return '<1'
         elif tenure_band.startswith('1'):
             return '1-3'
         elif tenure_band.startswith('3'):
             return '3-5'
         elif tenure_band.startswith('5'):
             return '5-10'
-        elif tenure_band.startswith('10') or tenure_band.startswith('>'):
-            return '10+'
+        elif tenure_band.startswith('10'):
+            return '10-15'
+        elif tenure_band.startswith('15') or tenure_band.startswith('>'):
+            return '15+'
         else:
             # If we can't determine the format, return as is (could log a warning)
             return tenure_band

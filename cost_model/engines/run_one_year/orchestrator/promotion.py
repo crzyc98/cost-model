@@ -85,8 +85,17 @@ class PromotionOrchestrator:
         Returns:
             Tuple of (promotion_events, raise_events, exit_events)
         """
-        # Get promotion configuration
-        promotion_raise_config = getattr(year_context.global_params, 'promotion_raise_config', {})
+        # Extract promotion raise configuration from hazard table
+        from cost_model.engines.comp import extract_promotion_raise_config_from_hazard
+
+        promotion_raise_config = extract_promotion_raise_config_from_hazard(year_context.hazard_slice)
+
+        # Fallback to global config if hazard table doesn't have promotion_raise_pct
+        if not promotion_raise_config:
+            promotion_raise_config = getattr(year_context.global_params, 'promotion_raise_config', {})
+            self.logger.info("[PROMOTION] Using fallback promotion_raise_config from global params")
+        else:
+            self.logger.info("[PROMOTION] Using promotion_raise_config extracted from hazard table")
 
         # Apply Markov promotions
         promotions_df, raises_df, exited_df = apply_markov_promotions(

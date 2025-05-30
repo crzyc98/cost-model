@@ -193,14 +193,30 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         logger.info("No columns to rename: actual_rename_map is empty or no keys matched Parquet columns.")
 
     # Define required columns using internal constant names.
-    required_cols = [
+    # Updated to handle both old and new compensation schemas
+    base_required_cols = [
         SIMULATION_YEAR,
         EMP_LEVEL,
         EMP_TENURE_BAND,
         TERM_RATE,
-        COMP_RAISE_PCT,
         NEW_HIRE_TERM_RATE
     ]
+
+    # Check for compensation columns - either old schema (comp_raise_pct) or new schema (merit_raise_pct)
+    has_old_comp_schema = COMP_RAISE_PCT in df.columns
+    has_new_comp_schema = 'merit_raise_pct' in df.columns
+
+    if has_old_comp_schema:
+        required_cols = base_required_cols + [COMP_RAISE_PCT]
+        logger.info("Using old compensation schema with comp_raise_pct")
+    elif has_new_comp_schema:
+        required_cols = base_required_cols + ['merit_raise_pct']
+        logger.info("Using new compensation schema with merit_raise_pct")
+    else:
+        # Neither schema found - this is an error
+        logger.error(f"Hazard table missing compensation columns. Expected either '{COMP_RAISE_PCT}' or 'merit_raise_pct'. Available columns: {df.columns.tolist()}")
+        return pd.DataFrame()
+
     logger.info(f"Checking for required_cols (using constant values): {required_cols}")
     logger.info(f"Current df.columns for check: {df.columns.tolist()}")
 
@@ -229,7 +245,19 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
 
     # Ensure all key rate columns are numeric and handle potential NaNs by filling with 0
     # This is a safeguard, ideally the Parquet file should have clean data.
-    rate_columns = [TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT]
+    # Updated to include new granular compensation columns
+    rate_columns = [TERM_RATE, NEW_HIRE_TERM_RATE, COLA_PCT]
+
+    # Handle both old and new compensation column schemas
+    if COMP_RAISE_PCT in result.columns:
+        rate_columns.append(COMP_RAISE_PCT)
+    else:
+        # New schema with granular raise columns
+        granular_raise_columns = ['merit_raise_pct', 'promotion_raise_pct', 'promotion_rate']
+        for col in granular_raise_columns:
+            if col in result.columns:
+                rate_columns.append(col)
+
     for col in rate_columns:
         if col in result.columns:
             # Use infer_objects before fillna to avoid downcasting warning
@@ -239,9 +267,13 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
             logger.info(f"Processed column '{col}': ensured numeric, NaNs filled with 0.0")
         else:
             logger.warning(f"Rate column '{col}' not found in hazard table. It might be optional or missing.")
-            # If a critical rate column like TERM_RATE is missing and not handled, it could cause issues downstream.
-            # However, NEW_HIRE_TERM_RATE was added to required_cols, so it should be present.
-            # COLA_PCT might be optional.
+
+    # For backward compatibility, create comp_raise_pct if it doesn't exist but granular columns do
+    if COMP_RAISE_PCT not in result.columns and 'merit_raise_pct' in result.columns:
+        # Use merit_raise_pct as the primary annual raise component
+        # promotion_raise_pct is handled separately in promotion logic
+        result[COMP_RAISE_PCT] = result['merit_raise_pct']
+        logger.info("Created comp_raise_pct column from merit_raise_pct for backward compatibility")
 
     logger.info(f"Final processed hazard table has {len(result)} rows")
 

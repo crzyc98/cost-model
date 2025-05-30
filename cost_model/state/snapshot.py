@@ -121,13 +121,17 @@ def _assign_tenure_band(tenure: float) -> str:
     if pd.isna(tenure):
         return pd.NA
     if tenure < 1:
-        return '0-1'  # Standardized to match hazard table format
+        return '<1'  # Standardized to match hazard table format
     elif tenure < 3:
         return '1-3'
     elif tenure < 5:
         return '3-5'
+    elif tenure < 10:
+        return '5-10'
+    elif tenure < 15:
+        return '10-15'
     else:
-        return '5+'
+        return '15+'
 
 def _ensure_columns_and_types(df: pd.DataFrame, columns: list, dtypes: dict) -> pd.DataFrame:
     """
@@ -300,15 +304,17 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
             logger.debug(f"[DEBUG tenure] {eid} hired {hd.date()}   as_of {as_of.date()}   years={ty:.2f}")
         def band(tenure):
             if pd.isna(tenure): return pd.NA
-            if tenure < 1: return '0-1'  # Standardized to match hazard table format
+            if tenure < 1: return '<1'  # Standardized to match hazard table format
             elif tenure < 3: return '1-3'
             elif tenure < 5: return '3-5'
-            else: return '5+'
+            elif tenure < 10: return '5-10'
+            elif tenure < 15: return '10-15'
+            else: return '15+'
         snapshot_df[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE].map(band).astype(pd.StringDtype())
     else:
         snapshot_df[EMP_TENURE] = pd.NA
         snapshot_df[EMP_TENURE_BAND] = pd.NA
-    
+
     # Ensure EMP_ID is a column for output/export
     snapshot_df[EMP_ID] = snapshot_df.index.astype(str)
     # Add simulation_year
@@ -709,8 +715,10 @@ def update(
                 return '3-5'
             elif t < 10:
                 return '5-10'
+            elif t < 15:
+                return '10-15'
             else:
-                return '10+'
+                return '15+'
         current_snapshot[EMP_TENURE_BAND] = tenure_years.map(_band).astype(pd.StringDtype())
 
         # Sanity check: ensure no duplicate indices after update
