@@ -138,21 +138,21 @@ class AutoEnrollmentRules(BaseModel):
         if self.proactive_rate_range is not None:
             if not (isinstance(self.proactive_rate_range, (list, tuple)) and len(self.proactive_rate_range) == 2):
                 raise ValueError("proactive_rate_range must be a list/tuple of two numbers")
-                
+
             min_r, max_r = self.proactive_rate_range
             if not (isinstance(min_r, (int, float)) and isinstance(max_r, (int, float))):
                 raise ValueError("proactive_rate_range values must be numbers")
-                
+
             if min_r < 0 or max_r < 0:
                 raise ValueError("proactive_rate_range values cannot be negative")
-                
+
             if min_r > max_r:
                 raise ValueError("proactive_rate_range min cannot be greater than max")
-        
+
         # Check if outcome_distribution is provided when enabled
         if self.enabled and not self.outcome_distribution:
             raise ValueError("outcome_distribution must be defined if auto_enrollment is enabled.")
-            
+
         return self
 
 
@@ -308,6 +308,10 @@ class GlobalParameters(BaseModel):
     # Onboarding (Optional)
     onboarding: Optional[OnboardingConfig] = None
 
+    # Promotion configuration
+    dev_mode: bool = Field(False, description="Enable dev mode features like default matrices")
+    promotion_matrix_path: Optional[str] = Field(None, description="Path to promotion matrix YAML file")
+
     # Plan Rules (Nested Model)
     plan_rules: PlanRules = Field(
         default_factory=PlanRules
@@ -319,7 +323,7 @@ class GlobalParameters(BaseModel):
         self._check_role_dist_sums_to_one()
         self._check_maintain_headcount_vs_growth()
         return self
-        
+
     def _check_role_dist_sums_to_one(self) -> None:
         """Validate role distribution probabilities sum to 1.0 if provided."""
         if self.role_distribution and isinstance(self.role_distribution, dict):
@@ -364,6 +368,8 @@ class ScenarioDefinition(BaseModel):
     new_hire_compensation_params: Optional[CompensationParams] = None
     role_compensation_params: Optional[Dict[str, CompensationParams]] = None
     onboarding: Optional[OnboardingConfig] = None
+    dev_mode: Optional[bool] = None
+    promotion_matrix_path: Optional[str] = None
     plan_rules: Optional[PlanRules] = None  # Allow overriding plan rules
 
     # Use Extra.allow to permit fields not explicitly defined (like custom scenario params)

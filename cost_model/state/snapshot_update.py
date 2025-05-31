@@ -308,21 +308,26 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
             current.loc[valid_emp_ids, EMP_GROSS_COMP] = last_comp.set_index(EMP_ID).loc[valid_emp_ids, "value_num"]
             logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
 
-    # COLA updates - apply the COLA amount to the current compensation AFTER merit raises
+    # COLA updates - apply the COLA amount to the current compensation AFTER merit raises (DEFENSIVE)
     cola_upd = new_events[new_events["event_type"] == EVT_COLA]
     if not cola_upd.empty:
         # Group by employee and get the last COLA for each
         last_cola = cola_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
-        # Add the COLA amount to the current compensation
+        # Add the COLA amount to the current compensation (DEFENSIVE CALCULATION)
         updated_count = 0
         for emp_id, row in last_cola.set_index(EMP_ID).iterrows():
             if emp_id in current.index:
-                current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
+                # DEFENSIVE: Always read the most current compensation value
+                current_comp = float(current.at[emp_id, EMP_GROSS_COMP])
+                cola_amount = float(row["value_num"])
+                new_comp = current_comp + cola_amount
+                current.at[emp_id, EMP_GROSS_COMP] = new_comp
+                logger.debug(f"Applied COLA {cola_amount:.2f} to current comp {current_comp:.2f} → {new_comp:.2f} for {emp_id}")
                 updated_count += 1
         if updated_count > 0:
             logger.debug("Applied COLA updates to %d employees", updated_count)
 
-    # Raise updates - apply raise amount to current compensation
+    # Raise updates - apply raise amount to current compensation (DEFENSIVE CALCULATION)
     raise_upd = new_events[new_events["event_type"] == EVT_RAISE]
     if not raise_upd.empty:
         updated_count = 0
@@ -330,22 +335,40 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
             emp_id = row[EMP_ID]
             if emp_id in current.index:
                 try:
+                    # DEFENSIVE: Always read the most current compensation value
+                    current_comp = float(current.at[emp_id, EMP_GROSS_COMP])
+
                     # Try to get raise amount from value_num first
                     if pd.notna(row["value_num"]):
                         # If value_num is available, use it directly
-                        current.at[emp_id, EMP_GROSS_COMP] += row["value_num"]
+                        current.at[emp_id, EMP_GROSS_COMP] = current_comp + float(row["value_num"])
                         updated_count += 1
                     elif pd.notna(row["value_json"]):
                         # Fall back to value_json if value_num is not available
                         import json
                         raise_data = json.loads(row["value_json"])
                         if "new_comp" in raise_data:
-                            # If new_comp is provided, use it directly
-                            current.at[emp_id, EMP_GROSS_COMP] = float(raise_data["new_comp"])
+                            # If new_comp is provided, use it directly (but this is from stale data)
+                            # DEFENSIVE: Apply the raise percentage to current compensation instead
+                            if "raise_pct" in raise_data:
+                                raise_pct = float(raise_data["raise_pct"])
+                                new_comp = current_comp * (1 + raise_pct)
+                                current.at[emp_id, EMP_GROSS_COMP] = new_comp
+                                logger.debug(f"Applied {raise_pct:.1%} raise to current comp {current_comp:.2f} → {new_comp:.2f} for {emp_id}")
+                            else:
+                                # Fallback to provided new_comp if no percentage available
+                                current.at[emp_id, EMP_GROSS_COMP] = float(raise_data["new_comp"])
                             updated_count += 1
                         elif "amount" in raise_data:
                             # Otherwise, add the raise amount to current comp
-                            current.at[emp_id, EMP_GROSS_COMP] += float(raise_data["amount"])
+                            current.at[emp_id, EMP_GROSS_COMP] = current_comp + float(raise_data["amount"])
+                            updated_count += 1
+                        elif "raise_pct" in raise_data:
+                            # DEFENSIVE: Apply percentage to current compensation
+                            raise_pct = float(raise_data["raise_pct"])
+                            new_comp = current_comp * (1 + raise_pct)
+                            current.at[emp_id, EMP_GROSS_COMP] = new_comp
+                            logger.debug(f"Applied {raise_pct:.1%} raise to current comp {current_comp:.2f} → {new_comp:.2f} for {emp_id}")
                             updated_count += 1
                 except (json.JSONDecodeError, (KeyError, ValueError, TypeError)) as e:
                     logger.warning("Error processing raise event for %s: %s", emp_id, str(e))
@@ -431,8 +454,9 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
     # Ensure we don't modify the input
     cur = prev_snapshot.copy()
 
-    # Sort events by time and type for consistent processing
-    new_events = new_events.sort_values(["event_time", "event_type"], ascending=[True, True])
+    # Sort events by time for consistent processing (ensures COLA is processed last)
+    # With distinct timestamps: Promotion (00:00:30) → Merit (00:01) → COLA (00:02)
+    new_events = new_events.sort_values(["event_time"], ascending=[True])
 
     # Process new hires and updates
     try:

@@ -19,6 +19,10 @@ from cost_model.config.models import MainConfig, GlobalParameters # Needed for t
 from cost_model.config.accessors import get_scenario_config # Import the actual function
 from cost_model.utils.columns import EMP_ID, EMP_TENURE_BAND
 
+# Age calculation imports
+from cost_model.state.age import apply_age
+from cost_model.state.schema import EMP_BIRTH_DATE, EMP_AGE, EMP_AGE_BAND
+
 # Data I/O
 # TODO: Update these imports if readers/writers structure changes
 try:
@@ -133,28 +137,12 @@ def run_simulation(
     rng = np.random.default_rng(seed)
     logger.info(f"Using RNG seed: {seed}")
 
-    # 3. Load census and bootstrap events/snapshot
-    try:
-        if str(input_census_path).endswith('.csv'):
-            census_df = pd.read_csv(input_census_path)
-        else:
-            census_df = pd.read_parquet(input_census_path)
-    except Exception:
-        logger.error(f"Error loading census file: {input_census_path}")
-        raise
+    # 3. Bootstrap events/snapshot from census
     # Bootstrap events (empty for now, or could seed with hires)
     events = pd.DataFrame()
-    # Build snapshot
-    from cost_model.state.snapshot import build_full as snapmod_build_full
-    snap = snapmod_build_full(census_df, start_year)
-    # Patch in tenure_band if present using standardized names
-    # Note: EMP_ROLE has been removed as part of schema refactoring
-    col_map = {
-        EMP_TENURE_BAND: EMP_TENURE_BAND
-    }
-    for std_col, census_col in col_map.items():
-        if census_col in census_df.columns:
-            snap[std_col] = snap.index.map(census_df.set_index(EMP_ID)[census_col].to_dict()).astype(str)
+    # Build snapshot from census data
+    from cost_model.projections.snapshot import create_initial_snapshot
+    snap = create_initial_snapshot(start_year, input_census_path)
 
     # 4. Load hazard table using proper loading function
     try:
@@ -204,16 +192,43 @@ def run_simulation(
     for i in range(projection_years):
         year = start_year + i
         logger.info(f"Simulating year {year}")
-        snapshot_df, all_events = run_one_year(
-            year=year,
-            prev_snapshot=snapshot_df,
+        all_events, snapshot_df = run_one_year(
             event_log=all_events,
+            prev_snapshot=snapshot_df,
+            year=year,
+            global_params=scenario_cfg,
+            plan_rules=scenario_cfg.plan_rules.dict() if scenario_cfg.plan_rules else {},
             hazard_table=hazard,
             rng=rng,
             deterministic_term=True
         )
         # Ensure simulation_year is set in the snapshot
         snapshot_df['simulation_year'] = year
+
+        # --- BEGIN AGE CALCULATION INTEGRATION ---
+        # Define the 'as_of' date for age calculation for the current snapshot
+        # Typically, this would be the end of the simulation year or start of the next.
+        as_of_date_for_age = pd.Timestamp(f"{year}-12-31")  # Example: End of year
+
+        # Ensure the birth date column is in datetime format if not already
+        # (apply_age also does pd.to_datetime, but good to be aware)
+        # snapshot_df[EMP_BIRTH_DATE] = pd.to_datetime(snapshot_df[EMP_BIRTH_DATE], errors='coerce')
+
+        logger.debug(f"Applying age and age band calculations for year {year} as of {as_of_date_for_age}")
+        snapshot_df = apply_age(
+            df=snapshot_df,
+            birth_col=EMP_BIRTH_DATE,    # From schema.py
+            as_of=as_of_date_for_age,
+            out_age_col=EMP_AGE,         # From schema.py
+            out_band_col=EMP_AGE_BAND    # From schema.py
+        )
+        logger.debug(f"Columns after apply_age: {snapshot_df.columns.tolist()}")
+        if EMP_AGE in snapshot_df.columns:
+            logger.debug(f"Sample EMP_AGE for year {year}: {snapshot_df[EMP_AGE].head().tolist()}")
+        if EMP_AGE_BAND in snapshot_df.columns:
+            logger.debug(f"Sample EMP_AGE_BAND for year {year}: {snapshot_df[EMP_AGE_BAND].head().tolist()}")
+        # --- END AGE CALCULATION INTEGRATION ---
+
         yearly_snapshots[year] = snapshot_df.copy()
         # Save snapshot and events for this year
         year_dir = scenario_output_dir / f"year={year}"
@@ -258,22 +273,25 @@ def run_simulation(
 def _validate_summary(df):
     """Fast-fail checks for your summary metrics."""
     import numpy as np
+    from cost_model.state.schema import SUMMARY_ACTIVE_HEADCOUNT
+
+    # Use canonical column names from schema
     required_cols = {
-        'Active Headcount',
-        'Eligible Count',
-        'Participant Count',
-        'Participation Rate',
-        'Total Compensation'
+        SUMMARY_ACTIVE_HEADCOUNT,  # 'active_headcount'
+        'eligible_count',
+        'participant_count',
+        'participation_rate',
+        'total_compensation'
     }
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(f"Summary is missing required columns: {missing}")
     # No zero headcounts
-    if (df['Active Headcount'] == 0).any():
-        zero_years = df.index[df['Active Headcount'] == 0].tolist()
+    if (df[SUMMARY_ACTIVE_HEADCOUNT] == 0).any():
+        zero_years = df.index[df[SUMMARY_ACTIVE_HEADCOUNT] == 0].tolist()
         raise ValueError(f"Year(s) with zero headcount: {zero_years}")
     # Internal consistency: hires - terms + initial == final
-    if 'Hires' in df.columns and 'Terms' in df.columns:
-        diffs = df['Hires'] - df['Terms'] + df['Active Headcount'].iloc[0]
-        if not np.allclose(diffs.cumsum().iloc[-1], df['Active Headcount'].iloc[-1]):
+    if 'new_hires' in df.columns and 'terminations' in df.columns:
+        diffs = df['new_hires'] - df['terminations'] + df[SUMMARY_ACTIVE_HEADCOUNT].iloc[0]
+        if not np.allclose(diffs.cumsum().iloc[-1], df[SUMMARY_ACTIVE_HEADCOUNT].iloc[-1]):
             raise ValueError("Headcount evolution inconsistency detected.")

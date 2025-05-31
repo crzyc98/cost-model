@@ -8,7 +8,7 @@ global_parameters:
   # Simulation control parameters
   start_year: 2025
   log_level: DEBUG
-  projection_years: 5
+  projection_years: 3
   random_seed: 79
   days_into_year_for_cola: 182
   days_into_year_for_promotion: 182
@@ -26,7 +26,7 @@ global_parameters:
 
   # Promotion configuration
   dev_mode: true               # Enable dev mode features like default matrices
-  promotion_matrix_path: config/custom_promotion_matrix.yaml
+  promotion_matrix_path: ~     # Use null to trigger default matrix in dev mode
 
   # Compensation parameters
   annual_compensation_increase_rate: 0.03 # Annual compensation increase rate

@@ -59,6 +59,48 @@ def calculate_tenure(
     return delta.days / 365.25
 
 
+def age_to_band(age: int) -> str:
+    """
+    Map an employee's age to a predefined age band string.
+
+    This function provides age band strings used to look up corresponding
+    multipliers in hazard_defaults.yaml configuration file. These multipliers
+    adjust attrition and promotion rates based on age.
+
+    Args:
+        age: Employee age in years (non-negative integer)
+
+    Returns:
+        Age band string corresponding to the age:
+        - "<30" for ages under 30
+        - "30-39" for ages 30-39
+        - "40-49" for ages 40-49
+        - "50-59" for ages 50-59
+        - "60-65" for ages 60-65
+        - ">65" for ages above 65
+
+    Examples:
+        >>> age_to_band(27)
+        '<30'
+        >>> age_to_band(44)
+        '40-49'
+        >>> age_to_band(68)
+        '>65'
+    """
+    if age < 30:
+        return "<30"
+    elif age <= 39:
+        return "30-39"
+    elif age <= 49:
+        return "40-49"
+    elif age <= 59:
+        return "50-59"
+    elif age <= 65:
+        return "60-65"
+    else:
+        return ">65"
+
+
 # NEW FUNCTION
 def get_random_dates_in_year(
     year: int,

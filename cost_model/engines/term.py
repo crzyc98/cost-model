@@ -9,7 +9,9 @@ import numpy as np
 import math
 import json
 import logging
-from typing import List
+import yaml
+from pathlib import Path
+from typing import List, Optional
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
 from cost_model.state.schema import (
     EMP_ID,
@@ -18,10 +20,12 @@ from cost_model.state.schema import (
     EMP_HIRE_DATE,
     EMP_TERM_DATE,
     EMP_TENURE_BAND,
+    EMP_BIRTH_DATE,
     TERM_RATE,
     SIMULATION_YEAR,
     NEW_HIRE_TERM_RATE
 )
+from cost_model.utils.date_utils import calculate_age, age_to_band
 from logging_config import get_logger, get_diagnostic_logger
 
 logger = get_logger(__name__)
@@ -55,6 +59,73 @@ def random_dates_between(start_dates, end_date, rng: np.random.Generator):
 from cost_model.utils.columns import EMP_TENURE
 from cost_model.utils.tenure_utils import standardize_tenure_band
 
+
+def _load_hazard_defaults() -> dict:
+    """Load hazard defaults configuration from YAML file."""
+    config_path = Path(__file__).parent.parent.parent / "config" / "hazard_defaults.yaml"
+    try:
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        logger.warning(f"Hazard defaults file not found at {config_path}. Age multipliers will not be applied.")
+        return {}
+    except Exception as e:
+        logger.warning(f"Error loading hazard defaults: {e}. Age multipliers will not be applied.")
+        return {}
+
+
+def _apply_age_multipliers(merged_df: pd.DataFrame, snapshot: pd.DataFrame, year: int, hazard_defaults: dict) -> pd.DataFrame:
+    """Apply age-based multipliers to termination rates."""
+    if not hazard_defaults or 'termination' not in hazard_defaults:
+        logger.debug(f"[TERM] Year {year}: No age multipliers found in hazard defaults.")
+        return merged_df
+
+    age_multipliers = hazard_defaults.get('termination', {}).get('age_multipliers', {})
+    if not age_multipliers:
+        logger.debug(f"[TERM] Year {year}: No age multipliers configured for termination.")
+        return merged_df
+
+    # Check if birth date column exists
+    if EMP_BIRTH_DATE not in snapshot.columns:
+        logger.warning(f"[TERM] Year {year}: {EMP_BIRTH_DATE} column not found. Age multipliers will not be applied.")
+        return merged_df
+
+    # Calculate current date for age calculation (start of simulation year)
+    current_date = pd.Timestamp(f"{year}-01-01")
+
+    # Create a mapping of employee ID to age band
+    emp_ages = {}
+    for _, row in snapshot.iterrows():
+        emp_id = row[EMP_ID]
+        birth_date = row[EMP_BIRTH_DATE]
+
+        if pd.notna(birth_date):
+            age = calculate_age(birth_date, current_date)
+            age_band = age_to_band(age)
+            emp_ages[emp_id] = age_band
+        else:
+            logger.debug(f"[TERM] Year {year}: Missing birth date for employee {emp_id}. Using default multiplier 1.0.")
+            emp_ages[emp_id] = None
+
+    # Apply age multipliers to termination rates
+    original_rates = merged_df[TERM_RATE].copy()
+    for idx, row in merged_df.iterrows():
+        emp_id = row[EMP_ID]
+        age_band = emp_ages.get(emp_id)
+
+        if age_band and age_band in age_multipliers:
+            multiplier = age_multipliers[age_band]
+            merged_df.loc[idx, TERM_RATE] = row[TERM_RATE] * multiplier
+        # If no age band or multiplier, keep original rate (multiplier = 1.0)
+
+    # Log the impact of age adjustments
+    rate_changes = (merged_df[TERM_RATE] != original_rates).sum()
+    if rate_changes > 0:
+        logger.info(f"[TERM] Year {year}: Applied age multipliers to {rate_changes} employees. "
+                   f"Rate range: {merged_df[TERM_RATE].min():.4f} - {merged_df[TERM_RATE].max():.4f}")
+
+    return merged_df
+
 def run(
     snapshot: pd.DataFrame,
     hazard_slice: pd.DataFrame,
@@ -69,6 +140,9 @@ def run(
     year = int(hazard_slice[SIMULATION_YEAR].iloc[0])
     # Determine "as_of" start of year
     as_of = pd.Timestamp(f"{year}-01-01")
+
+    # Load hazard defaults for age multipliers
+    hazard_defaults = _load_hazard_defaults()
 
     # Ensure EMP_HIRE_DATE is datetime
     snapshot[EMP_HIRE_DATE] = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors='coerce')
@@ -233,11 +307,14 @@ def run(
 
     logger.debug(f"[TERM] Year {year}: {n} employees processed, {zero_rates.sum()} with zero {TERM_RATE} after merge.")
 
+    # Apply age multipliers to termination rates
+    merged_df = _apply_age_multipliers(merged_df, snapshot, year, hazard_defaults)
+
     # Add distribution of term rates by level and tenure band for transparency
     rate_by_level_tenure = merged_df.groupby([EMP_LEVEL, EMP_TENURE_BAND])[TERM_RATE].mean().reset_index()
     logger.debug(f"[TERM DIAGNOSTIC YR={year}] Term rate by level and tenure:\n{rate_by_level_tenure.to_string()}")
     logger.info(
-        f"[TERM] Year {year}: {TERM_RATE} stats - "
+        f"[TERM] Year {year}: {TERM_RATE} stats (after age adjustments) - "
         f"min={merged_df[TERM_RATE].min():.4f}, "
         f"max={merged_df[TERM_RATE].max():.4f}, "
         f"mean={merged_df[TERM_RATE].mean():.4f}, "

@@ -35,6 +35,10 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         FileNotFoundError: If the census file doesn't exist
         ValueError: If the census data is invalid or missing required columns
     """
+    # Import age-related modules at the beginning
+    from cost_model.state.schema import EMP_BIRTH_DATE, EMP_AGE, EMP_AGE_BAND
+    from cost_model.state.age import apply_age
+
     logger.info("Creating initial snapshot for start year: %d from %s", start_year, str(census_path))
 
     # Load census data
@@ -417,6 +421,30 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         except Exception as e:
             logger.error(f"Failed to convert {EMP_LEVEL} to Int64 after validation: {e}")
 
+    # --- BEGIN AGE CALCULATION INTEGRATION ---
+    # Add age and age band calculations to the initial snapshot
+    as_of_date_for_age = pd.Timestamp(f"{start_year}-01-01")  # Start of year for initial snapshot
+
+    logger.debug(f"Applying age and age band calculations for initial snapshot as of {as_of_date_for_age}")
+
+    # Check if birth date column exists
+    if EMP_BIRTH_DATE in snapshot_df.columns:
+        snapshot_df = apply_age(
+            df=snapshot_df,
+            birth_col=EMP_BIRTH_DATE,
+            as_of=as_of_date_for_age,
+            out_age_col=EMP_AGE,
+            out_band_col=EMP_AGE_BAND
+        )
+        logger.debug(f"Age calculations completed for initial snapshot. Sample ages: {snapshot_df[EMP_AGE].head().tolist()}")
+        logger.debug(f"Sample age bands: {snapshot_df[EMP_AGE_BAND].head().tolist()}")
+    else:
+        logger.warning(f"Birth date column '{EMP_BIRTH_DATE}' not found in initial snapshot. Age calculations skipped.")
+        # Add empty age columns to maintain schema consistency
+        snapshot_df[EMP_AGE] = pd.NA
+        snapshot_df[EMP_AGE_BAND] = pd.NA
+    # --- END AGE CALCULATION INTEGRATION ---
+
     return snapshot_df
 
 def update_snapshot_with_events(
@@ -584,8 +612,10 @@ def build_enhanced_yearly_snapshot(
     """
     from cost_model.state.schema import (
         EMP_ID, EMP_ACTIVE, EMP_TERM_DATE, EMP_STATUS_EOY,
-        EVT_HIRE, EVT_TERM, EVT_NEW_HIRE_TERM, SIMULATION_YEAR, EMP_HIRE_DATE
+        EVT_HIRE, EVT_TERM, EVT_NEW_HIRE_TERM, SIMULATION_YEAR, EMP_HIRE_DATE,
+        EMP_BIRTH_DATE, EMP_AGE, EMP_AGE_BAND
     )
+    from cost_model.state.age import apply_age
 
     logger = logging.getLogger(__name__)
     logger.info(f"Building enhanced yearly snapshot for year {simulation_year}")
@@ -987,6 +1017,30 @@ def build_enhanced_yearly_snapshot(
             else:
                 logger.info("✓ All terminated employees have valid tenure data")
 
+    # --- BEGIN AGE CALCULATION INTEGRATION ---
+    # Add age and age band calculations to the enhanced yearly snapshot
+    as_of_date_for_age = pd.Timestamp(f"{simulation_year}-12-31")  # End of year
+
+    logger.debug(f"Applying age and age band calculations for year {simulation_year} as of {as_of_date_for_age}")
+
+    # Check if birth date column exists
+    if EMP_BIRTH_DATE in yearly_snapshot.columns:
+        yearly_snapshot = apply_age(
+            df=yearly_snapshot,
+            birth_col=EMP_BIRTH_DATE,
+            as_of=as_of_date_for_age,
+            out_age_col=EMP_AGE,
+            out_band_col=EMP_AGE_BAND
+        )
+        logger.debug(f"Age calculations completed. Sample ages: {yearly_snapshot[EMP_AGE].head().tolist()}")
+        logger.debug(f"Sample age bands: {yearly_snapshot[EMP_AGE_BAND].head().tolist()}")
+    else:
+        logger.warning(f"Birth date column '{EMP_BIRTH_DATE}' not found in yearly snapshot. Age calculations skipped.")
+        # Add empty age columns to maintain schema consistency
+        yearly_snapshot[EMP_AGE] = pd.NA
+        yearly_snapshot[EMP_AGE_BAND] = pd.NA
+    # --- END AGE CALCULATION INTEGRATION ---
+
     logger.info(f"Enhanced yearly snapshot for {simulation_year} contains {len(yearly_snapshot)} employees")
 
     return yearly_snapshot
@@ -1037,7 +1091,8 @@ def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_pat
     import pandas as pd
     from pathlib import Path
     import re
-    from cost_model.state.schema import EMP_ID
+    from cost_model.state.schema import EMP_ID, EMP_BIRTH_DATE, EMP_AGE, EMP_AGE_BAND
+    from cost_model.state.age import apply_age
 
     # Columns to remove from the final output
     columns_to_remove = [
@@ -1081,6 +1136,21 @@ def consolidate_snapshots_to_parquet(snapshots_dir: Union[str, Path], output_pat
         # 6) bring EMP_ID back as a column (in case it's still the index)
         if EMP_ID in df.index.names:
             df = df.reset_index()
+
+        # 7) Add age calculations if birth date column exists and age columns are missing or all null
+        age_cols_missing = EMP_AGE not in df.columns or EMP_AGE_BAND not in df.columns
+        age_cols_all_null = (EMP_AGE in df.columns and df[EMP_AGE].isna().all()) or (EMP_AGE_BAND in df.columns and df[EMP_AGE_BAND].isna().all())
+
+        if EMP_BIRTH_DATE in df.columns and (age_cols_missing or age_cols_all_null):
+            as_of_date_for_age = pd.Timestamp(f"{year}-12-31")
+            logger.debug(f"Adding age calculations to {file.name} for year {year} (missing: {age_cols_missing}, all_null: {age_cols_all_null})")
+            df = apply_age(
+                df=df,
+                birth_col=EMP_BIRTH_DATE,
+                as_of=as_of_date_for_age,
+                out_age_col=EMP_AGE,
+                out_band_col=EMP_AGE_BAND
+            )
 
         all_snapshots.append(df)
 

@@ -79,8 +79,9 @@ def create_promotion_raise_events(
         promotion_events.append(promo_event)
 
         # Create raise event with all details in value_json
+        # Promotion raises at 00:00:30 (before merit at 00:01, before COLA at 00:02)
         raise_event = create_event(
-            event_time=promo_time + pd.Timedelta(days=1),  # Raise happens day after promotion
+            event_time=promo_time + pd.Timedelta(seconds=30),  # Promotion raises at 00:00:30
             employee_id=emp_id,
             event_type=EVT_RAISE,
             value_json=json.dumps({
@@ -143,9 +144,11 @@ def apply_markov_promotions(
     # Load promotion matrix dynamically if not provided
     if promotion_matrix is None:
         allow_default = getattr(global_params, "dev_mode", False)
+        promotion_matrix_path = getattr(global_params, "promotion_matrix_path", None)
+
         try:
             promotion_matrix = load_markov_matrix(
-                getattr(global_params, "promotion_matrix_path", None),
+                promotion_matrix_path,
                 allow_default
             )
         except (FileNotFoundError, ValueError) as e:

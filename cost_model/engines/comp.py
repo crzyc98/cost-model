@@ -194,9 +194,9 @@ def _generate_merit_events(
     df["old_comp"] = df[EMP_GROSS_COMP].astype(float).fillna(0.0)
     df["new_comp"] = (df["old_comp"] * (1 + df[merit_col])).round(2)
 
-    # Create EVT_COMP events
+    # Create EVT_COMP events with distinct timestamp (merit raises at 00:01)
     df["event_id"] = df.index.map(lambda i: f"evt_comp_{year}_{i:04d}")
-    df["event_time"] = as_of
+    df["event_time"] = as_of + pd.Timedelta(minutes=1)  # Merit raises at 00:01
     df["event_type"] = EVT_COMP
     df["value_num"] = df["new_comp"]  # New total compensation
 
@@ -311,10 +311,12 @@ def generate_cola_events(
         logger.info(f"[COMP.COLA] Using COLA rate {cola_pct:.1%} for year {year}")
 
         # Call the dedicated cola function with the simplified hazard slice
+        # COLA events get a later timestamp to ensure they are processed last
+        cola_timestamp = as_of + pd.Timedelta(minutes=2)  # COLA at 00:02 (after merit at 00:01)
         cola_events = cola(
             snapshot=snapshot,
             hazard_slice=simple_hazard_slice,
-            as_of=as_of,
+            as_of=cola_timestamp,
             days_into_year=days_into_year,
             jitter_days=jitter_days,
             rng=rng
