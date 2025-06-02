@@ -2,6 +2,8 @@
 # Default parameters for generating the hazard table template.
 # These values are based on architect suggestions and common HR analytics patterns.
 # They should be reviewed and calibrated against specific company data or more detailed benchmarks.
+#
+# NOTE: This is the baseline configuration for promotion age sensitivity verification
 
 global:
   simulation_years: [2025, 2026, 2027, 2028, 2029]

@@ -318,11 +318,29 @@ def apply_promotion_markov(
             continue
             
         # Get transition probabilities for the current level
-        probs = prob_matrix[row_idx]
-        
+        probs = prob_matrix[row_idx].copy()  # Make a copy to avoid modifying the original matrix
+
+        # Apply age multipliers if available
+        if '_promotion_age_multiplier' in df.columns:
+            age_multiplier = row.get('_promotion_age_multiplier', 1.0)
+            if age_multiplier != 1.0:
+                # Apply multiplier to promotion probabilities (non-exit states)
+                # Find promotion states (levels higher than current)
+                for j, state in enumerate(states):
+                    if state != 'exit' and state > current_level:
+                        probs[j] *= age_multiplier
+
+                # Renormalize probabilities to ensure they sum to 1
+                prob_sum = probs.sum()
+                if prob_sum > 0:
+                    probs = probs / prob_sum
+
+                logger.debug("Employee %d (level %s) age multiplier %.2f applied to promotion probs",
+                            i, current_level, age_multiplier)
+
         # Log transition probabilities for debugging
-        logger.debug("Employee %d (level %s) transition probs: %s", 
-                    i, current_level, 
+        logger.debug("Employee %d (level %s) transition probs: %s",
+                    i, current_level,
                     dict(zip(states, [f"{p:.2f}" for p in probs])))
         
         try:

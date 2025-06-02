@@ -1,11 +1,140 @@
 import json
 import numpy as np
 import pandas as pd
+import yaml
+from pathlib import Path
 from logging_config import get_logger, get_diagnostic_logger
 from typing import Tuple, Optional, List
 from cost_model.state.job_levels.sampling import apply_promotion_markov, load_markov_matrix
 from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, EVT_TERM, create_event
-from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP, EMP_HIRE_DATE, SIMULATION_YEAR
+from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_BIRTH_DATE, SIMULATION_YEAR
+from cost_model.utils.date_utils import age_to_band
+
+logger = get_logger(__name__)
+
+
+def _extract_promotion_hazard_config(global_params) -> dict:
+    """Extract promotion hazard configuration from global_params.
+
+    This replaces the old _load_hazard_defaults() function to support centralized configuration
+    for auto-tuning. Falls back to environment variable override for testing compatibility.
+
+    Args:
+        global_params: Global parameters object containing promotion_hazard configuration
+
+    Returns:
+        Dictionary containing promotion hazard configuration
+    """
+    import os
+
+    # Check for environment variable override for testing (backward compatibility)
+    hazard_file = os.environ.get('HAZARD_CONFIG_FILE')
+    if hazard_file:
+        config_path = Path(__file__).parent.parent.parent / "config" / hazard_file
+        logger.debug(f"[PROMOTION] Using environment override, loading hazard configuration from: {config_path}")
+
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            logger.debug(f"[PROMOTION] Successfully loaded hazard config from {hazard_file}")
+            return config
+        except FileNotFoundError:
+            logger.warning(f"[PROMOTION] Hazard defaults file not found at {config_path}. Falling back to global_params.")
+        except Exception as e:
+            logger.warning(f"[PROMOTION] Error loading hazard defaults: {e}. Falling back to global_params.")
+
+    # Extract promotion hazard configuration from global_params
+    if hasattr(global_params, 'promotion_hazard'):
+        promotion_config = global_params.promotion_hazard
+        logger.debug("[PROMOTION] Using promotion hazard configuration from global_params")
+
+        # Convert to the expected dictionary format
+        config = {
+            'promotion': {
+                'base_rate': getattr(promotion_config, 'base_rate', 0.10),
+                'tenure_multipliers': getattr(promotion_config, 'tenure_multipliers', {}),
+                'level_dampener_factor': getattr(promotion_config, 'level_dampener_factor', 0.15),
+                'age_multipliers': getattr(promotion_config, 'age_multipliers', {})
+            }
+        }
+        return config
+
+    logger.warning("[PROMOTION] No promotion_hazard configuration found in global_params. Age multipliers will not be applied.")
+    return {}
+
+
+def _apply_promotion_age_multipliers(
+    snapshot: pd.DataFrame,
+    promotion_matrix: pd.DataFrame,
+    year: int,
+    hazard_defaults: dict
+) -> pd.DataFrame:
+    """Apply age-based multipliers to promotion transition probabilities.
+
+    This function modifies the promotion matrix probabilities based on employee age,
+    similar to how age multipliers are applied in the termination engine.
+
+    Args:
+        snapshot: Employee snapshot DataFrame containing birth dates
+        promotion_matrix: Original Markov transition matrix
+        year: Current simulation year for age calculation
+        hazard_defaults: Hazard configuration containing age multipliers
+
+    Returns:
+        Modified promotion matrix with age-adjusted probabilities per employee
+    """
+    if not hazard_defaults or 'promotion' not in hazard_defaults:
+        logger.debug(f"[PROMOTION] Year {year}: No age multipliers found in hazard defaults.")
+        return promotion_matrix
+
+    age_multipliers = hazard_defaults.get('promotion', {}).get('age_multipliers', {})
+    if not age_multipliers:
+        logger.debug(f"[PROMOTION] Year {year}: No age multipliers configured for promotion.")
+        return promotion_matrix
+
+    # Check if birth date column exists
+    if EMP_BIRTH_DATE not in snapshot.columns:
+        logger.warning(f"[PROMOTION] Year {year}: {EMP_BIRTH_DATE} column not found. Age multipliers will not be applied.")
+        return promotion_matrix
+
+    # Calculate ages as of year-end (consistent with termination engine)
+    as_of_date = pd.Timestamp(f"{year}-12-31")
+    birth_dates = pd.to_datetime(snapshot[EMP_BIRTH_DATE], errors='coerce')
+    ages = ((as_of_date - birth_dates).dt.days / 365.25).round().astype('Int64')
+
+    # Map ages to age bands and then to multipliers
+    emp_ages = {}
+    for idx, age in ages.items():
+        if pd.isna(age):
+            continue
+        age_band = age_to_band(int(age))
+        emp_ages[snapshot.loc[idx, EMP_ID]] = age_band
+
+    logger.info(f"[PROMOTION] Year {year}: Calculated ages for {len(emp_ages)} employees. "
+               f"Age bands: {set(emp_ages.values())}")
+
+    # For Markov promotion, we need to create employee-specific matrices
+    # Since the current implementation uses a single matrix for all employees,
+    # we'll store the age multipliers to be applied during sampling
+    # This is a design decision - we could create per-employee matrices but that's complex
+
+    # Store age multipliers in the snapshot for use during Markov sampling
+    snapshot = snapshot.copy()
+    snapshot['_promotion_age_multiplier'] = 1.0  # Default multiplier
+
+    for emp_id, age_band in emp_ages.items():
+        if age_band in age_multipliers:
+            multiplier = age_multipliers[age_band]
+            emp_mask = snapshot[EMP_ID] == emp_id
+            snapshot.loc[emp_mask, '_promotion_age_multiplier'] = multiplier
+
+    # Log the impact of age adjustments
+    non_default_multipliers = (snapshot['_promotion_age_multiplier'] != 1.0).sum()
+    if non_default_multipliers > 0:
+        logger.info(f"[PROMOTION] Year {year}: Applied age multipliers to {non_default_multipliers} employees. "
+                   f"Multiplier range: {snapshot['_promotion_age_multiplier'].min():.2f} - {snapshot['_promotion_age_multiplier'].max():.2f}")
+
+    return snapshot  # Return modified snapshot with age multipliers
 
 
 def create_promotion_raise_events(
@@ -35,7 +164,8 @@ def create_promotion_raise_events(
         # Robustly handle possible duplicate index (row.name)
         from_level_val = snapshot.loc[row.name, EMP_LEVEL]
         if isinstance(from_level_val, pd.Series):
-            logging.warning(f"[PROMOTION] Duplicate index for employee {emp_id} (row.name={row.name}); skipping promotion/raise event.")
+            logger = get_logger(__name__)
+            logger.warning(f"[PROMOTION] Duplicate index for employee {emp_id} (row.name={row.name}); skipping promotion/raise event.")
             continue
         from_level = int(from_level_val)
         to_level = int(row[EMP_LEVEL])
@@ -45,14 +175,16 @@ def create_promotion_raise_events(
                 # This should be rare now that we filter at the start, but keep as a safeguard
                 hire_date = snapshot.loc[row.name, EMP_HIRE_DATE]
                 hire_date_str = hire_date.strftime('%Y-%m-%d') if not pd.isna(hire_date) else 'unknown hire date'
-                logging.warning(
+                logger = get_logger(__name__)
+                logger.warning(
                     f"[PROMOTION] Employee {emp_id} (hired {hire_date_str}) missing {EMP_GROSS_COMP}; "
                     "promotion/raise event skipped. This should have been caught earlier in the process."
                 )
                 continue
             current_comp = float(comp_val)
         except KeyError as e:
-            logging.error(
+            logger = get_logger(__name__)
+            logger.error(
                 f"[PROMOTION] Error accessing compensation data for employee {emp_id}: {str(e)}. "
                 "This suggests a data integrity issue. Skipping promotion/raise event."
             )
@@ -230,6 +362,13 @@ def apply_markov_promotions(
         simulation_year = promo_time.year if hasattr(promo_time, 'year') else None
         if simulation_year is None and 'simulation_year' in snapshot.columns:
             simulation_year = snapshot['simulation_year'].iloc[0] if not snapshot.empty else None
+
+    # Extract promotion hazard configuration from global_params
+    hazard_defaults = _extract_promotion_hazard_config(global_params)
+
+    # Apply age multipliers to promotion probabilities
+    # Note: This modifies the snapshot to include age multipliers for use in Markov sampling
+    snapshot = _apply_promotion_age_multipliers(snapshot, promotion_matrix, simulation_year, hazard_defaults)
 
     # Apply Markov promotions with termination date handling
     out = apply_promotion_markov(

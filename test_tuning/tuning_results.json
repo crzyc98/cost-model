@@ -1,0 +1,16 @@
+[
+  {
+    "config_path": "tuned/config_000_20250602_171519.yaml",
+    "score": 5.044009959502441,
+    "summary": {
+      "hc_growth": -0.09821428571428571,
+      "pay_growth": -0.01782555229547808,
+      "age_hist": {},
+      "tenure_hist": {},
+      "total_employees": 101,
+      "file_path": "tuned/output_config_000_20250602_171519/Baseline/Baseline_metrics.csv",
+      "years": 3,
+      "final_headcount": 101
+    }
+  }
+]

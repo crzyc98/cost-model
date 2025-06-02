@@ -272,6 +272,44 @@ class HazardModelParams(BaseModel):
     file: str  # Path to the hazard model params file
 
 
+# === NEW HAZARD PARAMETER MODELS FOR AUTO-TUNING ===
+
+class TerminationHazardConfig(BaseModel):
+    """Configuration for termination hazard parameters."""
+
+    base_rate_for_new_hire: float = Field(0.25, ge=0.0, le=1.0)
+    tenure_multipliers: Dict[str, float] = Field(default_factory=dict)
+    level_discount_factor: float = Field(0.10, ge=0.0, le=1.0)
+    min_level_discount_multiplier: float = Field(0.4, ge=0.0, le=1.0)
+    age_multipliers: Dict[str, float] = Field(default_factory=dict)
+
+
+class PromotionHazardConfig(BaseModel):
+    """Configuration for promotion hazard parameters."""
+
+    base_rate: float = Field(0.10, ge=0.0, le=1.0)
+    tenure_multipliers: Dict[str, float] = Field(default_factory=dict)
+    level_dampener_factor: float = Field(0.15, ge=0.0, le=1.0)
+    age_multipliers: Dict[str, float] = Field(default_factory=dict)
+
+
+class RaisesHazardConfig(BaseModel):
+    """Configuration for compensation raises parameters."""
+
+    merit_base: float = Field(0.03, ge=0.0)
+    merit_tenure_bump_bands: List[str] = Field(default_factory=list)
+    merit_tenure_bump_value: float = Field(0.005, ge=0.0)
+    merit_low_level_cutoff: int = Field(2, ge=0)
+    merit_low_level_bump_value: float = Field(0.005, ge=0.0)
+    promotion_raise: float = Field(0.12, ge=0.0)
+
+
+class ColaHazardConfig(BaseModel):
+    """Configuration for COLA parameters by year."""
+
+    by_year: Dict[int, float] = Field(default_factory=dict)
+
+
 class GlobalParameters(BaseModel):
     start_year: int
     projection_years: int
@@ -311,6 +349,12 @@ class GlobalParameters(BaseModel):
     # Promotion configuration
     dev_mode: bool = Field(False, description="Enable dev mode features like default matrices")
     promotion_matrix_path: Optional[str] = Field(None, description="Path to promotion matrix YAML file")
+
+    # === DETAILED HAZARD PARAMETERS FOR AUTO-TUNING ===
+    termination_hazard: Optional[TerminationHazardConfig] = None
+    promotion_hazard: Optional[PromotionHazardConfig] = None
+    raises_hazard: Optional[RaisesHazardConfig] = None
+    cola_hazard: Optional[ColaHazardConfig] = None
 
     # Plan Rules (Nested Model)
     plan_rules: PlanRules = Field(

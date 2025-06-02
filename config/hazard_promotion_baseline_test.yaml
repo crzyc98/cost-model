@@ -1,0 +1,82 @@
+# config/hazard_promotion_baseline_test.yaml
+# Test configuration for promotion age sensitivity verification - BASELINE
+# All promotion age multipliers set to 1.0 (neutral) as control group
+
+global:
+  simulation_years: [2025, 2026, 2027, 2028, 2029]
+  job_levels: [0, 1, 2, 3, 4]         # Numeric job levels
+  tenure_bands: ["<1", "1-3", "3-5", "5-10", "10-15", "15+"]
+  cfg_scenario_name: "promotion_baseline"      # Scenario name for the 'cfg' column
+
+cola:
+  # Year-specific Cost of Living Adjustments
+  by_year:
+    2025: 0.020
+    2026: 0.018
+    2027: 0.016
+    2028: 0.015
+    2029: 0.014
+
+termination:
+  # Base termination rate for new hires (<1 year tenure)
+  base_rate_for_new_hire: 0.25 
+  
+  # Multipliers for other tenure bands, applied to 'base_rate_for_new_hire'.
+  tenure_multipliers: 
+    "<1": 1.0    # New hire rate directly applies
+    "1-3": 0.6   # Results in 15% (0.25 * 0.6)
+    "3-5": 0.4   # Results in 10%
+    "5-10": 0.28  # Results in 7%
+    "10-15": 0.20 # Results in 5%
+    "15+": 0.24  # Results in 6% (slight uptick for retirement/reshuffle)
+
+  # Factor for discounting termination rate based on employee level.
+  level_discount_factor: 0.10   # 10% reduction effect per level above L1
+  min_level_discount_multiplier: 0.4 # Ensures the multiplier doesn't go below 0.4
+
+  # Age-based multipliers for termination rate - NEUTRAL for promotion testing
+  age_multipliers:
+    "<30":   1.0   # Neutral
+    "30-39": 1.0   # Neutral
+    "40-49": 1.0   # Neutral
+    "50-59": 1.0   # Neutral
+    "60-65": 1.0   # Neutral
+
+promotion:
+  # Base promotion probability before tenure and level adjustments.
+  base_rate: 0.10 
+  
+  # Multipliers based on tenure band, applied to 'base_rate'.
+  tenure_multipliers: 
+    "<1": 0.5    # Lower chance in first year
+    "1-3": 1.5   # Increased chance
+    "3-5": 2.0   # Peak promotion window
+    "5-10": 1.0   # Back to base influence
+    "10-15": 0.3 # Lower chance
+    "15+": 0.1   # Very low chance
+
+  # Factor for dampening promotion rate based on employee level.
+  level_dampener_factor: 0.15 # Higher levels are harder to get promoted from/to
+
+  # Age-based multipliers for promotion rate - BASELINE (neutral)
+  age_multipliers:
+    "<30":   1.0   # NEUTRAL for baseline test
+    "30-39": 1.0   # NEUTRAL for baseline test
+    "40-49": 1.0   # NEUTRAL for baseline test
+    "50-59": 1.0   # NEUTRAL for baseline test
+    "60-65": 1.0   # NEUTRAL for baseline test
+
+raises:
+  # Base annual merit increase percentage.
+  merit_base: 0.03
+  
+  # Tenure bands eligible for an additional merit bump.
+  merit_tenure_bump_bands: ["<1", "1-3", "3-5"]
+  merit_tenure_bump_value: 0.005 # The additional percentage for eligible tenure bands.
+  
+  # Levels eligible for an additional merit bump (e.g., for junior staff).
+  merit_low_level_cutoff: 2 # Levels <= this cutoff get the bump.
+  merit_low_level_bump_value: 0.005 # The additional percentage for eligible low levels.
+  
+  # Standard percentage increase upon promotion, in addition to merit/COLA.
+  promotion_raise: 0.12

@@ -60,18 +60,55 @@ from cost_model.utils.columns import EMP_TENURE
 from cost_model.utils.tenure_utils import standardize_tenure_band
 
 
-def _load_hazard_defaults() -> dict:
-    """Load hazard defaults configuration from YAML file."""
-    config_path = Path(__file__).parent.parent.parent / "config" / "hazard_defaults.yaml"
-    try:
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
-        logger.warning(f"Hazard defaults file not found at {config_path}. Age multipliers will not be applied.")
-        return {}
-    except Exception as e:
-        logger.warning(f"Error loading hazard defaults: {e}. Age multipliers will not be applied.")
-        return {}
+def _extract_termination_hazard_config(global_params) -> dict:
+    """Extract termination hazard configuration from global_params.
+
+    This replaces the old _load_hazard_defaults() function to support centralized configuration
+    for auto-tuning. Falls back to environment variable override for testing compatibility.
+
+    Args:
+        global_params: Global parameters object containing termination_hazard configuration
+
+    Returns:
+        Dictionary containing termination hazard configuration
+    """
+    import os
+
+    # Check for environment variable override for testing (backward compatibility)
+    hazard_file = os.environ.get('HAZARD_CONFIG_FILE')
+    if hazard_file:
+        config_path = Path(__file__).parent.parent.parent / "config" / hazard_file
+        logger.debug(f"Using environment override, loading hazard configuration from: {config_path}")
+
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            logger.debug(f"Successfully loaded hazard config from {hazard_file}")
+            return config
+        except FileNotFoundError:
+            logger.warning(f"Hazard defaults file not found at {config_path}. Falling back to global_params.")
+        except Exception as e:
+            logger.warning(f"Error loading hazard defaults: {e}. Falling back to global_params.")
+
+    # Extract termination hazard configuration from global_params
+    if hasattr(global_params, 'termination_hazard'):
+        termination_config = global_params.termination_hazard
+        logger.debug("Using termination hazard configuration from global_params")
+
+        # Convert to the expected dictionary format
+        config = {
+            'termination': {
+                'base_rate_for_new_hire': getattr(termination_config, 'base_rate_for_new_hire', 0.25),
+                'tenure_multipliers': getattr(termination_config, 'tenure_multipliers', {}),
+                'level_discount_factor': getattr(termination_config, 'level_discount_factor', 0.10),
+                'min_level_discount_multiplier': getattr(termination_config, 'min_level_discount_multiplier', 0.4),
+                'age_multipliers': getattr(termination_config, 'age_multipliers', {})
+            }
+        }
+        return config
+
+    logger.warning("No termination_hazard configuration found in global_params. Age multipliers will not be applied.")
+    return {}
 
 
 def _apply_age_multipliers(merged_df: pd.DataFrame, snapshot: pd.DataFrame, year: int, hazard_defaults: dict) -> pd.DataFrame:
@@ -131,6 +168,7 @@ def run(
     hazard_slice: pd.DataFrame,
     rng: np.random.Generator,
     deterministic: bool,
+    global_params=None,
 ) -> List[pd.DataFrame]:
     """
     Simulate terminations for one simulation year.
@@ -141,8 +179,8 @@ def run(
     # Determine "as_of" start of year
     as_of = pd.Timestamp(f"{year}-01-01")
 
-    # Load hazard defaults for age multipliers
-    hazard_defaults = _load_hazard_defaults()
+    # Extract termination hazard configuration from global_params
+    hazard_defaults = _extract_termination_hazard_config(global_params)
 
     # Ensure EMP_HIRE_DATE is datetime
     snapshot[EMP_HIRE_DATE] = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors='coerce')

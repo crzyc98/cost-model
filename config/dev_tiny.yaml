@@ -28,6 +28,65 @@ global_parameters:
   dev_mode: true               # Enable dev mode features like default matrices
   promotion_matrix_path: ~     # Use null to trigger default matrix in dev mode
 
+  # === DETAILED HAZARD PARAMETERS FOR AUTO-TUNING ===
+  # These parameters replace the need for separate config/hazard_defaults.yaml
+  # and enable fine-grained control through tune_configs.py
+
+  # Termination hazard parameters
+  termination_hazard:
+    base_rate_for_new_hire: 0.25
+    tenure_multipliers:
+      "<1": 1.0
+      "1-3": 0.6
+      "3-5": 0.4
+      "5-10": 0.28
+      "10-15": 0.20
+      "15+": 0.24
+    level_discount_factor: 0.10
+    min_level_discount_multiplier: 0.4
+    age_multipliers:
+      "<30": 0.8
+      "30-39": 1.0
+      "40-49": 1.1
+      "50-59": 1.3
+      "60-65": 2.0
+
+  # Promotion hazard parameters
+  promotion_hazard:
+    base_rate: 0.10
+    tenure_multipliers:
+      "<1": 0.5
+      "1-3": 1.5
+      "3-5": 2.0
+      "5-10": 1.0
+      "10-15": 0.3
+      "15+": 0.1
+    level_dampener_factor: 0.15
+    age_multipliers:
+      "<30": 1.4
+      "30-39": 1.1
+      "40-49": 0.9
+      "50-59": 0.4
+      "60-65": 0.1
+
+  # Compensation raises parameters
+  raises_hazard:
+    merit_base: 0.03
+    merit_tenure_bump_bands: ["<1", "1-3", "3-5"]
+    merit_tenure_bump_value: 0.005
+    merit_low_level_cutoff: 2
+    merit_low_level_bump_value: 0.005
+    promotion_raise: 0.12
+
+  # COLA parameters by year
+  cola_hazard:
+    by_year:
+      2025: 0.020
+      2026: 0.018
+      2027: 0.016
+      2028: 0.015
+      2029: 0.014
+
   # Compensation parameters
   annual_compensation_increase_rate: 0.03 # Annual compensation increase rate
 

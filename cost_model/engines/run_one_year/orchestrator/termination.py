@@ -76,7 +76,8 @@ class TerminationOrchestrator:
             snapshot=experienced,
             hazard_slice=hz_slice,
             rng=year_context.year_rng,
-            deterministic=year_context.deterministic_term
+            deterministic=year_context.deterministic_term,
+            global_params=year_context.global_params
         )
 
         # Validate and process events
