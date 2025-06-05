@@ -144,41 +144,56 @@ def run_simulation(
     from cost_model.projections.snapshot import create_initial_snapshot
     snap = create_initial_snapshot(start_year, input_census_path)
 
-    # 4. Load hazard table using proper loading function
+    # 4. Build dynamic hazard table from global_params
+    logger.info("Dynamically building hazard table from global_params...")
+
+    # Import dynamic hazard table builder
+    from cost_model.projections.dynamic_hazard import build_dynamic_hazard_table
+
+    # Define standard job levels and tenure bands
+    # These match the standard values used across the codebase
+    standard_job_levels = [0, 1, 2, 3, 4]  # Numeric job levels
+    standard_tenure_bands = ["<1", "1-3", "3-5", "5-10", "10-15", "15+"]  # From tenure.py
+
+    # Generate simulation years for the hazard table
+    simulation_years = list(range(start_year, start_year + projection_years))
+
     try:
-        from cost_model.projections.hazard import load_and_expand_hazard_table
-        hazard = load_and_expand_hazard_table('data/hazard_table.parquet')
-        if hazard.empty:
-            logger.warning("Hazard table from parquet is empty, falling back to CSV")
-            # Fallback to CSV if parquet doesn't exist or is empty
-            hazard_path = Path('cost_model/state/hazard_table.csv')
-            hazard = pd.read_csv(hazard_path)
-            # Apply basic column renaming for CSV
-            column_mapping = {
-                'year': 'simulation_year',
-                'employee_level': 'employee_level',
-                'tenure_band': 'employee_tenure_band',
-                'term_rate': 'term_rate',
-                'comp_raise_pct': 'comp_raise_pct',
-                'cola_pct': 'cola_pct',
-                'new_hire_termination_rate': 'new_hire_termination_rate'
-            }
-            hazard = hazard.rename(columns={k: v for k, v in column_mapping.items() if k in hazard.columns})
-    except ImportError:
-        # Fallback if import fails
-        hazard_path = Path('cost_model/state/hazard_table.csv')
-        hazard = pd.read_csv(hazard_path)
-        # Apply basic column renaming for CSV
-        column_mapping = {
-            'year': 'simulation_year',
-            'employee_level': 'employee_level',
-            'tenure_band': 'employee_tenure_band',
-            'term_rate': 'term_rate',
-            'comp_raise_pct': 'comp_raise_pct',
-            'cola_pct': 'cola_pct',
-            'new_hire_termination_rate': 'new_hire_termination_rate'
-        }
-        hazard = hazard.rename(columns={k: v for k, v in column_mapping.items() if k in hazard.columns})
+        hazard = build_dynamic_hazard_table(
+            global_params=scenario_cfg,
+            simulation_years=simulation_years,
+            job_levels=standard_job_levels,
+            tenure_bands=standard_tenure_bands,
+            cfg_scenario_name=scenario_output_name
+        )
+        logger.info(f"Dynamic hazard table built successfully with {len(hazard)} rows for {len(simulation_years)} years")
+    except Exception as e:
+        logger.error(f"Failed to build dynamic hazard table: {e}")
+        logger.exception("Dynamic hazard table generation failed, falling back to static loading")
+
+        # Fallback to static loading if dynamic generation fails
+        try:
+            from cost_model.projections.hazard import load_and_expand_hazard_table
+            hazard = load_and_expand_hazard_table('data/hazard_table.parquet')
+            if hazard.empty:
+                logger.warning("Hazard table from parquet is empty, falling back to CSV")
+                # Fallback to CSV if parquet doesn't exist or is empty
+                hazard_path = Path('cost_model/state/hazard_table.csv')
+                hazard = pd.read_csv(hazard_path)
+                # Apply basic column renaming for CSV
+                column_mapping = {
+                    'year': 'simulation_year',
+                    'employee_level': 'employee_level',
+                    'tenure_band': 'employee_tenure_band',
+                    'term_rate': 'term_rate',
+                    'comp_raise_pct': 'comp_raise_pct',
+                    'cola_pct': 'cola_pct',
+                    'new_hire_termination_rate': 'new_hire_termination_rate'
+                }
+                hazard = hazard.rename(columns={k: v for k, v in column_mapping.items() if k in hazard.columns})
+        except Exception as fallback_error:
+            logger.error(f"Fallback hazard table loading also failed: {fallback_error}")
+            raise RuntimeError("Both dynamic and static hazard table loading failed") from fallback_error
 
     # 5. Prepare output dir
     scenario_output_dir = output_dir_base / scenario_output_name

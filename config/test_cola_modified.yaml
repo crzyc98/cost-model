@@ -71,7 +71,7 @@ global_parameters:
 
   # Compensation raises parameters
   raises_hazard:
-    merit_base: 0.03  # BASELINE VALUE - Testing parameter
+    merit_base: 0.03
     merit_tenure_bump_bands: ["<1", "1-3", "3-5"]
     merit_tenure_bump_value: 0.005
     merit_low_level_cutoff: 2
@@ -81,7 +81,7 @@ global_parameters:
   # COLA parameters by year
   cola_hazard:
     by_year:
-      2025: 0.020
+      2025: 0.050  # MODIFIED: Increased from 2.0% to 5.0% for testing
       2026: 0.018
       2027: 0.016
       2028: 0.015

@@ -1,5 +1,5 @@
 global_parameters:
-  annual_compensation_increase_rate: 0.032
+  annual_compensation_increase_rate: 0.03
   attrition:
     annual_termination_rate: 0.15
     new_hire_termination_rate: 0.25
@@ -12,11 +12,11 @@ global_parameters:
       2027: 0.016
       2028: 0.015
       2029: 0.014
-      '2025': 0.02
-      '2026': 0.02
+      '2025': 0.01
+      '2026': 0.01
       '2027': 0.012
-      '2028': 0.012
-      '2029': 0.014
+      '2028': 0.007
+      '2029': 0.01
   compensation:
     COLA_rate: 0.02
     merit_dist:
@@ -33,8 +33,8 @@ global_parameters:
         mu: 0.05
         sigma: 0.02
     new_hire:
-      age_mean: 40
-      age_std: 8
+      age_mean: 35
+      age_std: 5
     promo_raise_pct:
       0_to_1: 0.1
       1_to_2: 0.1
@@ -49,10 +49,10 @@ global_parameters:
   max_working_age: 63
   min_working_age: 22
   monthly_transition: false
-  new_hire_age_std_dev: 5
-  new_hire_average_age: 35
+  new_hire_age_std_dev: 9
+  new_hire_average_age: 30
   new_hires:
-    new_hire_rate: 0.15
+    new_hire_rate: 0.18
   onboarding:
     early_tenure_months: 6
     enabled: true
@@ -68,48 +68,48 @@ global_parameters:
   promotion_hazard:
     age_multipliers:
       30-39: 1.1
-      40-49: 0.9
-      50-59: 0.3
+      40-49: 1.1
+      50-59: 0.4
       60-65: 0.15
       <30: 1.4
-    base_rate: 0.15
+    base_rate: 0.12
     level_dampener_factor: 0.2
     tenure_multipliers:
-      1-3: 1.2
-      10-15: 0.3
-      15+: 0.05
-      3-5: 2.0
-      5-10: 1.2
-      <1: 0.5
+      1-3: 1.5
+      10-15: 0.2
+      15+: 0.15
+      3-5: 1.5
+      5-10: 0.8
+      <1: 0.3
   promotion_matrix_path: null
   raises_hazard:
-    merit_base: 0.04
-    merit_low_level_bump_value: 0.005
+    merit_base: 0.02
+    merit_low_level_bump_value: 0.002
     merit_low_level_cutoff: 2
     merit_tenure_bump_bands:
     - <1
     - 1-3
     - 3-5
-    merit_tenure_bump_value: 0.005
+    merit_tenure_bump_value: 0.003
     promotion_raise: 0.1
   random_seed: 79
   start_year: 2025
   target_growth: 0.05
   termination_hazard:
     age_multipliers:
-      30-39: 1.0
-      40-49: 0.9
-      50-59: 1.1
-      60-65: 3.0
-      <30: 0.3
-    base_rate_for_new_hire: 0.1
-    level_discount_factor: 0.1
-    min_level_discount_multiplier: 0.4
+      30-39: 1.2
+      40-49: 1.3
+      50-59: 1.3
+      60-65: 2.5
+      <30: 0.5
+    base_rate_for_new_hire: 0.18
+    level_discount_factor: 0.15
+    min_level_discount_multiplier: 0.3
     tenure_multipliers:
       1-3: 0.6
       10-15: 0.2
-      15+: 0.24
-      3-5: 0.4
+      15+: 0.3
+      3-5: 0.3
       5-10: 0.2
       <1: 0.8
 job_levels:

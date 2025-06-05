@@ -95,14 +95,23 @@ def _extract_termination_hazard_config(global_params) -> dict:
         termination_config = global_params.termination_hazard
         logger.debug("Using termination hazard configuration from global_params")
 
+        # Helper function to convert SimpleNamespace to dict
+        def convert_to_dict(obj):
+            if hasattr(obj, '__dict__'):
+                return {k: convert_to_dict(v) for k, v in obj.__dict__.items()}
+            elif isinstance(obj, dict):
+                return {k: convert_to_dict(v) for k, v in obj.items()}
+            else:
+                return obj
+
         # Convert to the expected dictionary format
         config = {
             'termination': {
                 'base_rate_for_new_hire': getattr(termination_config, 'base_rate_for_new_hire', 0.25),
-                'tenure_multipliers': getattr(termination_config, 'tenure_multipliers', {}),
+                'tenure_multipliers': convert_to_dict(getattr(termination_config, 'tenure_multipliers', {})),
                 'level_discount_factor': getattr(termination_config, 'level_discount_factor', 0.10),
                 'min_level_discount_multiplier': getattr(termination_config, 'min_level_discount_multiplier', 0.4),
-                'age_multipliers': getattr(termination_config, 'age_multipliers', {})
+                'age_multipliers': convert_to_dict(getattr(termination_config, 'age_multipliers', {}))
             }
         }
         return config

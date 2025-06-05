@@ -3,6 +3,15 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
     annual_compensation_increase_rate: 0.03
     annual_termination_rate: 0.15
     census_template_path: data/census_template.parquet
+    cola_hazard: !!python/object/apply:types.SimpleNamespace
+      state:
+        by_year: !!python/object/apply:types.SimpleNamespace
+          state:
+            '2025': 0.02
+            '2026': 0.018
+            '2027': 0.016
+            '2028': 0.015
+            '2029': 0.014
     compensation: !!python/object/apply:types.SimpleNamespace
       state:
         COLA_rate: 0.02
@@ -60,10 +69,60 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         - 1.0
         - 1.0
     projection_years: 3
+    promotion_hazard: !!python/object/apply:types.SimpleNamespace
+      state:
+        age_multipliers: !!python/object/apply:types.SimpleNamespace
+          state:
+            30-39: 1.1
+            40-49: 0.9
+            50-59: 0.4
+            60-65: 0.1
+            <30: 1.4
+        base_rate: 0.1
+        level_dampener_factor: 0.15
+        tenure_multipliers: !!python/object/apply:types.SimpleNamespace
+          state:
+            1-3: 1.5
+            10-15: 0.3
+            15+: 0.1
+            3-5: 2.0
+            5-10: 1.0
+            <1: 0.5
     promotion_matrix_path: null
+    raises_hazard: !!python/object/apply:types.SimpleNamespace
+      state:
+        merit_base: 0.03
+        merit_low_level_bump_value: 0.005
+        merit_low_level_cutoff: 2
+        merit_tenure_bump_bands:
+        - <1
+        - 1-3
+        - 3-5
+        merit_tenure_bump_value: 0.005
+        promotion_raise: 0.12
     random_seed: 79
     start_year: 2025
     target_growth: 0.03
+    termination_hazard: !!python/object/apply:types.SimpleNamespace
+      state:
+        age_multipliers: !!python/object/apply:types.SimpleNamespace
+          state:
+            30-39: 1.0
+            40-49: 1.1
+            50-59: 1.3
+            60-65: 2.0
+            <30: 0.8
+        base_rate_for_new_hire: 0.25
+        level_discount_factor: 0.1
+        min_level_discount_multiplier: 0.4
+        tenure_multipliers: !!python/object/apply:types.SimpleNamespace
+          state:
+            1-3: 0.6
+            10-15: 0.2
+            15+: 0.24
+            3-5: 0.4
+            5-10: 0.28
+            <1: 1.0
     use_expected_attrition: false
 job_levels:
 - !!python/object/apply:types.SimpleNamespace

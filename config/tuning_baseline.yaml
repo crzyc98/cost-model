@@ -1,0 +1,25 @@
+# Baseline distributions and target values for auto-tuning
+# These represent the target workforce demographics and growth metrics
+# that the auto-tuning system will try to match
+
+# Target age distribution (as proportions that sum to 1.0)
+target_age_distribution:
+  "<30": 0.25      # 25% of workforce under 30
+  "30-39": 0.35    # 35% in their 30s
+  "40-49": 0.25    # 25% in their 40s
+  "50-59": 0.12    # 12% in their 50s
+  "60-65": 0.03    # 3% approaching retirement
+
+# Target tenure distribution (as proportions that sum to 1.0)
+target_tenure_distribution:
+  "<1": 0.20       # 20% new hires (less than 1 year)
+  "1-3": 0.30      # 30% early career (1-3 years)
+  "3-5": 0.25      # 25% established (3-5 years)
+  "5-10": 0.15     # 15% experienced (5-10 years)
+  "10-15": 0.07    # 7% veteran (10-15 years)
+  "15+": 0.03      # 3% long-term (15+ years)
+
+# Target growth metrics
+target_metrics:
+  headcount_growth: 0.03    # 3% annual headcount growth
+  compensation_growth: 0.03 # 3% annual compensation growth

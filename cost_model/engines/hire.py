@@ -192,6 +192,14 @@ def run(
             new_hire_age_min = getattr(global_params, "new_hire_age_min", 22)
         if new_hire_age_max is None:
             new_hire_age_max = getattr(global_params, "new_hire_age_max", 45)
+
+        # 3. Try nested compensation.new_hire parameters (for auto-tuning compatibility)
+        if hasattr(global_params, 'compensation') and hasattr(global_params.compensation, 'new_hire'):
+            comp_new_hire = global_params.compensation.new_hire
+            if new_hire_age_mean is None or new_hire_age_mean == 30:  # Use nested if available
+                new_hire_age_mean = getattr(comp_new_hire, "age_mean", new_hire_age_mean)
+            if new_hire_age_std is None or new_hire_age_std == 5:  # Use nested if available
+                new_hire_age_std = getattr(comp_new_hire, "age_std", new_hire_age_std)
         # Generate ages using normal distribution with truncation
         ages = rng.normal(new_hire_age_mean, new_hire_age_std, size=hires_to_make)
         ages = np.clip(ages, new_hire_age_min, new_hire_age_max)

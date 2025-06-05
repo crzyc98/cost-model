@@ -48,13 +48,22 @@ def _extract_promotion_hazard_config(global_params) -> dict:
         promotion_config = global_params.promotion_hazard
         logger.debug("[PROMOTION] Using promotion hazard configuration from global_params")
 
+        # Helper function to convert SimpleNamespace to dict
+        def convert_to_dict(obj):
+            if hasattr(obj, '__dict__'):
+                return {k: convert_to_dict(v) for k, v in obj.__dict__.items()}
+            elif isinstance(obj, dict):
+                return {k: convert_to_dict(v) for k, v in obj.items()}
+            else:
+                return obj
+
         # Convert to the expected dictionary format
         config = {
             'promotion': {
                 'base_rate': getattr(promotion_config, 'base_rate', 0.10),
-                'tenure_multipliers': getattr(promotion_config, 'tenure_multipliers', {}),
+                'tenure_multipliers': convert_to_dict(getattr(promotion_config, 'tenure_multipliers', {})),
                 'level_dampener_factor': getattr(promotion_config, 'level_dampener_factor', 0.15),
-                'age_multipliers': getattr(promotion_config, 'age_multipliers', {})
+                'age_multipliers': convert_to_dict(getattr(promotion_config, 'age_multipliers', {}))
             }
         }
         return config

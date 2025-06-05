@@ -1,7 +1,7 @@
 scenarios:
   baseline:
     name: Baseline
-    description: Default simulation parameters generated from historical data
+    description: Test configuration - Termination Base Rate Modified (0.40)
 
 # Global parameters that apply to all scenarios
 global_parameters:
@@ -34,7 +34,7 @@ global_parameters:
 
   # Termination hazard parameters
   termination_hazard:
-    base_rate_for_new_hire: 0.25
+    base_rate_for_new_hire: 0.40  # MODIFIED VALUE - Testing parameter (60% increase)
     tenure_multipliers:
       "<1": 1.0
       "1-3": 0.6
@@ -71,7 +71,7 @@ global_parameters:
 
   # Compensation raises parameters
   raises_hazard:
-    merit_base: 0.03  # BASELINE VALUE - Testing parameter
+    merit_base: 0.03
     merit_tenure_bump_bands: ["<1", "1-3", "3-5"]
     merit_tenure_bump_value: 0.005
     merit_low_level_cutoff: 2

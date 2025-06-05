@@ -90,6 +90,13 @@ NEW_HIRE_TERM_RATE = "new_hire_term_rate"
 COLA_PCT = "cola_pct"
 CFG = "cfg"
 
+# Additional hazard table columns for dynamic generation
+PROMOTION_RATE = "promotion_rate"
+MERIT_RAISE_PCT = "merit_raise_pct"
+PROMOTION_RAISE_PCT = "promotion_raise_pct"
+NEW_HIRE_TERMINATION_RATE = "new_hire_termination_rate"
+TENURE_BAND = "tenure_band"  # Used in hazard table (vs EMP_TENURE_BAND in snapshots)
+
 # Event log columns
 EVENT_ID = "event_id"
 EVENT_TYPE = "event_type"
@@ -339,6 +346,12 @@ __all__ = [
     "NEW_HIRE_TERM_RATE",
     "COLA_PCT",
     "CFG",
+    # hazard table columns
+    "PROMOTION_RATE",
+    "MERIT_RAISE_PCT",
+    "PROMOTION_RAISE_PCT",
+    "NEW_HIRE_TERMINATION_RATE",
+    "TENURE_BAND",
     # snapshot
     "SNAPSHOT_COLS",
     "SNAPSHOT_DTYPES",
