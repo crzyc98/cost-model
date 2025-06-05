@@ -142,7 +142,7 @@ The ABM approach models each employee as an autonomous agent making decisions ba
 
 ## Requirements
 
-- Python 3.8+
+ - Python 3.11.12
 - Core dependencies:
   ```
   pandas>=2.2.2

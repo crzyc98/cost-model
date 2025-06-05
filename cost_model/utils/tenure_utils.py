@@ -54,6 +54,9 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
     if not isinstance(tenure_band, str):
         return pd.NA
 
+    # Normalize spacing and case for matching
+    tb_norm = str(tenure_band).strip().casefold()
+
     # Map variations to standard format
     mapping = {
         # Legacy '0-1' format maps to '<1'
@@ -119,25 +122,25 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
 
     # Return the standardized version if found in mapping, otherwise return the original
     # if it's already in standard format ('<1', '1-3', '3-5', '5-10', '10-15', '15+')
-    if tenure_band in mapping:
-        return mapping[tenure_band]
-    elif tenure_band in ('<1', '1-3', '3-5', '5-10', '10-15', '15+'):
-        return tenure_band
+    if tb_norm in mapping:
+        return mapping[tb_norm]
+    elif tb_norm in ('<1', '1-3', '3-5', '5-10', '10-15', '15+'):
+        return tb_norm
     else:
         # Log a warning about unexpected format here if desired
         # For now, try to determine the correct format based on patterns
-        if tenure_band.startswith('0') or tenure_band.startswith('<'):
+        if tb_norm.startswith('0') or tb_norm.startswith('<'):
             return '<1'
-        elif tenure_band.startswith('1'):
+        elif tb_norm.startswith('1'):
             return '1-3'
-        elif tenure_band.startswith('3'):
+        elif tb_norm.startswith('3'):
             return '3-5'
-        elif tenure_band.startswith('5'):
+        elif tb_norm.startswith('5'):
             return '5-10'
-        elif tenure_band.startswith('10'):
+        elif tb_norm.startswith('10'):
             return '10-15'
-        elif tenure_band.startswith('15') or tenure_band.startswith('>'):
+        elif tb_norm.startswith('15') or tb_norm.startswith('>'):
             return '15+'
         else:
             # If we can't determine the format, return as is (could log a warning)
-            return tenure_band
+            return tb_norm
