@@ -10,6 +10,7 @@ from cost_model.utils.tenure_utils import standardize_tenure_band
         ("1-3 YEARS", "1-3"),
         ("<1", "<1"),
         (pd.NA, pd.NA),
+        ("Unmapped", "Unmapped"),
     ],
 )
 def test_standardize_tenure_band_case_whitespace(inp, expected):

@@ -55,7 +55,8 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
         return pd.NA
 
     # Normalize spacing and case for matching
-    tb_norm = str(tenure_band).strip().casefold()
+    tb_stripped = str(tenure_band).strip()
+    tb_norm = tb_stripped.casefold()
 
     # Map variations to standard format
     mapping = {
@@ -142,5 +143,5 @@ def standardize_tenure_band(tenure_band: Optional[Union[str, float, int]]) -> Op
         elif tb_norm.startswith('15') or tb_norm.startswith('>'):
             return '15+'
         else:
-            # If we can't determine the format, return as is (could log a warning)
-            return tb_norm
+            # If we can't determine the format, return the original string
+            return tb_stripped
