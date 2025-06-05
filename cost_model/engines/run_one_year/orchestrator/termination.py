@@ -12,7 +12,7 @@ import pandas as pd
 from cost_model.engines import term
 from cost_model.engines.nh_termination import run_new_hires
 from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_TENURE_BAND, EVENT_COLS
+    EMP_ID, EMP_HIRE_DATE, EMP_TENURE_BAND, EMP_TERM_DATE, EVENT_COLS
 )
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
 from cost_model.utils.tenure_utils import standardize_tenure_band
@@ -105,7 +105,7 @@ class TerminationOrchestrator:
         Returns:
             Tuple of (event_list, updated_snapshot) where:
             - event_list: List of [termination_events, compensation_events]
-            - updated_snapshot: Snapshot with terminated new hires removed
+            - updated_snapshot: Snapshot with terminated new hires properly processed via events
         """
         self.logger.info("[STEP] New hire terminations")
 
@@ -121,31 +121,72 @@ class TerminationOrchestrator:
         nh_term_events = self._validate_events(nh_term_events, "new hire termination")
         nh_term_comp_events = self._validate_events(nh_term_comp_events, "new hire compensation")
 
-        # Update snapshot to remove terminated new hires
-        terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
+        # CRITICAL FIX: Apply events to snapshot via event system instead of direct removal
+        # This ensures termination dates are properly set and employees are marked as terminated
+        if not nh_term_events.empty or not nh_term_comp_events.empty:
+            # Combine all events for application
+            all_events = []
+            if not nh_term_events.empty:
+                all_events.append(nh_term_events)
+            if not nh_term_comp_events.empty:
+                all_events.append(nh_term_comp_events)
 
-        # CRITICAL FIX: Set EMP_ACTIVE to False for terminated new hires before removal
-        # This ensures the active count is correct for diagnostic logging
-        if terminated_ids:
-            from cost_model.state.schema import EMP_ACTIVE
-            if EMP_ACTIVE in snapshot.columns:
-                # Set active flag to False for terminated employees
-                if EMP_ID in snapshot.columns:
-                    snapshot.loc[snapshot[EMP_ID].isin(terminated_ids), EMP_ACTIVE] = False
-                else:
-                    # If EMP_ID is in the index
-                    snapshot.loc[snapshot.index.isin(terminated_ids), EMP_ACTIVE] = False
+            if all_events:
+                # Concatenate all events
+                combined_events = pd.concat(all_events, ignore_index=True)
 
-                self.logger.info(f"[NH-TERM] Set EMP_ACTIVE=False for {len(terminated_ids)} terminated new hires")
+                # CRITICAL: Ensure snapshot has proper structure for event application
+                # The snapshot_update.update() function expects EMP_ID to be in the index
+                snapshot_for_update = snapshot.copy()
+                if EMP_ID in snapshot_for_update.columns:
+                    # Set EMP_ID as index if it's currently a column
+                    snapshot_for_update = snapshot_for_update.set_index(EMP_ID)
 
-        # Handle both index-based and column-based employee ID filtering
-        if EMP_ID in snapshot.columns:
-            updated_snapshot = snapshot[~snapshot[EMP_ID].isin(terminated_ids)].copy()
+                # Apply events to snapshot using the event system
+                from cost_model.state.snapshot_update import update
+                updated_snapshot = update(
+                    prev_snapshot=snapshot_for_update,
+                    new_events=combined_events,
+                    snapshot_year=year_context.year
+                )
+
+                # Restore EMP_ID as column if original snapshot had it as column
+                if EMP_ID in snapshot.columns and EMP_ID not in updated_snapshot.columns:
+                    # Only reset index if EMP_ID is not already a column
+                    updated_snapshot = updated_snapshot.reset_index()
+                elif EMP_ID in snapshot.columns and EMP_ID in updated_snapshot.columns:
+                    # EMP_ID is already a column, ensure index is numeric
+                    updated_snapshot = updated_snapshot.reset_index(drop=True)
+
+                # Count terminated employees for logging
+                terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
+
+                self.logger.info(f"[NH-TERM] Applied {len(combined_events)} events to snapshot")
+                self.logger.info(f"[NH-TERM] Processed termination for {len(terminated_ids)} new hires via event system")
+
+                # Verify termination dates were set
+                if terminated_ids and EMP_TERM_DATE in updated_snapshot.columns:
+                    # Check how many terminated employees have termination dates set
+                    if EMP_ID in updated_snapshot.columns:
+                        terminated_with_dates = updated_snapshot[
+                            updated_snapshot[EMP_ID].isin(terminated_ids) &
+                            updated_snapshot[EMP_TERM_DATE].notna()
+                        ]
+                    else:
+                        # If EMP_ID is in index
+                        terminated_with_dates = updated_snapshot[
+                            updated_snapshot.index.isin(terminated_ids) &
+                            updated_snapshot[EMP_TERM_DATE].notna()
+                        ]
+
+                    self.logger.info(f"[NH-TERM] Verified: {len(terminated_with_dates)} employees have termination dates set")
+
+            else:
+                updated_snapshot = snapshot.copy()
         else:
-            # If EMP_ID is in the index
-            updated_snapshot = snapshot.loc[~snapshot.index.isin(terminated_ids)].copy()
-
-        self.logger.info(f"[NH-TERM] Terminated {len(terminated_ids)} new hires")
+            # No events to apply
+            updated_snapshot = snapshot.copy()
+            self.logger.info("[NH-TERM] No new hire termination events generated")
 
         return [nh_term_events, nh_term_comp_events], updated_snapshot
 

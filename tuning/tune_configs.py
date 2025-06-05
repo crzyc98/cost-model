@@ -64,54 +64,56 @@ DEFAULT_CENSUS_PATH = project_root / "data/census_template.parquet"
 # Search space for configuration parameters
 # Each key maps to a list of possible values to sample from
 #
-# UPDATED based on Epic 3 User Story 3.3 Analysis (200-iteration campaign results):
-# - Added critical missing parameters: new_hire_rate, new_hire_average_age, max_working_age
-# - Expanded ranges for better young workforce retention and demographic targeting
-# - Lowered new hire termination rates and strengthened young employee protection
-# - See docs/auto_calibration/epic_3.md for detailed analysis and rationale
+# UPDATED for CAMPAIGN 6 - AGGRESSIVE HEADCOUNT GROWTH FOCUS based on Campaign 5 analysis:
+# - CHALLENGE: Campaign 5 best score 0.0813 achieved excellent calibration but HC growth still -1.69%
+# - STRATEGY: Extremely aggressive headcount growth parameters to overcome persistent negative growth
+# - FOCUS: Prioritize positive HC growth achievement while maintaining other calibration successes
+# - APPROACH: Higher target_growth ranges, much higher new_hire_rates, stronger new hire retention
+# - TARGET: Achieve positive HC growth +2.0% to +4.0% while maintaining overall score <0.08
 SEARCH_SPACE = {
-    # === EXISTING GLOBAL PARAMETERS ===
-    # Growth and hiring - REFINED RANGES based on Campaign 1 analysis (Epic 3 User Story 3.3)
-    # Issue: Best config achieved 0% growth vs 3% target - need higher minimum targets
-    "global_parameters.target_growth": [0.025, 0.030, 0.035, 0.040, 0.045, 0.050],  # Focused on 3% target
-    # Issue: Pay growth overshot (5.3% vs 3% target) - tighten compensation ranges
-    "global_parameters.annual_compensation_increase_rate": [0.020, 0.025, 0.028, 0.030, 0.032],  # Lower max
+    # === CAMPAIGN 6 PRIORITY 1: AGGRESSIVE HEADCOUNT GROWTH TARGETING ===
+    # Current: Persistent negative growth despite calibration success - AGGRESSIVE expansion
+    "global_parameters.target_growth": [0.050, 0.055, 0.060, 0.065, 0.070],  # AGGRESSIVE: Well above 3% target for model room
+    # Maintain pay growth control - Campaign 5 showed excellent performance
+    "global_parameters.annual_compensation_increase_rate": [0.020, 0.025, 0.028, 0.030, 0.032],  # Keep successful range
 
-    # === CRITICAL MISSING PARAMETERS - REFINED based on Campaign 1 analysis ===
-    # Issue: Need higher hiring rates to achieve 3% growth target
-    "global_parameters.new_hires.new_hire_rate": [0.12, 0.15, 0.18, 0.20, 0.22],  # Higher minimum
-    # Issue: Age distribution skewed away from <30 (3.5% vs 10.9% target) - need younger hires
-    "global_parameters.new_hire_average_age": [25, 27, 28, 30, 32],  # Focus on younger range
-    "global_parameters.new_hire_age_std_dev": [3, 5, 7, 9],  # Control age distribution spread
-    "global_parameters.max_working_age": [62, 63, 64, 65],  # Was fixed at 65
+    # === CAMPAIGN 6 PRIORITY 2: MUCH HIGHER HIRING VOLUME ===
+    # Current: Need dramatically higher hiring rates to achieve positive growth
+    "global_parameters.new_hires.new_hire_rate": [0.40, 0.45, 0.50, 0.55, 0.60],  # AGGRESSIVE: Much higher hiring rates
+    # === CAMPAIGN 6 PRIORITY 3: MAINTAIN AGE DISTRIBUTION IMPROVEMENTS ===
+    # Campaign 5 showed good age distribution progress - maintain successful patterns
+    "global_parameters.new_hire_average_age": [22, 25, 27, 28],  # MAINTAIN: Keep young hiring focus from Campaign 5
+    "global_parameters.new_hire_age_std_dev": [2, 3, 4],  # MAINTAIN: Tight focus around young ages
+    "global_parameters.max_working_age": [62, 63, 64, 65],  # Keep retirement pressure options
 
-    # NEW: Additional new hire age parameters for fine-grained control
-    "global_parameters.compensation.new_hire.age_mean": [25, 30, 35, 40, 45],  # Alternative age control
-    "global_parameters.compensation.new_hire.age_std": [5, 8, 10, 12],  # Alternative std dev control
+    # Remove redundant age parameters to focus search space
+    # "global_parameters.compensation.new_hire.age_mean": [25, 30, 35, 40, 45],  # REMOVED: Redundant with new_hire_average_age
+    # "global_parameters.compensation.new_hire.age_std": [5, 8, 10, 12],  # REMOVED: Redundant with new_hire_age_std_dev
 
-    # === DETAILED HAZARD PARAMETERS ===
-    # Issue: High <1 year tenure (45% vs 20% target) suggests excessive new hire termination
-    # Termination hazard parameters - LOWER RANGES to reduce new hire churn
-    "global_parameters.termination_hazard.base_rate_for_new_hire": [0.08, 0.10, 0.12, 0.15, 0.18],  # Lower max
+    # === CAMPAIGN 6 PRIORITY 4: ENHANCED NEW HIRE RETENTION ===
+    # Current: Need much stronger retention to support aggressive hiring and positive HC growth
+    # Termination hazard parameters - AGGRESSIVE retention improvements
+    "global_parameters.termination_hazard.base_rate_for_new_hire": [0.03, 0.04, 0.05],  # AGGRESSIVE: Much lower base termination rates
     "global_parameters.termination_hazard.level_discount_factor": [0.05, 0.08, 0.10, 0.12, 0.15],
     "global_parameters.termination_hazard.min_level_discount_multiplier": [0.3, 0.4, 0.5, 0.6],
 
-    # Issue: 45% <1 year tenure vs 20% target - need stronger protection for new hires
-    # Termination tenure multipliers - LOWER <1 year rates to reduce new hire churn
-    "global_parameters.termination_hazard.tenure_multipliers.<1": [0.5, 0.6, 0.8],  # Much lower max
-    "global_parameters.termination_hazard.tenure_multipliers.1-3": [0.4, 0.6, 0.8],
-    "global_parameters.termination_hazard.tenure_multipliers.3-5": [0.3, 0.4, 0.5],
-    "global_parameters.termination_hazard.tenure_multipliers.5-10": [0.2, 0.28, 0.35],
-    "global_parameters.termination_hazard.tenure_multipliers.10-15": [0.15, 0.20, 0.25],
-    "global_parameters.termination_hazard.tenure_multipliers.15+": [0.2, 0.24, 0.3],
+    # === CAMPAIGN 6 PRIORITY 5: AGGRESSIVE NEW HIRE RETENTION ===
+    # Current: Need much stronger new hire retention to support aggressive hiring strategy
+    "global_parameters.termination_hazard.tenure_multipliers.<1": [0.1, 0.2, 0.3],  # AGGRESSIVE: Very strong new hire retention
+    "global_parameters.termination_hazard.tenure_multipliers.1-3": [0.4, 0.6, 0.8],  # Keep successful range from Campaign 5
+    "global_parameters.termination_hazard.tenure_multipliers.3-5": [0.3, 0.4, 0.5],  # Keep successful range from Campaign 5
+    "global_parameters.termination_hazard.tenure_multipliers.5-10": [0.15, 0.20, 0.25],  # Keep successful range from Campaign 5
+    "global_parameters.termination_hazard.tenure_multipliers.10-15": [0.10, 0.12, 0.15],  # Keep successful range from Campaign 5
+    "global_parameters.termination_hazard.tenure_multipliers.15+": [0.2, 0.24, 0.3],  # Keep successful range from Campaign 5
 
-    # Issue: <30 age band too low (3.5% vs 10.9% target) - need stronger young employee protection
-    # Termination age multipliers - STRONGER protection for young employees
-    "global_parameters.termination_hazard.age_multipliers.<30": [0.2, 0.3, 0.4, 0.5],  # Even stronger protection
-    "global_parameters.termination_hazard.age_multipliers.30-39": [0.8, 1.0, 1.2],
-    "global_parameters.termination_hazard.age_multipliers.40-49": [0.9, 1.1, 1.3],
-    "global_parameters.termination_hazard.age_multipliers.50-59": [1.1, 1.3, 1.5],
-    "global_parameters.termination_hazard.age_multipliers.60-65": [2.0, 2.5, 3.0],  # Stronger retirement pressure
+    # === CAMPAIGN 6 PRIORITY 6: MAINTAIN RETIREMENT PRESSURE ===
+    # Campaign 5 showed good age distribution progress - maintain successful retirement pressure
+    "global_parameters.termination_hazard.age_multipliers.<30": [0.2, 0.3, 0.4],  # MAINTAIN: Strong protection for young workers
+    "global_parameters.termination_hazard.age_multipliers.30-39": [0.6, 0.8, 1.0],  # MAINTAIN: Protect prime workforce
+    "global_parameters.termination_hazard.age_multipliers.40-49": [0.8, 1.0, 1.2],  # MAINTAIN: Balanced approach
+    "global_parameters.termination_hazard.age_multipliers.50-59": [1.0, 1.5, 2.0],  # MAINTAIN: Gradual increase
+    "global_parameters.termination_hazard.age_multipliers.60-65": [4.0, 6.0, 8.0, 10.0, 15.0],  # AGGRESSIVE: Stronger retirement pressure
+    "global_parameters.termination_hazard.age_multipliers.65+": [5.0, 8.0, 12.0, 15.0, 20.0],  # AGGRESSIVE: Very strong retirement pressure
 
     # Promotion hazard parameters
     "global_parameters.promotion_hazard.base_rate": [0.08, 0.10, 0.12, 0.15],
@@ -132,20 +134,20 @@ SEARCH_SPACE = {
     "global_parameters.promotion_hazard.age_multipliers.50-59": [0.3, 0.4, 0.5],
     "global_parameters.promotion_hazard.age_multipliers.60-65": [0.05, 0.1, 0.15],
 
-    # Issue: Pay growth overshot (5.3% vs 3% target) - need to constrain compensation increases
-    # Compensation raises parameters - LOWER RANGES to control pay growth
-    "global_parameters.raises_hazard.merit_base": [0.020, 0.025, 0.030, 0.032],  # Lower max
-    "global_parameters.raises_hazard.merit_tenure_bump_value": [0.002, 0.003, 0.005],  # Lower max
-    "global_parameters.raises_hazard.merit_low_level_bump_value": [0.002, 0.003, 0.005],  # Lower max
-    "global_parameters.raises_hazard.promotion_raise": [0.08, 0.10, 0.12],  # Lower max
+    # === CAMPAIGN 6 PRIORITY 7: MAINTAIN PAY GROWTH ACCURACY ===
+    # Campaign 5 showed excellent pay growth control - maintain successful ranges
+    # Compensation raises parameters - MAINTAIN successful ranges from Campaign 5
+    "global_parameters.raises_hazard.merit_base": [0.020, 0.025, 0.030, 0.032],  # MAINTAIN: Good pay growth control
+    "global_parameters.raises_hazard.merit_tenure_bump_value": [0.002, 0.003, 0.005],  # MAINTAIN: Successful range
+    "global_parameters.raises_hazard.merit_low_level_bump_value": [0.002, 0.003, 0.005],  # MAINTAIN: Successful range
+    "global_parameters.raises_hazard.promotion_raise": [0.08, 0.10, 0.12],  # MAINTAIN: Successful range
 
-    # Issue: Pay growth overshot (5.3% vs 3% target) - need to constrain COLA increases
-    # COLA parameters by year - LOWER RANGES to control overall compensation growth
-    "global_parameters.cola_hazard.by_year.2025": [0.010, 0.012, 0.015, 0.018, 0.020],  # Lower max
-    "global_parameters.cola_hazard.by_year.2026": [0.008, 0.010, 0.012, 0.015, 0.018],  # Lower max
-    "global_parameters.cola_hazard.by_year.2027": [0.006, 0.008, 0.010, 0.012, 0.015],  # Lower max
-    "global_parameters.cola_hazard.by_year.2028": [0.005, 0.007, 0.010, 0.012, 0.014],  # Lower max
-    "global_parameters.cola_hazard.by_year.2029": [0.004, 0.006, 0.008, 0.010, 0.012],  # Lower max
+    # COLA parameters by year - MAINTAIN successful ranges for pay growth control
+    "global_parameters.cola_hazard.by_year.2025": [0.010, 0.012, 0.015, 0.018, 0.020],  # MAINTAIN: Good control
+    "global_parameters.cola_hazard.by_year.2026": [0.008, 0.010, 0.012, 0.015, 0.018],  # MAINTAIN: Good control
+    "global_parameters.cola_hazard.by_year.2027": [0.006, 0.008, 0.010, 0.012, 0.015],  # MAINTAIN: Good control
+    "global_parameters.cola_hazard.by_year.2028": [0.005, 0.007, 0.010, 0.012, 0.014],  # MAINTAIN: Good control
+    "global_parameters.cola_hazard.by_year.2029": [0.004, 0.006, 0.008, 0.010, 0.012],  # MAINTAIN: Good control
 }
 
 
@@ -339,15 +341,15 @@ def score(sim_summary: Dict[str, Any]) -> float:
     pay_growth_err = abs(sim_pay_growth - TARGET_PAY_GROWTH)
 
     # Define weights for different error components
-    # UPDATED for Campaign 2 based on Campaign 1 analysis (Epic 3 User Story 3.3):
-    # - Increased HC_GROWTH weight due to significant miss (0% vs 3% target)
-    # - Increased TENURE weight due to major imbalance (45% <1yr vs 20% target)
-    # - Slightly reduced AGE weight to allow more flexibility for business targets
-    # - Increased PAY_GROWTH weight due to overshoot (5.3% vs 3% target)
-    WEIGHT_AGE = 0.30          # Important: age preservation with some flexibility for business needs
-    WEIGHT_TENURE = 0.30       # Critical: tenure imbalance is major workforce stability issue
-    WEIGHT_HC_GROWTH = 0.30    # Critical: business growth targets must be achieved
-    WEIGHT_PAY_GROWTH = 0.10   # Moderate: compensation growth affects budget but less critical
+    # UPDATED for Campaign 6 - AGGRESSIVE HEADCOUNT GROWTH FOCUS:
+    # - INCREASE HC_GROWTH weight to 0.60 (CRITICAL: Overcome persistent negative growth)
+    # - REDUCE AGE weight to 0.20 (good progress in Campaign 5, maintain but deprioritize)
+    # - REDUCE TENURE weight to 0.15 (important but secondary to HC growth achievement)
+    # - MAINTAIN PAY_GROWTH weight at 0.05 (excellent performance maintained)
+    WEIGHT_HC_GROWTH = 0.60    # CRITICAL: Heavily prioritize positive headcount growth achievement
+    WEIGHT_AGE = 0.20          # IMPORTANT: Maintain age distribution progress from Campaign 5
+    WEIGHT_TENURE = 0.15       # MODERATE: Tenure balance important but secondary to HC growth
+    WEIGHT_PAY_GROWTH = 0.05   # LOW: Excellent performance maintained, keep current level
 
     # Calculate weighted total score
     total_score = (

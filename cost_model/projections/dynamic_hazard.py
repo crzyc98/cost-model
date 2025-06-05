@@ -167,14 +167,23 @@ def _calculate_new_hire_termination_rates(df: pd.DataFrame, global_params: Globa
     Calculate new_hire_termination_rate column.
 
     Uses global_params.new_hire_termination_rate if available,
+    otherwise checks attrition.new_hire_termination_rate,
     otherwise falls back to termination_hazard.base_rate_for_new_hire.
     """
     logger.debug("Calculating new hire termination rates")
 
-    # Try direct attribute first, then termination_hazard as fallback
+    # Try multiple locations for new_hire_termination_rate (matching hazard.py logic)
+    nh_term_rate = None
+
+    # First try: direct attribute at root level
     if hasattr(global_params, 'new_hire_termination_rate') and global_params.new_hire_termination_rate is not None:
         nh_term_rate = global_params.new_hire_termination_rate
         logger.debug(f"Using global_params.new_hire_termination_rate: {nh_term_rate}")
+    # Second try: nested under attrition
+    elif hasattr(global_params, 'attrition') and hasattr(global_params.attrition, 'new_hire_termination_rate'):
+        nh_term_rate = global_params.attrition.new_hire_termination_rate
+        logger.debug(f"Using global_params.attrition.new_hire_termination_rate: {nh_term_rate}")
+    # Fallback: use termination_hazard base rate
     else:
         nh_term_rate = global_params.termination_hazard.base_rate_for_new_hire
         logger.debug(f"Fallback to termination_hazard.base_rate_for_new_hire: {nh_term_rate}")

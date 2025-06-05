@@ -15,7 +15,7 @@ from cost_model.state.schema import (
     EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_TERM_DATE,
     EMP_DEFERRAL_RATE, EMP_TENURE, EMP_TENURE_BAND, EMP_LEVEL, EMP_LEVEL_SOURCE,
     EMP_ACTIVE, EMP_EXITED, SIMULATION_YEAR, TERM_RATE, COMP_RAISE_PCT,
-    NEW_HIRE_TERM_RATE, COLA_PCT, CFG, SNAPSHOT_COLS, SNAPSHOT_DTYPES,
+    NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG, SNAPSHOT_COLS, SNAPSHOT_DTYPES,
     EVENT_COLS
 )
 from cost_model.state.schema import (
@@ -57,13 +57,13 @@ def apply_new_hire_terminations(
     logger.info(f"[NEW_HIRE_TERM] Year {year}: Hazard slice columns: {hazard_slice.columns.tolist()}")
 
     # Get the new hire termination rate from hazard table
-    # Use the constant from columns.py which is 'new_hire_term_rate'
-    if NEW_HIRE_TERM_RATE in hazard_slice.columns:
-        nh_term_rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0]  # Get first value if multiple
-        logger.info(f"[NEW_HIRE_TERM] Year {year}: Found {NEW_HIRE_TERM_RATE} in hazard_slice: {nh_term_rate}")
+    # CRITICAL FIX: Use NEW_HIRE_TERMINATION_RATE instead of NEW_HIRE_TERM_RATE
+    if NEW_HIRE_TERMINATION_RATE in hazard_slice.columns:
+        nh_term_rate = hazard_slice[NEW_HIRE_TERMINATION_RATE].iloc[0]  # Get first value if multiple
+        logger.info(f"[NEW_HIRE_TERM] Year {year}: Found {NEW_HIRE_TERMINATION_RATE} in hazard_slice: {nh_term_rate}")
     else:
         nh_term_rate = 0.0
-        logger.warning(f"[NEW_HIRE_TERM] Year {year}: {NEW_HIRE_TERM_RATE} not found in hazard_slice, using {nh_term_rate}")
+        logger.warning(f"[NEW_HIRE_TERM] Year {year}: {NEW_HIRE_TERMINATION_RATE} not found in hazard_slice, using {nh_term_rate}")
 
     # Check if we have the job_level_source column to identify new hires
     if EMP_LEVEL_SOURCE in snap_with_hires.columns and snap_with_hires[EMP_LEVEL_SOURCE].notna().any():
@@ -108,7 +108,7 @@ def apply_new_hire_terminations(
 
     # If we have new hires but nh_term_count is 0 due to rounding, log a warning
     if new_hire_count > 0 and nh_term_count == 0 and nh_term_rate > 0:
-        logger.warning(f"[NEW_HIRE_TERM] Year {year}: New hires found but nh_term_count rounded to 0. Consider increasing {NEW_HIRE_TERM_RATE}.")
+        logger.warning(f"[NEW_HIRE_TERM] Year {year}: New hires found but nh_term_count rounded to 0. Consider increasing {NEW_HIRE_TERMINATION_RATE}.")
 
     # For debugging: If we have new hires but nh_term_count is 0, log more details
     if new_hire_count > 0 and nh_term_count == 0:

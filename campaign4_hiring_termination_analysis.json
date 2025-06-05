@@ -1,0 +1,82 @@
+{
+  "config_parameters": {
+    "target_growth": 0.055,
+    "new_hire_termination_rate": 0.25,
+    "new_hire_rate": 0.5,
+    "projection_years": 3,
+    "start_year": 2025
+  },
+  "yearly_results": {
+    "2025": {
+      "year": 2025,
+      "total_hires": 5,
+      "total_terminations": 6,
+      "new_hire_terminations": 0,
+      "net_change": -1,
+      "eoy_active_count": "100"
+    },
+    "2026": {
+      "year": 2026,
+      "total_hires": 16,
+      "total_terminations": 17,
+      "new_hire_terminations": 0,
+      "net_change": -1,
+      "eoy_active_count": "100"
+    },
+    "2027": {
+      "year": 2027,
+      "total_hires": 23,
+      "total_terminations": 25,
+      "new_hire_terminations": 0,
+      "net_change": -2,
+      "eoy_active_count": "100"
+    }
+  },
+  "rate_analysis": {
+    "2025": {
+      "year": 2025,
+      "actual_nh_termination_rate": 0.0,
+      "configured_nh_termination_rate": 0.25,
+      "nh_termination_rate_diff": -0.25,
+      "expected_target_growth": 0.055,
+      "cumulative_hires": 5,
+      "cumulative_terms": 6,
+      "cumulative_nh_terms": 0
+    },
+    "2026": {
+      "year": 2026,
+      "actual_nh_termination_rate": 0.0,
+      "configured_nh_termination_rate": 0.25,
+      "nh_termination_rate_diff": -0.25,
+      "expected_target_growth": 0.055,
+      "cumulative_hires": 21,
+      "cumulative_terms": 23,
+      "cumulative_nh_terms": 0
+    },
+    "2027": {
+      "year": 2027,
+      "actual_nh_termination_rate": 0.0,
+      "configured_nh_termination_rate": 0.25,
+      "nh_termination_rate_diff": -0.25,
+      "expected_target_growth": 0.055,
+      "cumulative_hires": 44,
+      "cumulative_terms": 48,
+      "cumulative_nh_terms": 0
+    }
+  },
+  "growth_analysis": {
+    "estimated_initial_count": "101",
+    "final_count": "100",
+    "actual_growth": -0.009900990099009901,
+    "expected_total_growth": 0.1742413749999998,
+    "expected_final_count": 119,
+    "growth_shortfall": -0.18414236509900972,
+    "headcount_shortfall": "-19",
+    "total_hires": 44,
+    "total_terminations": 48,
+    "total_nh_terminations": 0,
+    "overall_nh_termination_rate": 0.0,
+    "configured_nh_termination_rate": 0.25,
+    "nh_rate_difference": -0.25
+  }
+}

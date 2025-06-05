@@ -10,7 +10,7 @@ import json
 from typing import List
 from cost_model.state.event_log import EVENT_COLS, EVT_TERM, EVT_COMP, create_event
 from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_TENURE_BAND
-from cost_model.state.schema import NEW_HIRE_TERM_RATE
+from cost_model.state.schema import NEW_HIRE_TERMINATION_RATE
 from cost_model.utils.tenure_utils import standardize_tenure_band
 import logging
 
@@ -62,10 +62,19 @@ def run_new_hires(
         hz_slice_copy[EMP_TENURE_BAND] = hz_slice_copy[EMP_TENURE_BAND].apply(standardize_tenure_band)
         logger.info(f"[NH-TERM] Standardized hazard slice tenure bands: {hz_slice_copy[EMP_TENURE_BAND].unique().tolist()}")
     
-    # Get termination rate
-    nh_term_rate = hz_slice_copy[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hz_slice_copy.columns else 0.0
+    # Get termination rate - CRITICAL FIX: Use NEW_HIRE_TERMINATION_RATE instead of NEW_HIRE_TERM_RATE
+    nh_term_rate = hz_slice_copy[NEW_HIRE_TERMINATION_RATE].iloc[0] if NEW_HIRE_TERMINATION_RATE in hz_slice_copy.columns else 0.0
     n = len(df_nh)
     k = min(int(round(n * nh_term_rate)), n)  # Ensure k is not larger than n
+
+    # CRITICAL LOGGING: Track new hire termination rate sourcing and application
+    logger.info(f"[NH-TERM] Year {year}: Found {n} new hires for potential termination")
+    logger.info(f"[NH-TERM] Year {year}: Hazard slice columns: {hz_slice_copy.columns.tolist()}")
+    if NEW_HIRE_TERMINATION_RATE in hz_slice_copy.columns:
+        logger.info(f"[NH-TERM] Year {year}: Successfully sourced new_hire_termination_rate = {nh_term_rate}")
+    else:
+        logger.warning(f"[NH-TERM] Year {year}: Column '{NEW_HIRE_TERMINATION_RATE}' NOT FOUND in hazard slice, using fallback rate = {nh_term_rate}")
+    logger.info(f"[NH-TERM] Year {year}: Calculated {k} new hires to terminate ({k}/{n} = {k/n*100:.1f}% if n>0 else 0%)")
     
     # Create a mapping of employee IDs to their row indices for safer lookups
     if k <= 0:
