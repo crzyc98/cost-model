@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 
 # Now import from the cost_model package
 try:
-    from cost_model.config.loaders import load_yaml_config, ConfigLoadError
+    from cost_model.config.loaders import ConfigLoadError
     from cost_model.config.models import MainConfig
     # from cost_model.simulation import run_simulation  # Assuming the core logic is here
 except ImportError as e:
@@ -112,9 +112,24 @@ def main():
 
     try:
         logger.info(f"Loading configuration from: {config_path}")
-        raw_config = load_yaml_config(config_path)
+        # CRITICAL FIX: Use load_config_to_namespace to properly flatten attrition section
+        from cost_model.config.loaders import load_config_to_namespace
+        namespace_config = load_config_to_namespace(config_path)
+
+        # Convert namespace to dict for Pydantic model validation
+        # Need to recursively convert SimpleNamespace objects to dicts
+        def namespace_to_dict(obj):
+            if hasattr(obj, '__dict__'):
+                return {k: namespace_to_dict(v) for k, v in obj.__dict__.items()}
+            elif isinstance(obj, list):
+                return [namespace_to_dict(item) for item in obj]
+            else:
+                return obj
+
+        config_dict = namespace_to_dict(namespace_config)
+
         logger.info("Validating configuration structure...")
-        main_cfg_obj = MainConfig(**raw_config)
+        main_cfg_obj = MainConfig(**config_dict)
         logger.info("Configuration loaded and validated successfully.")
     except FileNotFoundError:
         logger.error(f"Configuration file not found: {config_path}")

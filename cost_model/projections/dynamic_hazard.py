@@ -172,25 +172,42 @@ def _calculate_new_hire_termination_rates(df: pd.DataFrame, global_params: Globa
     """
     logger.debug("Calculating new hire termination rates")
 
-    # Try multiple locations for new_hire_termination_rate (matching hazard.py logic)
+    # CRITICAL DEBUG: Log all available attributes to understand the configuration structure
+    logger.debug(f"Global params attributes: {[attr for attr in dir(global_params) if not attr.startswith('_')]}")
+
+    # CRITICAL DEBUG: Check if attrition section exists and log its contents
+    if hasattr(global_params, 'attrition'):
+        logger.debug(f"Found attrition section: {global_params.attrition}")
+        if hasattr(global_params.attrition, 'new_hire_termination_rate'):
+            logger.debug(f"Found attrition.new_hire_termination_rate: {global_params.attrition.new_hire_termination_rate}")
+    else:
+        logger.debug("No attrition section found - this means flattening worked correctly")
+
+    # CRITICAL DEBUG: Check root level value
+    if hasattr(global_params, 'new_hire_termination_rate'):
+        root_value = global_params.new_hire_termination_rate
+        logger.debug(f"Root level new_hire_termination_rate: {root_value} (type: {type(root_value)})")
+
+    # CRITICAL FIX: Use the root level value directly since flattening should have moved it there
+    # The configuration loader flattens attrition.new_hire_termination_rate to the root level
     nh_term_rate = None
 
-    # First try: direct attribute at root level
-    if hasattr(global_params, 'new_hire_termination_rate') and global_params.new_hire_termination_rate is not None:
-        nh_term_rate = global_params.new_hire_termination_rate
-        logger.debug(f"Using global_params.new_hire_termination_rate: {nh_term_rate}")
-    # Second try: nested under attrition
-    elif hasattr(global_params, 'attrition') and hasattr(global_params.attrition, 'new_hire_termination_rate'):
-        nh_term_rate = global_params.attrition.new_hire_termination_rate
-        logger.debug(f"Using global_params.attrition.new_hire_termination_rate: {nh_term_rate}")
-    # Fallback: use termination_hazard base rate
-    else:
+    # Use root level value (this should be the flattened value from attrition section)
+    if hasattr(global_params, 'new_hire_termination_rate'):
+        root_value = global_params.new_hire_termination_rate
+        # Accept ANY non-None value, including 0.0 if that's what was configured
+        if root_value is not None:
+            nh_term_rate = root_value
+            logger.debug(f"Using flattened global_params.new_hire_termination_rate: {nh_term_rate}")
+
+    # Fallback: use termination_hazard base rate only if no value found
+    if nh_term_rate is None:
         nh_term_rate = global_params.termination_hazard.base_rate_for_new_hire
         logger.debug(f"Fallback to termination_hazard.base_rate_for_new_hire: {nh_term_rate}")
 
     df[NEW_HIRE_TERMINATION_RATE] = nh_term_rate
 
-    logger.debug(f"Set new_hire_termination_rate to {nh_term_rate} for all rows")
+    logger.debug(f"FINAL: Set new_hire_termination_rate to {nh_term_rate} for all rows")
     return df
 
 
