@@ -217,7 +217,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
         # Ensure the hazard table has all required columns
         from cost_model.state.schema import (
             SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT,
-            NEW_HIRE_TERM_RATE, COLA_PCT, CFG
+            NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG
         )
 
         # Map column names if needed
@@ -227,7 +227,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             'tenure_band': EMP_TENURE_BAND,
             'term_rate': TERM_RATE,
             'comp_raise_pct': COMP_RAISE_PCT,
-            'new_hire_termination_rate': NEW_HIRE_TERM_RATE,
+            'new_hire_termination_rate': NEW_HIRE_TERMINATION_RATE,  # CRITICAL FIX: Use correct constant
             'cola_pct': COLA_PCT,
             # Add new granular compensation columns
             'merit_raise_pct': 'merit_raise_pct',

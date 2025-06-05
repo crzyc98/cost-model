@@ -94,7 +94,7 @@ global_parameters:
     promotion_raise: 0.1
   random_seed: 79
   start_year: 2025
-  target_growth: 0.03  # Reduce to more conservative 3% to avoid headcount overrun
+  target_growth: 0.03  # Conservative 3% growth for production validation
   termination_hazard:
     age_multipliers:
       30-39: 0.8

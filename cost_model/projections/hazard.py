@@ -15,7 +15,7 @@ from cost_model.state.schema import (
     SIMULATION_YEAR,
     TERM_RATE,
     COMP_RAISE_PCT,
-    NEW_HIRE_TERM_RATE,
+    NEW_HIRE_TERMINATION_RATE,  # CRITICAL FIX: Use correct constant
     COLA_PCT,
     CFG
 )
@@ -93,7 +93,7 @@ def build_hazard_table(
                 EMP_TENURE_BAND: combo[EMP_TENURE_BAND],
                 TERM_RATE: global_term_rate,
                 COMP_RAISE_PCT: global_comp_raise_pct,
-                NEW_HIRE_TERM_RATE: global_nh_term_rate,
+                NEW_HIRE_TERMINATION_RATE: global_nh_term_rate,
                 COLA_PCT: getattr(global_params, 'cola_pct', 0.0),
                 CFG: plan_rules_config
             })
@@ -111,7 +111,7 @@ def build_hazard_table(
 
         logger.info(f"Generated hazard table with {final_rows} rows.")
     else:
-        cols = [SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERM_RATE, COLA_PCT, CFG]
+        cols = [SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG]
         df = pd.DataFrame(columns=cols)
         logger.warning("Empty hazard table created.")
     return df
@@ -144,7 +144,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     # Log the actual string values of constants to verify definitions
     # These constants are assumed to be imported e.g., from cost_model.constants
     logger.info(f"DEBUG CONSTANTS: SIMULATION_YEAR='{SIMULATION_YEAR}', EMP_LEVEL='{EMP_LEVEL}', EMP_TENURE_BAND='{EMP_TENURE_BAND}'")
-    logger.info(f"DEBUG CONSTANTS: TERM_RATE='{TERM_RATE}', COMP_RAISE_PCT='{COMP_RAISE_PCT}', NEW_HIRE_TERM_RATE='{NEW_HIRE_TERM_RATE}', COLA_PCT='{COLA_PCT}'")
+    logger.info(f"DEBUG CONSTANTS: TERM_RATE='{TERM_RATE}', COMP_RAISE_PCT='{COMP_RAISE_PCT}', NEW_HIRE_TERMINATION_RATE='{NEW_HIRE_TERMINATION_RATE}', COLA_PCT='{COLA_PCT}'")
 
     logger.info(f"Initial columns from Parquet: {df.columns.tolist()}")
 
@@ -155,7 +155,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         'tenure_band': EMP_TENURE_BAND,
         'term_rate': TERM_RATE,
         'comp_raise_pct': COMP_RAISE_PCT,  # Corrected key based on error log's 'Available columns'
-        'new_hire_termination_rate': NEW_HIRE_TERM_RATE,
+        'new_hire_termination_rate': NEW_HIRE_TERMINATION_RATE,
         'cola_pct': COLA_PCT  # Added key based on error log's 'Available columns'
     }
     logger.info(f"Defined rename_map: {rename_map}")
@@ -181,14 +181,14 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
                  logger.warning(f"Verification: Both 'tenure_band' and '{EMP_TENURE_BAND}' are MISSING after rename attempt. This is unexpected.")
 
         if 'new_hire_termination_rate' in actual_rename_map: # Check if 'new_hire_termination_rate' was intended for renaming
-            if NEW_HIRE_TERM_RATE in df.columns and 'new_hire_termination_rate' not in df.columns:
-                logger.info(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' appears successful.")
-            elif NEW_HIRE_TERM_RATE in df.columns and 'new_hire_termination_rate' in df.columns:
-                logger.warning(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' PARTIALLY FAILED. Both '{NEW_HIRE_TERM_RATE}' and 'new_hire_termination_rate' exist. Check constant value of NEW_HIRE_TERM_RATE.")
-            elif NEW_HIRE_TERM_RATE not in df.columns and 'new_hire_termination_rate' in df.columns:
-                logger.warning(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERM_RATE}' FAILED. Original 'new_hire_termination_rate' still present, '{NEW_HIRE_TERM_RATE}' is not. Check constant value of NEW_HIRE_TERM_RATE or rename_map.")
-            else: # NEW_HIRE_TERM_RATE not in df.columns and 'new_hire_termination_rate' not in df.columns
-                logger.warning(f"Verification: Both 'new_hire_termination_rate' and '{NEW_HIRE_TERM_RATE}' are MISSING after rename attempt. This is unexpected.")
+            if NEW_HIRE_TERMINATION_RATE in df.columns and 'new_hire_termination_rate' not in df.columns:
+                logger.info(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERMINATION_RATE}' appears successful.")
+            elif NEW_HIRE_TERMINATION_RATE in df.columns and 'new_hire_termination_rate' in df.columns:
+                logger.warning(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERMINATION_RATE}' PARTIALLY FAILED. Both '{NEW_HIRE_TERMINATION_RATE}' and 'new_hire_termination_rate' exist. Check constant value of NEW_HIRE_TERMINATION_RATE.")
+            elif NEW_HIRE_TERMINATION_RATE not in df.columns and 'new_hire_termination_rate' in df.columns:
+                logger.warning(f"Verification: Rename of 'new_hire_termination_rate' to '{NEW_HIRE_TERMINATION_RATE}' FAILED. Original 'new_hire_termination_rate' still present, '{NEW_HIRE_TERMINATION_RATE}' is not. Check constant value of NEW_HIRE_TERMINATION_RATE or rename_map.")
+            else: # NEW_HIRE_TERMINATION_RATE not in df.columns and 'new_hire_termination_rate' not in df.columns
+                logger.warning(f"Verification: Both 'new_hire_termination_rate' and '{NEW_HIRE_TERMINATION_RATE}' are MISSING after rename attempt. This is unexpected.")
     else:
         logger.info("No columns to rename: actual_rename_map is empty or no keys matched Parquet columns.")
 
@@ -199,7 +199,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         EMP_LEVEL,
         EMP_TENURE_BAND,
         TERM_RATE,
-        NEW_HIRE_TERM_RATE
+        NEW_HIRE_TERMINATION_RATE
     ]
 
     # Check for compensation columns - either old schema (comp_raise_pct) or new schema (merit_raise_pct)
@@ -246,7 +246,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     # Ensure all key rate columns are numeric and handle potential NaNs by filling with 0
     # This is a safeguard, ideally the Parquet file should have clean data.
     # Updated to include new granular compensation columns
-    rate_columns = [TERM_RATE, NEW_HIRE_TERM_RATE, COLA_PCT]
+    rate_columns = [TERM_RATE, NEW_HIRE_TERMINATION_RATE, COLA_PCT]
 
     # Handle both old and new compensation column schemas
     if COMP_RAISE_PCT in result.columns:

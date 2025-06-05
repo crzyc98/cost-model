@@ -77,7 +77,7 @@ def age_to_band(age: int) -> str:
         - "40-49" for ages 40-49
         - "50-59" for ages 50-59
         - "60-65" for ages 60-65
-        - ">65" for ages above 65
+        - "65+" for ages above 65
 
     Examples:
         >>> age_to_band(27)
@@ -85,7 +85,7 @@ def age_to_band(age: int) -> str:
         >>> age_to_band(44)
         '40-49'
         >>> age_to_band(68)
-        '>65'
+        '65+'
     """
     if age < 30:
         return "<30"
@@ -98,7 +98,7 @@ def age_to_band(age: int) -> str:
     elif age <= 65:
         return "60-65"
     else:
-        return ">65"
+        return "65+"
 
 
 # NEW FUNCTION

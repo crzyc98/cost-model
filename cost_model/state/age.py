@@ -1,4 +1,7 @@
-"""Age-related helper functions for snapshots."""
+"""Age-related helper functions for snapshots.
+
+The standard label for the oldest age band is '65+' and must be used consistently across the project.
+"""
 
 from __future__ import annotations
 import pandas as pd
@@ -8,6 +11,7 @@ from typing import List, Tuple
 # ────────────────────────────────────────────────────────────────────────────────
 # A.  Age bands – tweak these once and the whole model follows
 # ────────────────────────────────────────────────────────────────────────────────
+# The standard label for the oldest age band is '65+' and must be used consistently across the project.
 class AgeBand(Enum):
     UNDER_30   = "<30"
     THIRTY     = "30-39"

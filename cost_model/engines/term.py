@@ -23,7 +23,7 @@ from cost_model.state.schema import (
     EMP_BIRTH_DATE,
     TERM_RATE,
     SIMULATION_YEAR,
-    NEW_HIRE_TERM_RATE
+    NEW_HIRE_TERMINATION_RATE  # CRITICAL FIX: Use correct constant
 )
 from cost_model.utils.date_utils import calculate_age, age_to_band
 from logging_config import get_logger, get_diagnostic_logger
@@ -514,8 +514,8 @@ def run_new_hires(
         # One more standardization to be absolutely certain
         hazard_slice[EMP_TENURE_BAND] = hazard_slice[EMP_TENURE_BAND].map(standardize_tenure_band)
 
-    rate = hazard_slice[NEW_HIRE_TERM_RATE].iloc[0] if NEW_HIRE_TERM_RATE in hazard_slice.columns else 0.0
-    df_nh[NEW_HIRE_TERM_RATE] = rate
+    rate = hazard_slice[NEW_HIRE_TERMINATION_RATE].iloc[0] if NEW_HIRE_TERMINATION_RATE in hazard_slice.columns else 0.0
+    df_nh[NEW_HIRE_TERMINATION_RATE] = rate
 
     # Now proceed with deterministic/probabilistic logic as before
     n = len(df_nh)
@@ -530,7 +530,7 @@ def run_new_hires(
         losers = rng.choice(df_nh[EMP_ID], size=k, replace=False) if k > 0 else []
     else:
         draw = rng.random(n)
-        rates = df_nh[NEW_HIRE_TERM_RATE]
+        rates = df_nh[NEW_HIRE_TERMINATION_RATE]
         losers = df_nh.loc[draw < rates, EMP_ID].tolist()
 
     if len(losers) == 0:
