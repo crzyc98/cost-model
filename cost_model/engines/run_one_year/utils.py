@@ -53,7 +53,8 @@ def manage_headcount_to_exact_target(
     soy_actives: int,
     target_growth_rate: float,
     num_markov_exits_existing: int,
-    new_hire_termination_rate: float
+    new_hire_termination_rate: float,
+    expected_additional_experienced_exits: int = 0
 ) -> tuple[int, int]:
     """
     Calculate exact headcount targeting for workforce simulation.
@@ -68,6 +69,8 @@ def manage_headcount_to_exact_target(
         target_growth_rate: Target growth rate (e.g., 0.03 for 3%)
         num_markov_exits_existing: Number of existing employees who terminated via Markov exits
         new_hire_termination_rate: Proportion of new hires expected to terminate within first year
+        expected_additional_experienced_exits: Expected number of additional experienced
+            employees who will exit later in the year (default: 0 for backward compatibility)
 
     Returns:
         Tuple of (calculated_gross_new_hires, calculated_forced_terminations_from_existing)
@@ -87,8 +90,15 @@ def manage_headcount_to_exact_target(
     # Step 2: Determine survivors from initial Markov exits
     survived_soy_actives = soy_actives - num_markov_exits_existing
 
+    # Step 2.5: Account for expected additional experienced exits
+    # This is the key fix - we need to account for ALL expected experienced attrition,
+    # not just those who have already left
+    total_expected_experienced_exits = num_markov_exits_existing + expected_additional_experienced_exits
+    final_expected_survivors = soy_actives - total_expected_experienced_exits
+
     # Step 3: Calculate net actives needed from new hires (or excess survivors)
-    net_actives_needed_from_hiring_pool = target_eoy_actives - survived_soy_actives
+    # Use final_expected_survivors instead of current survivors for more accurate targeting
+    net_actives_needed_from_hiring_pool = target_eoy_actives - final_expected_survivors
 
     # Step 4: Determine gross hires and/or forced terminations
     if net_actives_needed_from_hiring_pool >= 0:
@@ -108,6 +118,89 @@ def manage_headcount_to_exact_target(
         calculated_forced_terminations_from_existing = abs(net_actives_needed_from_hiring_pool)
 
     return calculated_gross_new_hires, calculated_forced_terminations_from_existing
+
+
+def estimate_expected_experienced_exits(
+    experienced_employees: pd.DataFrame,
+    hazard_slice: pd.DataFrame,
+    logger: logging.Logger = None
+) -> int:
+    """
+    Estimate the number of experienced employees expected to terminate during the year.
+
+    This function uses the hazard table rates to estimate future experienced employee
+    terminations that haven't occurred yet but are expected based on historical rates.
+
+    Args:
+        experienced_employees: DataFrame of experienced employees (hired before current year)
+        hazard_slice: Hazard table slice for the current year with termination rates
+        logger: Optional logger for debugging
+
+    Returns:
+        Estimated number of additional experienced employees who will terminate
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    if experienced_employees.empty:
+        logger.debug("No experienced employees to analyze for expected exits")
+        return 0
+
+    # Import required columns
+    from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
+
+    # Ensure we have the required columns
+    if EMP_LEVEL not in experienced_employees.columns or EMP_TENURE_BAND not in experienced_employees.columns:
+        logger.warning(
+            f"Missing required columns for exit estimation. "
+            f"Have: {experienced_employees.columns.tolist()}, "
+            f"Need: {EMP_LEVEL}, {EMP_TENURE_BAND}"
+        )
+        # Fallback: use a simple percentage of remaining experienced employees
+        fallback_rate = 0.15  # Assume 15% annual experienced attrition
+        estimated_exits = round(len(experienced_employees) * fallback_rate)
+        logger.info(f"Using fallback estimation: {estimated_exits} expected experienced exits")
+        return estimated_exits
+
+    # Group employees by level and tenure band to match with hazard rates
+    total_estimated_exits = 0
+
+    for (level, tenure_band), group in experienced_employees.groupby([EMP_LEVEL, EMP_TENURE_BAND]):
+        # Find matching hazard rate
+        hazard_match = hazard_slice[
+            (hazard_slice[EMP_LEVEL] == level) &
+            (hazard_slice[EMP_TENURE_BAND] == tenure_band)
+        ]
+
+        if not hazard_match.empty:
+            # Use the termination rate from hazard table
+            term_rate = hazard_match['term_rate'].iloc[0]
+            group_size = len(group)
+            expected_exits_for_group = round(group_size * term_rate)
+            total_estimated_exits += expected_exits_for_group
+
+            logger.debug(
+                f"Level {level}, Tenure {tenure_band}: {group_size} employees, "
+                f"rate {term_rate:.3f}, estimated exits: {expected_exits_for_group}"
+            )
+        else:
+            # No matching hazard rate found, use conservative estimate
+            conservative_rate = 0.10  # 10% conservative estimate
+            group_size = len(group)
+            expected_exits_for_group = round(group_size * conservative_rate)
+            total_estimated_exits += expected_exits_for_group
+
+            logger.warning(
+                f"No hazard rate found for Level {level}, Tenure {tenure_band}. "
+                f"Using conservative rate {conservative_rate:.1%} for {group_size} employees"
+            )
+
+    logger.info(
+        f"Estimated {total_estimated_exits} additional experienced exits from "
+        f"{len(experienced_employees)} experienced employees"
+    )
+
+    return total_estimated_exits
 
 
 def test_compute_headcount_targets():

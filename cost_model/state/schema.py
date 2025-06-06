@@ -86,7 +86,6 @@ EMP_STATUS_EOY = "employee_status_eoy"  # Status at end of year: 'Active', 'Term
 SIMULATION_YEAR = "simulation_year"
 TERM_RATE = "term_rate"
 COMP_RAISE_PCT = "comp_raise_pct"
-NEW_HIRE_TERM_RATE = "new_hire_term_rate"
 COLA_PCT = "cola_pct"
 CFG = "cfg"
 
@@ -214,7 +213,6 @@ EVENT_COLS: List[str] = [
 EMP_TENURE_BAND = "employee_tenure_band"
 EMP_AGE_BAND = "employee_age_band"
 COMP_RAISE_PCT = "comp_raise_pct"
-NEW_HIRE_TERM_RATE = "new_hire_term_rate"
 COLA_PCT = "cola_pct"
 CFG = "cfg"
 
@@ -343,7 +341,6 @@ __all__ = [
     # config defaults
     "TERM_RATE",
     "COMP_RAISE_PCT",
-    "NEW_HIRE_TERM_RATE",
     "COLA_PCT",
     "CFG",
     # hazard table columns

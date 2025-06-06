@@ -35,7 +35,7 @@ from cost_model.state.schema import (
     SIMULATION_YEAR,
     TERM_RATE,
     COMP_RAISE_PCT,
-    NEW_HIRE_TERM_RATE,
+    NEW_HIRE_TERMINATION_RATE,
     COLA_PCT,
     CFG,
     EMP_LEVEL

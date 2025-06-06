@@ -174,7 +174,7 @@ gross_hires = math.ceil(net_hires / (1 - nh_term_rate))
 def run_new_hires_deterministic(snapshot, hazard_slice, rng, year):
     nh_mask  = snapshot[EMP_HIRE_DATE] >= pd.Timestamp(f"{year}-01-01")
     nh_ids   = snapshot.loc[nh_mask, EMP_ID]
-    k        = round(len(nh_ids) * hazard_slice[NEW_HIRE_TERM_RATE].iloc[0])
+    k        = round(len(nh_ids) * hazard_slice[NEW_HIRE_TERMINATION_RATE].iloc[0])
     exit_ids = rng.choice(nh_ids, size=k, replace=False)
     return create_term_events(exit_ids, reason="nh-deterministic", time=f"{year}-12-31")
 ``` |

@@ -67,7 +67,7 @@ logger.info(f"[DEBUG-HIRE] Start: {start_count}, Survivors: {survivor_count}, Ne
 ```python
 def run_new_hires_deterministic(snapshot, hazard_slice, rng, year):
     nh_mask = snapshot[EMP_HIRE_DATE] >= pd.Timestamp(f"{year}-01-01")
-    nh_rate = float(hazard_slice[NEW_HIRE_TERM_RATE].iloc[0])
+    nh_rate = float(hazard_slice[NEW_HIRE_TERMINATION_RATE].iloc[0])
     num_exits = round(nh_mask.sum() * nh_rate)
     exit_ids = rng.choice(snapshot.loc[nh_mask, EMP_ID], size=num_exits, replace=False)
     return create_term_events(exit_ids, comment="nh-deterministic")
@@ -247,7 +247,7 @@ logger.info(f"[DEBUG-HIRE] Start: {start_count}, Survivors: {survivor_count}, Ne
 ```python
 def run_new_hires_deterministic(snapshot, hazard_slice, rng, year):
     nh_mask = snapshot[EMP_HIRE_DATE] >= pd.Timestamp(f"{year}-01-01")
-    nh_rate = float(hazard_slice[NEW_HIRE_TERM_RATE].iloc[0])
+    nh_rate = float(hazard_slice[NEW_HIRE_TERMINATION_RATE].iloc[0])
     num_exits = round(nh_mask.sum() * nh_rate)
     exit_ids = rng.choice(snapshot.loc[nh_mask, EMP_ID], size=num_exits, replace=False)
     return create_term_events(exit_ids, comment="nh-deterministic")

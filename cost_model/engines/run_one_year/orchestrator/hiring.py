@@ -18,7 +18,7 @@ from cost_model.state.schema import (
 )
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
 from cost_model.utils.tenure_utils import standardize_tenure_band
-from ..utils import compute_headcount_targets, manage_headcount_to_exact_target
+from ..utils import compute_headcount_targets, manage_headcount_to_exact_target, estimate_expected_experienced_exits
 from .base import YearContext, safe_get_meta, filter_valid_employee_ids
 
 
@@ -163,19 +163,48 @@ class HiringOrchestrator:
         # Calculate number of experienced terminations that occurred
         num_markov_exits = start_count - survivor_count
 
-        # Use exact targeting logic
+        # CRITICAL FIX: Estimate additional experienced exits expected during the year
+        # This addresses the core issue where hiring decisions only account for employees
+        # who have already left, not those expected to leave later in the year
+        try:
+            # Get experienced employees (those hired before this year) from the snapshot
+            experienced_employees = snapshot[snapshot[EMP_HIRE_DATE] < year_context.as_of].copy()
+
+            # Estimate expected additional experienced exits using hazard rates
+            expected_additional_exits = estimate_expected_experienced_exits(
+                experienced_employees=experienced_employees,
+                hazard_slice=year_context.hazard_slice,
+                logger=self.logger
+            )
+
+            self.logger.info(
+                f"[HIRING FIX] Experienced exits: {num_markov_exits} already occurred, "
+                f"{expected_additional_exits} additional expected, "
+                f"total: {num_markov_exits + expected_additional_exits}"
+            )
+
+        except Exception as e:
+            self.logger.warning(f"[HIRING FIX] Error estimating additional exits: {e}")
+            expected_additional_exits = 0
+
+        # Use exact targeting logic with enhanced experienced exit estimation
         gross_hires, forced_terminations = manage_headcount_to_exact_target(
             soy_actives=start_count,
             target_growth_rate=target_growth,
             num_markov_exits_existing=num_markov_exits,
-            new_hire_termination_rate=nh_term_rate
+            new_hire_termination_rate=nh_term_rate,
+            expected_additional_experienced_exits=expected_additional_exits
         )
 
         # Calculate target EOY for logging
         target_eoy = round(start_count * (1 + target_growth))
 
+        # Ensure expected_additional_exits is defined for logging
+        additional_exits_for_log = expected_additional_exits if 'expected_additional_exits' in locals() else 0
+
         self.logger.info(
-            f"[EXACT TARGETING] SOY: {start_count}, Survivors: {survivor_count}, "
+            f"[EXACT TARGETING ENHANCED] SOY: {start_count}, Current survivors: {survivor_count}, "
+            f"Expected additional exits: {additional_exits_for_log}, "
             f"Target EOY: {target_eoy}, Gross hires: {gross_hires}, Forced terms: {forced_terminations}"
         )
 

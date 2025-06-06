@@ -2,11 +2,11 @@ User Story X.1: Develop Dynamic Hazard Table Builder Function
 
 As a Model Developer,
 I want to create a new Python function (e.g., build_dynamic_hazard_table in cost_model/projections/dynamic_hazard.py) that takes the global_params object (containing detailed, tuned hazard configurations like termination_hazard, promotion_hazard, raises_hazard, cola_hazard) and other necessary inputs (e.g., simulation years, levels, tenure bands)
-So that this function can generate a complete hazard table DataFrame at runtime, with all rates and multipliers (e.g., TERM_RATE, NEW_HIRE_TERM_RATE, merit_raise_pct, cola_pct, promotion_raise_pct) calculated based on the values within global_params.
+So that this function can generate a complete hazard table DataFrame at runtime, with all rates and multipliers (e.g., TERM_RATE, NEW_HIRE_TERMINATION_RATE, merit_raise_pct, cola_pct, promotion_raise_pct) calculated based on the values within global_params.
 Acceptance Criteria:
 The function is created in the proposed location (e.g., cost_model/projections/dynamic_hazard.py).
 The function signature accepts global_params and other necessary parameters (years, levels, tenure_bands).
-The function correctly maps and calculates values for all required columns in the hazard table (e.g., term_rate, new_hire_term_rate, merit_raise_pct, promotion_raise_pct, cola_pct) using the corresponding detailed parameters from global_params (e.g., global_params.termination_hazard.base_rate_for_new_hire, global_params.termination_hazard.tenure_multipliers, global_params.raises_hazard.merit_base, global_params.cola_hazard.by_year, etc.).
+The function correctly maps and calculates values for all required columns in the hazard table (e.g., term_rate, new_hire_termination_rate, merit_raise_pct, promotion_raise_pct, cola_pct) using the corresponding detailed parameters from global_params (e.g., global_params.termination_hazard.base_rate_for_new_hire, global_params.termination_hazard.tenure_multipliers, global_params.raises_hazard.merit_base, global_params.cola_hazard.by_year, etc.).
 The output DataFrame schema (columns, dtypes) is identical to the existing static hazard_table.parquet to ensure compatibility with downstream engine processing.
 The function includes comprehensive logging to trace how values from global_params are being used to populate the hazard table.
 Unit tests are created for this function to verify that different global_params inputs result in correspondingly different values in the generated hazard table.
