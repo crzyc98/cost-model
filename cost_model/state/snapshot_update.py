@@ -433,6 +433,9 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
 def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:  # noqa: D401
     """
     Return a new snapshot by applying new_events to prev_snapshot.
+    
+    ENHANCED VERSION: Includes comprehensive data integrity checks and robust error handling
+    to prevent employee record loss during snapshot updates.
 
     Args:
         prev_snapshot: Previous snapshot DataFrame
@@ -443,13 +446,36 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
         New snapshot DataFrame with updates applied
     """
     logger.debug("Starting snapshot update for year %d", snapshot_year)
+    
+    # INTEGRITY CHECK: Validate input snapshot
+    initial_employee_count = len(prev_snapshot)
+    initial_employee_ids = set(prev_snapshot.index) if not prev_snapshot.empty else set()
+    
+    logger.debug(f"[SNAPSHOT INTEGRITY] Starting with {initial_employee_count} employees")
+    
+    # Validate employee IDs in input
+    if not prev_snapshot.empty and EMP_ID in prev_snapshot.columns:
+        na_ids = prev_snapshot[EMP_ID].isna().sum()
+        duplicate_ids = prev_snapshot[EMP_ID].duplicated().sum()
+        if na_ids > 0:
+            logger.warning(f"[SNAPSHOT INTEGRITY] Input snapshot has {na_ids} rows with NA employee IDs")
+        if duplicate_ids > 0:
+            logger.warning(f"[SNAPSHOT INTEGRITY] Input snapshot has {duplicate_ids} duplicate employee IDs")
 
     # Handle empty events case efficiently
     if new_events.empty:
         logger.debug("No new events to apply, returning copy of previous snapshot")
         snapshot = prev_snapshot.copy()
         snapshot[SIMULATION_YEAR] = snapshot_year
-        return snapshot.astype(SNAPSHOT_DTYPES)
+        
+        # Ensure all required columns exist before type conversion
+        snapshot = _ensure_required_columns_safe(snapshot, logger)
+        
+        # Apply type conversion safely
+        result = _apply_dtypes_safe(snapshot, logger)
+        
+        logger.debug(f"[SNAPSHOT INTEGRITY] Returning {len(result)} employees (no events case)")
+        return result
 
     # Ensure we don't modify the input
     cur = prev_snapshot.copy()
@@ -458,36 +484,187 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
     # With distinct timestamps: Promotion (00:00:30) → Merit (00:01) → COLA (00:02)
     new_events = new_events.sort_values(["event_time"], ascending=[True])
 
-    # Process new hires and updates
+    # Process new hires and updates with enhanced error handling
     try:
-        # Process new hires first
+        # STEP 1: Process new hires first
+        logger.debug(f"[SNAPSHOT INTEGRITY] Before new hires: {len(cur)} employees")
         cur = _apply_new_hires(cur, new_events, snapshot_year)
+        logger.debug(f"[SNAPSHOT INTEGRITY] After new hires: {len(cur)} employees")
 
-        # Then process updates to existing employees
+        # STEP 2: Process updates to existing employees
+        logger.debug(f"[SNAPSHOT INTEGRITY] Before existing updates: {len(cur)} employees")
         cur = _apply_existing_updates(cur, new_events, snapshot_year)
+        logger.debug(f"[SNAPSHOT INTEGRITY] After existing updates: {len(cur)} employees")
 
-        # Ensure EMP_ID is properly set as string and is the index
-        cur[EMP_ID] = cur.index.astype(str)
-        cur.index = cur[EMP_ID]  # Ensure index is set to EMP_ID
+        # STEP 3: ROBUST Index and ID management
+        if cur.empty:
+            logger.warning("[SNAPSHOT INTEGRITY] DataFrame became empty after processing events!")
+            # Return minimal valid snapshot
+            return _create_empty_snapshot_with_schema(snapshot_year)
+        
+        # Ensure EMP_ID column exists and is properly set
+        if EMP_ID not in cur.columns:
+            logger.warning(f"[SNAPSHOT INTEGRITY] {EMP_ID} column missing, reconstructing from index")
+            cur[EMP_ID] = cur.index.astype(str)
+        
+        # INTEGRITY CHECK: Validate no employee IDs are lost during index operations
+        pre_index_ids = set(cur[EMP_ID].dropna())
+        
+        # Set index safely
+        try:
+            cur[EMP_ID] = cur.index.astype(str)
+            cur.index = cur[EMP_ID]
+            cur.index.name = EMP_ID
+        except Exception as e:
+            logger.error(f"[SNAPSHOT INTEGRITY] Error during index operations: {e}")
+            # Fallback: ensure index is set to employee IDs
+            if EMP_ID in cur.columns:
+                cur = cur.set_index(EMP_ID, drop=False)
+                cur.index.name = EMP_ID
 
-        # Ensure all required columns exist with correct types
-        for col in SNAPSHOT_COLS:
-            if col not in cur.columns:
-                if col in SNAPSHOT_DTYPES:
-                    cur[col] = pd.NA
+        post_index_ids = set(cur[EMP_ID].dropna())
+        lost_during_index = pre_index_ids - post_index_ids
+        if lost_during_index:
+            logger.error(f"[SNAPSHOT INTEGRITY] Lost {len(lost_during_index)} employees during index operations: {list(lost_during_index)[:5]}")
 
-        # Convert to final types and select only required columns
-        result = cur[SNAPSHOT_COLS].astype(SNAPSHOT_DTYPES)
-        result.index.name = EMP_ID
+        # STEP 4: SAFE column and type management
+        logger.debug(f"[SNAPSHOT INTEGRITY] Before column/type operations: {len(cur)} employees")
+        
+        # Ensure all required columns exist with appropriate defaults
+        cur = _ensure_required_columns_safe(cur, logger)
+        
+        # INTEGRITY CHECK: Verify no employees lost during column operations
+        if len(cur) != len(post_index_ids):
+            logger.warning(f"[SNAPSHOT INTEGRITY] Employee count changed during column operations: {len(post_index_ids)} → {len(cur)}")
 
-        # Handle categorical columns
-        from pandas import CategoricalDtype
-        if 'job_level_source' in result.columns and isinstance(result['job_level_source'].dtype, CategoricalDtype):
-            result['job_level_source'] = result['job_level_source'].astype("category")
+        # STEP 5: SAFE type conversion and column selection
+        result = _apply_dtypes_safe(cur, logger)
+        
+        # FINAL INTEGRITY CHECK
+        final_employee_count = len(result)
+        final_employee_ids = set(result.index) if not result.empty else set()
+        
+        if final_employee_count != initial_employee_count:
+            net_change = final_employee_count - initial_employee_count
+            lost_ids = initial_employee_ids - final_employee_ids
+            gained_ids = final_employee_ids - initial_employee_ids
+            
+            logger.warning(f"[SNAPSHOT INTEGRITY] Employee count changed: {initial_employee_count} → {final_employee_count} (net: {net_change:+d})")
+            if lost_ids:
+                logger.warning(f"[SNAPSHOT INTEGRITY] Lost employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
+            if gained_ids:
+                logger.info(f"[SNAPSHOT INTEGRITY] Gained employee IDs: {sorted(list(gained_ids))[:10]}{'...' if len(gained_ids) > 10 else ''}")
 
-        logger.debug("Successfully updated snapshot for year %d. Shape: %s", snapshot_year, str(result.shape))
+        logger.debug(f"[SNAPSHOT INTEGRITY] Successfully updated snapshot for year {snapshot_year}. Final shape: {result.shape}")
         return result
 
     except Exception as e:
-        logger.error("Error updating snapshot for year %d: %s", snapshot_year, str(e), exc_info=True)
+        logger.error(f"[SNAPSHOT INTEGRITY] Error updating snapshot for year {snapshot_year}: {e}", exc_info=True)
+        # Log current state for debugging
+        logger.error(f"[SNAPSHOT INTEGRITY] Current DataFrame shape: {cur.shape if 'cur' in locals() else 'undefined'}")
+        logger.error(f"[SNAPSHOT INTEGRITY] Current columns: {cur.columns.tolist() if 'cur' in locals() and hasattr(cur, 'columns') else 'undefined'}")
         raise
+
+
+def _ensure_required_columns_safe(df: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
+    """
+    Safely ensure all required columns exist in the DataFrame with appropriate defaults.
+    
+    Args:
+        df: DataFrame to process
+        logger: Logger for diagnostics
+        
+    Returns:
+        DataFrame with all required columns
+    """
+    missing_columns = []
+    for col in SNAPSHOT_COLS:
+        if col not in df.columns:
+            missing_columns.append(col)
+            # Set appropriate default value based on column type
+            if col in SNAPSHOT_DTYPES:
+                default_val = pd.NA
+                # Some columns have specific defaults
+                if col == EMP_ACTIVE:
+                    default_val = True  # Default to active
+                elif col == EMP_EXITED:
+                    default_val = False  # Default to not exited
+                elif col in [EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH]:
+                    default_val = 0.0  # Default monetary values to 0
+                elif col == IS_ELIGIBLE:
+                    default_val = False  # Default to not eligible
+                
+                df[col] = default_val
+    
+    if missing_columns:
+        logger.debug(f"[COLUMN SAFETY] Added {len(missing_columns)} missing columns: {missing_columns}")
+    
+    return df
+
+
+def _apply_dtypes_safe(df: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
+    """
+    Safely apply data types and column selection with comprehensive error handling.
+    
+    Args:
+        df: DataFrame to process
+        logger: Logger for diagnostics
+        
+    Returns:
+        DataFrame with correct types and columns
+    """
+    try:
+        # First, select only required columns (but don't drop rows)
+        available_cols = [col for col in SNAPSHOT_COLS if col in df.columns]
+        missing_cols = [col for col in SNAPSHOT_COLS if col not in df.columns]
+        
+        if missing_cols:
+            logger.warning(f"[DTYPE SAFETY] Missing columns during selection: {missing_cols}")
+        
+        # Select available columns
+        result = df[available_cols].copy()
+        
+        # Apply data types column by column to avoid dropping rows on single failures
+        conversion_errors = []
+        for col in available_cols:
+            if col in SNAPSHOT_DTYPES:
+                try:
+                    result[col] = result[col].astype(SNAPSHOT_DTYPES[col])
+                except Exception as e:
+                    conversion_errors.append((col, str(e)))
+                    logger.warning(f"[DTYPE SAFETY] Failed to convert column {col}: {e}")
+                    # Keep the column as-is rather than dropping rows
+        
+        if conversion_errors:
+            logger.warning(f"[DTYPE SAFETY] {len(conversion_errors)} columns had type conversion issues")
+        
+        # Ensure index name is set
+        result.index.name = EMP_ID
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[DTYPE SAFETY] Critical error during dtype application: {e}")
+        # Return DataFrame as-is rather than failing completely
+        df.index.name = EMP_ID
+        return df
+
+
+def _create_empty_snapshot_with_schema(snapshot_year: int) -> pd.DataFrame:
+    """
+    Create an empty snapshot DataFrame with proper schema.
+    
+    Args:
+        snapshot_year: Year for the snapshot
+        
+    Returns:
+        Empty DataFrame with correct schema
+    """
+    # Create empty DataFrame with required columns
+    empty_data = {col: pd.Series([], dtype=SNAPSHOT_DTYPES.get(col, 'object')) for col in SNAPSHOT_COLS}
+    empty_data[SIMULATION_YEAR] = pd.Series([], dtype='int64')
+    
+    result = pd.DataFrame(empty_data)
+    result.index.name = EMP_ID
+    
+    return result

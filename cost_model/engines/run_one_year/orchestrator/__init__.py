@@ -92,6 +92,63 @@ def log_headcount_stage(df: pd.DataFrame, stage: str, year: int, logger: logging
     check_duplicates(df, stage, logger)
 
 
+def trace_snapshot_integrity(df: pd.DataFrame, stage: str, year: int, logger: logging.Logger, previous_ids=None) -> set:
+    """
+    Enhanced logging to trace snapshot integrity and identify where employees are lost.
+    
+    Args:
+        df: Current snapshot DataFrame
+        stage: Stage name for logging
+        year: Simulation year
+        logger: Logger instance
+        previous_ids: Set of employee IDs from previous stage
+        
+    Returns:
+        Set of current employee IDs for next comparison
+    """
+    if df.empty:
+        logger.warning(f"[TRACE {year}] {stage}: SNAPSHOT IS EMPTY!")
+        return set()
+    
+    # Get current employee IDs
+    if EMP_ID not in df.columns:
+        logger.error(f"[TRACE {year}] {stage}: No {EMP_ID} column found!")
+        return set()
+        
+    current_ids = set(df[EMP_ID].dropna())
+    total_rows = len(df)
+    active_count = n_active(df)
+    
+    # Log basic counts
+    logger.info(f"[TRACE {year}] {stage}: {total_rows} rows, {len(current_ids)} unique IDs, {active_count} active")
+    
+    # Compare with previous stage if available
+    if previous_ids is not None:
+        lost_ids = previous_ids - current_ids
+        gained_ids = current_ids - previous_ids
+        
+        if lost_ids:
+            logger.warning(f"[TRACE {year}] {stage}: LOST {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
+            
+        if gained_ids:
+            logger.info(f"[TRACE {year}] {stage}: GAINED {len(gained_ids)} employee IDs: {sorted(list(gained_ids))[:10]}{'...' if len(gained_ids) > 10 else ''}")
+            
+        net_change = len(current_ids) - len(previous_ids)
+        logger.info(f"[TRACE {year}] {stage}: Net ID change: {net_change:+d}")
+        
+    # Check for data quality issues
+    na_ids = df[EMP_ID].isna().sum()
+    if na_ids > 0:
+        logger.warning(f"[TRACE {year}] {stage}: {na_ids} rows with NA employee IDs")
+        
+    # Check for duplicate IDs
+    duplicate_ids = df[EMP_ID].duplicated().sum()
+    if duplicate_ids > 0:
+        logger.warning(f"[TRACE {year}] {stage}: {duplicate_ids} duplicate employee IDs")
+        
+    return current_ids
+
+
 def run_one_year(
     event_log: pd.DataFrame,
     prev_snapshot: pd.DataFrame,
@@ -167,6 +224,9 @@ def run_one_year(
 
     # DIAGNOSTIC: Log initial state
     log_headcount_stage(snapshot, "SOY_INITIAL", year, logger)
+    
+    # TRACE: Start tracking employee IDs through the simulation
+    current_ids = trace_snapshot_integrity(snapshot, "SOY_INITIAL", year, logger)
 
     # Track the initial start count for exact targeting (before any events)
     initial_start_count = n_active(snapshot)  # Use active count, not total rows
@@ -181,6 +241,9 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after compensation
     log_headcount_stage(snapshot, "AFTER_COMPENSATION", year, logger)
+    
+    # TRACE: Check if compensation events affected employee IDs
+    current_ids = trace_snapshot_integrity(snapshot, "AFTER_COMPENSATION", year, logger, current_ids)
 
     # Step 2: Markov promotions/exits (experienced only) - Apply AFTER compensation so raises use updated values
     promotion_events, snapshot = promotion_orchestrator.get_events(snapshot, year_context)
@@ -189,6 +252,9 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after promotions/exits
     log_headcount_stage(snapshot, "AFTER_PROMOTIONS", year, logger)
+    
+    # TRACE: Check if promotion events affected employee IDs
+    current_ids = trace_snapshot_integrity(snapshot, "AFTER_PROMOTIONS", year, logger, current_ids)
 
     # Step 3: Hazard-based terminations (experienced only)
     termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
@@ -199,6 +265,9 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after experienced terminations (this is the survivor count for exact targeting)
     log_headcount_stage(snapshot, "AFTER_EXPERIENCED_TERMS", year, logger)
+    
+    # TRACE: Check if termination events affected employee IDs (expected to lose some)
+    current_ids = trace_snapshot_integrity(snapshot, "AFTER_EXPERIENCED_TERMS", year, logger, current_ids)
 
     # Step 4: Hiring (with exact targeting)
     # For exact targeting, we need the count BEFORE any terminations/promotions occurred
@@ -219,6 +288,9 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after hiring
     log_headcount_stage(snapshot, "AFTER_HIRING", year, logger)
+    
+    # TRACE: Check if hiring events affected employee IDs (expected to gain some)
+    current_ids = trace_snapshot_integrity(snapshot, "AFTER_HIRING", year, logger, current_ids)
 
     # Step 4b: Handle forced terminations if required by exact targeting
     forced_terminations_needed = hiring_orchestrator.get_required_forced_terminations()
@@ -235,6 +307,9 @@ def run_one_year(
 
         # DIAGNOSTIC: Log after forced terminations
         log_headcount_stage(snapshot, "AFTER_FORCED_TERMS", year, logger)
+        
+        # TRACE: Check if forced terminations affected employee IDs
+        current_ids = trace_snapshot_integrity(snapshot, "AFTER_FORCED_TERMS", year, logger, current_ids)
 
     # Step 5: New hire terminations
     nh_termination_events, snapshot = termination_orchestrator.get_new_hire_termination_events(
@@ -245,12 +320,18 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after new hire terminations
     log_headcount_stage(snapshot, "AFTER_NH_TERMS", year, logger)
+    
+    # TRACE: Check if new hire terminations affected employee IDs
+    current_ids = trace_snapshot_integrity(snapshot, "AFTER_NH_TERMS", year, logger, current_ids)
 
     # Step 6: Apply contribution calculations and eligibility
     snapshot = _apply_contribution_calculations(snapshot, year_context, logger)
 
     # DIAGNOSTIC: Log after contribution calculations
     log_headcount_stage(snapshot, "AFTER_CONTRIBUTIONS", year, logger)
+    
+    # TRACE: Check if contribution calculations affected employee IDs
+    current_ids = trace_snapshot_integrity(snapshot, "AFTER_CONTRIBUTIONS", year, logger, current_ids)
 
     # Step 7: Final validation
     validator.validate_eoy(snapshot)
@@ -258,6 +339,9 @@ def run_one_year(
     # DIAGNOSTIC: Final EOY headcount check with exact targeting assertion
     final_active_count = n_active(snapshot)
     log_headcount_stage(snapshot, "FINAL_EOY", year, logger)
+    
+    # TRACE: Final check of employee IDs
+    final_ids = trace_snapshot_integrity(snapshot, "FINAL_EOY", year, logger, current_ids)
 
     # Calculate expected target for assertion
     target_growth = getattr(year_context.global_params, 'target_growth', 0.03)

@@ -18,7 +18,7 @@ from cost_model.state.schema import (
 )
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
 from cost_model.utils.tenure_utils import standardize_tenure_band
-from ..utils import compute_headcount_targets, manage_headcount_to_exact_target, estimate_expected_experienced_exits
+from ..utils import compute_headcount_targets, manage_headcount_to_exact_target, estimate_expected_experienced_exits, estimate_experienced_exit_rate_from_hazards
 from .base import YearContext, safe_get_meta, filter_valid_employee_ids
 
 
@@ -163,29 +163,50 @@ class HiringOrchestrator:
         # Calculate number of experienced terminations that occurred
         num_markov_exits = start_count - survivor_count
 
-        # CRITICAL FIX: Estimate additional experienced exits expected during the year
-        # This addresses the core issue where hiring decisions only account for employees
-        # who have already left, not those expected to leave later in the year
+        # ENHANCED FIX: Estimate what TOTAL experienced exits should be for the year
+        # and use that to improve hiring decisions, accounting for under/over-termination
         try:
-            # Get experienced employees (those hired before this year) from the snapshot
-            experienced_employees = snapshot[snapshot[EMP_HIRE_DATE] < year_context.as_of].copy()
-
-            # Estimate expected additional experienced exits using hazard rates
-            expected_additional_exits = estimate_expected_experienced_exits(
-                experienced_employees=experienced_employees,
-                hazard_slice=year_context.hazard_slice,
-                logger=self.logger
-            )
+            # Reconstruct the original experienced workforce by working backwards
+            # We need to estimate from the original start-of-year composition, not current survivors
+            
+            # Method 1: Use the current survivors to estimate original composition
+            # This is imperfect but better than using post-termination data
+            current_experienced = snapshot[snapshot[EMP_HIRE_DATE] < year_context.as_of].copy()
+            
+            if num_markov_exits > 0:
+                # Scale up current experienced employees to estimate original count
+                # This assumes terminations were proportionally distributed
+                scale_factor = start_count / survivor_count if survivor_count > 0 else 1.5
+                estimated_original_experienced = round(len(current_experienced) * scale_factor)
+            else:
+                estimated_original_experienced = len(current_experienced)
+            
+            # Estimate expected experienced exit rate from hazard table
+            if not current_experienced.empty:
+                expected_exit_rate = estimate_experienced_exit_rate_from_hazards(
+                    hazard_slice=year_context.hazard_slice,
+                    logger=self.logger
+                )
+            else:
+                expected_exit_rate = 0.15  # Fallback rate
+                
+            # Calculate what TOTAL expected experienced exits should be
+            total_expected_experienced_exits = round(estimated_original_experienced * expected_exit_rate)
+            
+            # Additional exits beyond what already occurred
+            expected_additional_experienced_exits = max(0, total_expected_experienced_exits - num_markov_exits)
 
             self.logger.info(
-                f"[HIRING FIX] Experienced exits: {num_markov_exits} already occurred, "
-                f"{expected_additional_exits} additional expected, "
-                f"total: {num_markov_exits + expected_additional_exits}"
+                f"[HIRING FIX ENHANCED] Original est. experienced: {estimated_original_experienced}, "
+                f"Expected exit rate: {expected_exit_rate:.1%}, "
+                f"Total expected exits: {total_expected_experienced_exits}, "
+                f"Already occurred: {num_markov_exits}, "
+                f"Additional expected: {expected_additional_experienced_exits}"
             )
 
         except Exception as e:
             self.logger.warning(f"[HIRING FIX] Error estimating additional exits: {e}")
-            expected_additional_exits = 0
+            expected_additional_experienced_exits = 0
 
         # Use exact targeting logic with enhanced experienced exit estimation
         gross_hires, forced_terminations = manage_headcount_to_exact_target(
@@ -193,7 +214,7 @@ class HiringOrchestrator:
             target_growth_rate=target_growth,
             num_markov_exits_existing=num_markov_exits,
             new_hire_termination_rate=nh_term_rate,
-            expected_additional_experienced_exits=expected_additional_exits
+            expected_additional_experienced_exits=expected_additional_experienced_exits
         )
 
         # Calculate target EOY for logging

@@ -1,0 +1,4 @@
+year,active_headcount,eligible_count,participant_count,total_employee_gross_compensation,total_plan_year_compensation,total_ee_contribution,total_er_contribution,total_compensation,avg_compensation,avg_plan_year_compensation,avg_age_active,total_terminations,participation_rate,avg_deferral_rate_participants
+2025,120,105,67,21353742.0000,19508091.0000,497655.0000,0.0000,21851397.0000,177948.0000,162567.0000,46.1000,0,0.6381,0.0406
+2026,121,110,63,20769521.0000,17530650.0000,397719.0000,0.0000,21167241.0000,171649.0000,144881.0000,46.2000,0,0.5727,0.0400
+2027,124,112,61,20721788.0000,17182241.0000,384221.0000,0.0000,21106008.0000,167111.0000,138566.0000,46.5000,0,0.5446,0.0400

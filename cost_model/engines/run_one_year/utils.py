@@ -203,6 +203,61 @@ def estimate_expected_experienced_exits(
     return total_estimated_exits
 
 
+def estimate_experienced_exit_rate_from_hazards(
+    hazard_slice: pd.DataFrame,
+    logger: logging.Logger = None
+) -> float:
+    """
+    Estimate the overall expected experienced employee exit rate from hazard table data.
+    
+    This provides a fallback method to estimate attrition when we can't analyze
+    the full workforce composition.
+    
+    Args:
+        hazard_slice: Hazard table slice for the current year
+        logger: Optional logger for debugging
+        
+    Returns:
+        Estimated annual experienced employee exit rate (e.g., 0.15 for 15%)
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+        
+    try:
+        # Import required columns
+        from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
+        
+        if hazard_slice.empty or 'term_rate' not in hazard_slice.columns:
+            logger.warning("Empty hazard slice or missing term_rate column, using fallback rate")
+            return 0.15
+            
+        # Calculate weighted average termination rate across levels and tenure bands
+        # This is a simplified approach - in reality we'd want workforce composition weights
+        
+        # Filter to experienced employee combinations (exclude very short tenure)
+        experienced_hazards = hazard_slice[
+            (hazard_slice[EMP_TENURE_BAND] != '<1') | 
+            (hazard_slice[EMP_TENURE_BAND].isna())
+        ].copy()
+        
+        if experienced_hazards.empty:
+            # If no experienced employee hazards, use all data
+            experienced_hazards = hazard_slice.copy()
+            
+        # Calculate simple average (could be improved with workforce composition weights)
+        avg_rate = experienced_hazards['term_rate'].mean()
+        
+        # Cap at reasonable bounds
+        avg_rate = max(0.05, min(0.30, avg_rate))  # Between 5% and 30%
+        
+        logger.debug(f"Estimated experienced exit rate from hazards: {avg_rate:.1%}")
+        return avg_rate
+        
+    except Exception as e:
+        logger.warning(f"Error estimating exit rate from hazards: {e}")
+        return 0.15  # Conservative fallback
+
+
 def test_compute_headcount_targets():
     # Test growing from 100 to 103 employees with 15% new hire termination rate
     start = 100
