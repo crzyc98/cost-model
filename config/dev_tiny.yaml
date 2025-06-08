@@ -8,7 +8,7 @@ global_parameters:
   # Simulation control parameters
   start_year: 2025
   log_level: DEBUG
-  projection_years: 3
+  projection_years: 5
   random_seed: 79
   days_into_year_for_cola: 182
   days_into_year_for_promotion: 182
@@ -145,7 +145,7 @@ job_levels:
     description: Non-exempt employees paid hourly wages
     min_compensation: 0
     max_compensation: 55000
-    comp_base_salary: 40000
+    comp_base_salary: 41000
     comp_age_factor: 0.005
     comp_stochastic_std_dev: 0.1
     avg_annual_merit_increase: 0.03
@@ -158,7 +158,7 @@ job_levels:
     description: Entry-level exempt employees, individual contributors
     min_compensation: 56000
     max_compensation: 80000
-    comp_base_salary: 65000
+    comp_base_salary: 70000
     comp_age_factor: 0.006
     comp_stochastic_std_dev: 0.1
     avg_annual_merit_increase: 0.035
@@ -171,7 +171,7 @@ job_levels:
     description: First-level management with direct reports
     min_compensation: 81000
     max_compensation: 120000
-    comp_base_salary: 95000
+    comp_base_salary: 105000
     comp_age_factor: 0.007
     comp_stochastic_std_dev: 0.1
     avg_annual_merit_increase: 0.04
@@ -184,7 +184,7 @@ job_levels:
     description: Mid-level management, often managing other managers
     min_compensation: 121000
     max_compensation: 160000
-    comp_base_salary: 140000
+    comp_base_salary: 157000
     comp_age_factor: 0.008
     comp_stochastic_std_dev: 0.1
     avg_annual_merit_increase: 0.045
@@ -197,7 +197,7 @@ job_levels:
     description: Senior leadership roles
     min_compensation: 161000
     max_compensation: 10000000
-    comp_base_salary: 250000
+    comp_base_salary: 275000
     comp_age_factor: 0.01
     comp_stochastic_std_dev: 0.15
     avg_annual_merit_increase: 0.05

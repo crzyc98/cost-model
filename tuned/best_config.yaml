@@ -7,16 +7,11 @@ global_parameters:
   census_template_path: data/census_template.parquet
   cola_hazard:
     by_year:
-      2025: 0.02
+      2025: 0.018
       2026: 0.018
-      2027: 0.016
-      2028: 0.015
-      2029: 0.014
-      '2025': 0.02
-      '2026': 0.02
-      '2027': 0.012
-      '2028': 0.012
-      '2029': 0.014
+      2027: 0.008
+      2028: 0.007
+      2029: 0.01
   compensation:
     COLA_rate: 0.02
     merit_dist:
@@ -33,8 +28,8 @@ global_parameters:
         mu: 0.05
         sigma: 0.02
     new_hire:
-      age_mean: 40
-      age_std: 8
+      age_mean: 44.5
+      age_std: 11.6
     promo_raise_pct:
       0_to_1: 0.1
       1_to_2: 0.1
@@ -46,13 +41,13 @@ global_parameters:
   dev_mode: true
   log_level: DEBUG
   maintain_headcount: false
-  max_working_age: 63
+  max_working_age: 65
   min_working_age: 22
   monthly_transition: false
-  new_hire_age_std_dev: 5
-  new_hire_average_age: 35
+  new_hire_age_std_dev: 3
+  new_hire_average_age: 28
   new_hires:
-    new_hire_rate: 0.15
+    new_hire_rate: 0.55
   onboarding:
     early_tenure_months: 6
     enabled: true
@@ -64,27 +59,27 @@ global_parameters:
     - 0.95
     - 1.0
     - 1.0
-  projection_years: 3
+  projection_years: 5
   promotion_hazard:
     age_multipliers:
       30-39: 1.1
       40-49: 0.9
-      50-59: 0.3
-      60-65: 0.15
+      50-59: 0.5
+      60-65: 0.05
       <30: 1.4
-    base_rate: 0.15
-    level_dampener_factor: 0.2
+    base_rate: 0.08
+    level_dampener_factor: 0.12
     tenure_multipliers:
-      1-3: 1.2
-      10-15: 0.3
+      1-3: 1.8
+      10-15: 0.2
       15+: 0.05
-      3-5: 2.0
-      5-10: 1.2
+      3-5: 1.5
+      5-10: 0.8
       <1: 0.5
   promotion_matrix_path: null
   raises_hazard:
-    merit_base: 0.04
-    merit_low_level_bump_value: 0.005
+    merit_base: 0.026
+    merit_low_level_bump_value: 0.002
     merit_low_level_cutoff: 2
     merit_tenure_bump_bands:
     - <1
@@ -94,28 +89,29 @@ global_parameters:
     promotion_raise: 0.1
   random_seed: 79
   start_year: 2025
-  target_growth: 0.05
+  target_growth: 0.04
   termination_hazard:
     age_multipliers:
-      30-39: 1.0
-      40-49: 0.9
-      50-59: 1.1
-      60-65: 3.0
-      <30: 0.3
-    base_rate_for_new_hire: 0.1
-    level_discount_factor: 0.1
-    min_level_discount_multiplier: 0.4
+      30-39: 0.8
+      40-49: 0.8
+      50-59: 1.0
+      60-65: 15.0
+      65+: 5.0
+      <30: 0.4
+    base_rate_for_new_hire: 0.05
+    level_discount_factor: 0.08
+    min_level_discount_multiplier: 0.5
     tenure_multipliers:
       1-3: 0.6
-      10-15: 0.2
+      10-15: 0.1
       15+: 0.24
       3-5: 0.4
       5-10: 0.2
-      <1: 0.8
+      <1: 0.2
 job_levels:
 - avg_annual_merit_increase: 0.03
   comp_age_factor: 0.005
-  comp_base_salary: 40000
+  comp_base_salary: 41000
   comp_stochastic_std_dev: 0.1
   description: Non-exempt employees paid hourly wages
   job_families:
@@ -129,7 +125,7 @@ job_levels:
   target_bonus_percent: 0.0
 - avg_annual_merit_increase: 0.035
   comp_age_factor: 0.006
-  comp_base_salary: 65000
+  comp_base_salary: 70000
   comp_stochastic_std_dev: 0.1
   description: Entry-level exempt employees, individual contributors
   job_families:
@@ -145,7 +141,7 @@ job_levels:
   target_bonus_percent: 0.05
 - avg_annual_merit_increase: 0.04
   comp_age_factor: 0.007
-  comp_base_salary: 95000
+  comp_base_salary: 105000
   comp_stochastic_std_dev: 0.1
   description: First-level management with direct reports
   job_families:
@@ -161,7 +157,7 @@ job_levels:
   target_bonus_percent: 0.15
 - avg_annual_merit_increase: 0.045
   comp_age_factor: 0.008
-  comp_base_salary: 140000
+  comp_base_salary: 157000
   comp_stochastic_std_dev: 0.1
   description: Mid-level management, often managing other managers
   job_families:
@@ -177,7 +173,7 @@ job_levels:
   target_bonus_percent: 0.2
 - avg_annual_merit_increase: 0.05
   comp_age_factor: 0.01
-  comp_base_salary: 250000
+  comp_base_salary: 275000
   comp_stochastic_std_dev: 0.15
   description: Senior leadership roles
   job_families:

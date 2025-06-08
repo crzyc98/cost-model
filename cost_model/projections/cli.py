@@ -236,7 +236,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
         }
 
         for src, dst in column_mapping.items():
-            if src in expanded_hazard_table.columns and dst not in expanded_hazard_table.columns:
+            if src in expanded_hazard_table.columns and dst not in expanded_hazard_table.columns and src != dst:
                 expanded_hazard_table[dst] = expanded_hazard_table[src]
 
         # Add missing columns with default values

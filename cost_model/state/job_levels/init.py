@@ -13,27 +13,53 @@ logger = logging.getLogger(__name__)
 
 def init_job_levels(
     config_path: Optional[str] = None,
+    config_dict: Optional[dict] = None,
     strict_validation: bool = True,
     reset_warnings: bool = False
 ) -> bool:
     """
     Initialize global job levels state.
+
+    Args:
+        config_path: Path to separate job levels YAML file
+        config_dict: Main config dictionary containing job_levels section
+        strict_validation: Whether to raise errors on validation failures
+        reset_warnings: Whether to reset warning counts
     """
-    path = config_path or os.getenv("COST_MODEL_JOB_LEVELS_CONFIG")
     levels = None
-    if path:
-        p = Path(path)
-        if p.exists():
-            try:
-                levels = load_from_yaml(path, strict_validation=strict_validation)
-            except ConfigError as e:
-                if strict_validation:
-                    raise
-                logger.warning("Invalid job levels config at %s, falling back to defaults: %s", path, e)
-        else:
-            logger.info("Job levels config path %s does not exist, using defaults", path)
+
+    # Priority 1: Use config_dict if provided (main config integration)
+    if config_dict is not None:
+        try:
+            from .loader import load_job_levels_from_config
+            levels = load_job_levels_from_config(config_dict, strict_validation=strict_validation)
+            logger.info("Loaded job levels from main config dictionary")
+        except ConfigError as e:
+            if strict_validation:
+                raise
+            logger.warning("Invalid job levels in config dict, falling back to defaults: %s", e)
+
+    # Priority 2: Use config_path if provided
+    if levels is None:
+        path = config_path or os.getenv("COST_MODEL_JOB_LEVELS_CONFIG")
+        if path:
+            p = Path(path)
+            if p.exists():
+                try:
+                    levels = load_from_yaml(path, strict_validation=strict_validation)
+                    logger.info("Loaded job levels from file: %s", path)
+                except ConfigError as e:
+                    if strict_validation:
+                        raise
+                    logger.warning("Invalid job levels config at %s, falling back to defaults: %s", path, e)
+            else:
+                logger.info("Job levels config path %s does not exist, using defaults", path)
+
+    # Priority 3: Use defaults
     if levels is None:
         levels = DEFAULT_LEVELS
+        logger.info("Using default job levels")
+
     # Update global taxonomy
     state.LEVEL_TAXONOMY.clear()
     state.LEVEL_TAXONOMY.update(levels)
@@ -43,6 +69,8 @@ def init_job_levels(
     if reset_warnings:
         for key in state._WARNING_COUNTS:
             state._WARNING_COUNTS[key] = 0
+
+    logger.info("Initialized job levels: %s", list(levels.keys()))
     return True
 
 

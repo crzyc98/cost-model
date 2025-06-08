@@ -64,28 +64,28 @@ DEFAULT_CENSUS_PATH = project_root / "data/census_template.parquet"
 # Search space for configuration parameters
 # Each key maps to a list of possible values to sample from
 #
-# UPDATED for CAMPAIGN 6 - AGGRESSIVE HEADCOUNT GROWTH FOCUS based on Campaign 5 analysis:
-# - CHALLENGE: Campaign 5 best score 0.0813 achieved excellent calibration but HC growth still -1.69%
-# - STRATEGY: Extremely aggressive headcount growth parameters to overcome persistent negative growth
-# - FOCUS: Prioritize positive HC growth achievement while maintaining other calibration successes
-# - APPROACH: Higher target_growth ranges, much higher new_hire_rates, stronger new hire retention
-# - TARGET: Achieve positive HC growth +2.0% to +4.0% while maintaining overall score <0.08
-# REFINED SEARCH_SPACE based on successful configuration analysis (2025-06-06)
-# Conservative parameter ranges with 100% success rate improvement
+# FINAL PRODUCTION CALIBRATION CAMPAIGN (REDUX) - Based on Best Performing Campaign
+# - ACHIEVEMENT: Previous campaign achieved best score 0.057176 with +1.67% HC growth
+# - STRATEGY: Reproduce the successful Final Production Calibration Campaign parameters
+# - FOCUS: Balanced optimization targeting score <0.08 with positive HC growth +1.5% to +3.0%
+# - APPROACH: Refined parameter ranges based on proven successful configurations
+# - TARGET: Achieve production-ready configuration with score <0.08 and positive HC growth
+# PROVEN SEARCH_SPACE based on Final Production Calibration Campaign success
+# Balanced parameter ranges with demonstrated effectiveness
 # CRITICAL: COLA duplicate keys issue completely resolved
 SEARCH_SPACE = {
-    # === CORE STABILITY PARAMETERS (Empirically Validated) ===
-    # From analysis of 15 successful configs: safe range 0.40-0.60 (mean 0.50)
-    "global_parameters.new_hires.new_hire_rate": [0.40, 0.45, 0.50, 0.55, 0.60],
+    # === CORE STABILITY PARAMETERS (Final Production Calibration) ===
+    # Refined ranges based on successful Final Production Calibration Campaign
+    "global_parameters.new_hires.new_hire_rate": [0.35, 0.40, 0.45, 0.50, 0.55],
+
+    # Conservative compensation increase rates for cost control
+    "global_parameters.annual_compensation_increase_rate": [0.025, 0.028, 0.030, 0.032, 0.035],
+
+    # Balanced target growth for sustainable positive HC growth
+    "global_parameters.target_growth": [0.035, 0.040, 0.045, 0.050, 0.055],
     
-    # From analysis: safe range 0.025-0.032 (mean 0.028)
-    "global_parameters.annual_compensation_increase_rate": [0.025, 0.027, 0.028, 0.030, 0.032],
-    
-    # From analysis: safe range 0.055-0.070 (mean 0.061) - No configs ≥0.08 found
-    "global_parameters.target_growth": [0.055, 0.060, 0.063, 0.065, 0.070],
-    
-    # From analysis: safe range 0.030-0.050 (mean 0.043) - No configs ≤0.02 found
-    "global_parameters.termination_hazard.base_rate_for_new_hire": [0.030, 0.035, 0.040, 0.045, 0.050],
+    # New hire termination rates for balanced retention
+    "global_parameters.termination_hazard.base_rate_for_new_hire": [0.05, 0.06, 0.07, 0.08, 0.10],
     
     # From analysis: safe range 0.080-0.138 (mean 0.101)
     "global_parameters.promotion_hazard.base_rate": [0.080, 0.090, 0.100, 0.120, 0.138],
@@ -340,15 +340,16 @@ def score(sim_summary: Dict[str, Any]) -> float:
     pay_growth_err = abs(sim_pay_growth - TARGET_PAY_GROWTH)
 
     # Define weights for different error components
-    # UPDATED for Campaign 6 - AGGRESSIVE HEADCOUNT GROWTH FOCUS:
-    # - INCREASE HC_GROWTH weight to 0.60 (CRITICAL: Overcome persistent negative growth)
-    # - REDUCE AGE weight to 0.20 (good progress in Campaign 5, maintain but deprioritize)
-    # - REDUCE TENURE weight to 0.15 (important but secondary to HC growth achievement)
-    # - MAINTAIN PAY_GROWTH weight at 0.05 (excellent performance maintained)
-    WEIGHT_HC_GROWTH = 0.60    # CRITICAL: Heavily prioritize positive headcount growth achievement
-    WEIGHT_AGE = 0.20          # IMPORTANT: Maintain age distribution progress from Campaign 5
-    WEIGHT_TENURE = 0.15       # MODERATE: Tenure balance important but secondary to HC growth
-    WEIGHT_PAY_GROWTH = 0.05   # LOW: Excellent performance maintained, keep current level
+    # UPDATED for Final Production Calibration Campaign (REDUX):
+    # Based on the most successful campaign that achieved score 0.057176 with +1.67% HC growth
+    # - BALANCED HC_GROWTH weight to 0.50 (Strong focus but not overwhelming)
+    # - MAINTAIN AGE weight at 0.25 (Important for workforce demographics)
+    # - MAINTAIN TENURE weight at 0.20 (Critical for retention patterns)
+    # - MAINTAIN PAY_GROWTH weight at 0.05 (Controlled compensation costs)
+    WEIGHT_HC_GROWTH = 0.50    # STRONG: Prioritize positive headcount growth achievement
+    WEIGHT_AGE = 0.25          # IMPORTANT: Maintain age distribution balance
+    WEIGHT_TENURE = 0.20       # IMPORTANT: Tenure balance for retention
+    WEIGHT_PAY_GROWTH = 0.05   # LOW: Controlled compensation growth
 
     # Calculate weighted total score
     total_score = (

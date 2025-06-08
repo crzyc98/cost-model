@@ -121,6 +121,22 @@ def run_simulation(
         logger.exception(f"Unexpected error getting scenario config for '{scenario_name}'.")
         return
 
+    # 1.5. Initialize job levels from main config
+    try:
+        from cost_model.state.job_levels import init_job_levels
+        # Convert main_config to dict to extract job_levels
+        if hasattr(main_config, 'model_dump'):
+            config_dict = main_config.model_dump()
+        elif hasattr(main_config, 'dict'):
+            config_dict = main_config.dict()
+        else:
+            config_dict = main_config.__dict__
+        init_job_levels(config_dict=config_dict, reset_warnings=True)
+        logger.info("Job levels initialized from main configuration")
+    except Exception as e:
+        logger.warning(f"Failed to initialize job levels from config, using defaults: {e}")
+        # Continue with defaults - this is not a fatal error
+
     # Extract key parameters and setup RNG after successful config load
     try:
         start_year = scenario_cfg.start_year
@@ -212,7 +228,7 @@ def run_simulation(
             prev_snapshot=snapshot_df,
             year=year,
             global_params=scenario_cfg,
-            plan_rules=scenario_cfg.plan_rules.dict() if scenario_cfg.plan_rules else {},
+            plan_rules=scenario_cfg.plan_rules.model_dump() if scenario_cfg.plan_rules else {},
             hazard_table=hazard,
             rng=rng,
             deterministic_term=True

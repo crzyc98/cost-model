@@ -208,14 +208,60 @@ def run(
         sampler = DefaultSalarySampler(rng)
         starting_comps = []
         for idx, level in enumerate(level_choices):
-            # Use default params for all levels for now
-            # In the future, we can add level-specific compensation parameters if needed
-            params = default_params
-            logger.info(f"[HIRE.RUN YR={simulation_year}] Using default params for level {level}")
+            # Look up level-specific compensation parameters from job_levels configuration
+            level_params = default_params.copy()  # Start with defaults
+            
+            # Find the job level configuration for this specific level
+            if hasattr(global_params, 'job_levels') and global_params.job_levels:
+                job_levels = global_params.job_levels
+                # Convert to list if it's not already
+                if not isinstance(job_levels, list):
+                    job_levels = vars(job_levels) if hasattr(job_levels, '__dict__') else []
+                
+                # Find matching level configuration
+                level_config = None
+                for job_level in job_levels:
+                    if hasattr(job_level, 'level_id') and job_level.level_id == level:
+                        level_config = job_level
+                        break
+                    elif isinstance(job_level, dict) and job_level.get('level_id') == level:
+                        level_config = job_level
+                        break
+                
+                if level_config:
+                    # Update params with level-specific values
+                    if hasattr(level_config, 'comp_base_salary'):
+                        level_params['comp_base_salary'] = level_config.comp_base_salary
+                    elif isinstance(level_config, dict) and 'comp_base_salary' in level_config:
+                        level_params['comp_base_salary'] = level_config['comp_base_salary']
+                    
+                    # Also update other compensation parameters if available
+                    for param_name in ['comp_age_factor', 'comp_stochastic_std_dev', 'min_compensation', 'max_compensation']:
+                        if hasattr(level_config, param_name):
+                            level_params[param_name.replace('comp_', 'comp_')] = getattr(level_config, param_name)
+                        elif isinstance(level_config, dict) and param_name in level_config:
+                            level_params[param_name.replace('comp_', 'comp_')] = level_config[param_name]
+                    
+                    # Map min/max_compensation to the expected parameter names
+                    if hasattr(level_config, 'min_compensation'):
+                        level_params['comp_min_salary'] = level_config.min_compensation
+                    elif isinstance(level_config, dict) and 'min_compensation' in level_config:
+                        level_params['comp_min_salary'] = level_config['min_compensation']
+                    
+                    if hasattr(level_config, 'max_compensation'):
+                        level_params['comp_max_salary'] = level_config.max_compensation
+                    elif isinstance(level_config, dict) and 'max_compensation' in level_config:
+                        level_params['comp_max_salary'] = level_config['max_compensation']
+                    
+                    logger.info(f"[HIRE.RUN YR={simulation_year}] Using level-specific params for level {level}: base_salary=${level_params.get('comp_base_salary', 'N/A')}")
+                else:
+                    logger.warning(f"[HIRE.RUN YR={simulation_year}] No job level configuration found for level {level}, using defaults")
+            else:
+                logger.warning(f"[HIRE.RUN YR={simulation_year}] No job_levels configuration available, using default params for level {level}")
 
             comp = sampler.sample_new_hires(
                 size=1,
-                params=params,
+                params=level_params,
                 ages=np.array([ages[idx]]),
                 rng=rng
             ).iloc[0]

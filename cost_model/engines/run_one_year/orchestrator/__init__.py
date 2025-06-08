@@ -128,7 +128,11 @@ def trace_snapshot_integrity(df: pd.DataFrame, stage: str, year: int, logger: lo
         gained_ids = current_ids - previous_ids
         
         if lost_ids:
-            logger.warning(f"[TRACE {year}] {stage}: LOST {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
+            # Only log as warning if this is an unexpected loss (not during termination or promotion stages)
+            if "TERM" in stage.upper() or "FORCED" in stage.upper() or "PROMOTION" in stage.upper():
+                logger.info(f"[TRACE {year}] {stage}: EXPECTED LOSS of {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
+            else:
+                logger.warning(f"[TRACE {year}] {stage}: LOST {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
             
         if gained_ids:
             logger.info(f"[TRACE {year}] {stage}: GAINED {len(gained_ids)} employee IDs: {sorted(list(gained_ids))[:10]}{'...' if len(gained_ids) > 10 else ''}")

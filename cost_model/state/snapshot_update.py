@@ -31,6 +31,12 @@ from cost_model.state.schema import (
     EMP_LEVEL_SOURCE,
     EMP_EXITED,
     EMP_TENURE,
+    EMP_STATUS_EOY,
+    EMP_CONTR,
+    EMPLOYER_CORE,
+    EMPLOYER_MATCH,
+    IS_ELIGIBLE,
+    ACTIVE_STATUS,
     SIMULATION_YEAR,
     SNAPSHOT_COLS,
     SNAPSHOT_DTYPES,
@@ -509,12 +515,15 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
         
         # INTEGRITY CHECK: Validate no employee IDs are lost during index operations
         pre_index_ids = set(cur[EMP_ID].dropna())
-        
-        # Set index safely
+
+        # Set index safely - FIXED: Don't overwrite EMP_ID column with index values
         try:
+            # Ensure the index is set to employee IDs without overwriting the EMP_ID column
+            if cur.index.name != EMP_ID:
+                cur = cur.set_index(EMP_ID, drop=False)
+                cur.index.name = EMP_ID
+            # Ensure EMP_ID column matches the index
             cur[EMP_ID] = cur.index.astype(str)
-            cur.index = cur[EMP_ID]
-            cur.index.name = EMP_ID
         except Exception as e:
             logger.error(f"[SNAPSHOT INTEGRITY] Error during index operations: {e}")
             # Fallback: ensure index is set to employee IDs

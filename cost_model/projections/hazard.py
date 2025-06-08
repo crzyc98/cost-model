@@ -14,13 +14,45 @@ from cost_model.state.schema import (
     EMP_TENURE_BAND,
     SIMULATION_YEAR,
     TERM_RATE,
-    COMP_RAISE_PCT,
+    MERIT_RAISE_PCT,  # CRITICAL FIX: Use correct column for merit raises
+    COMP_RAISE_PCT,   # Keep for backward compatibility
     NEW_HIRE_TERMINATION_RATE,  # CRITICAL FIX: Use correct constant
     COLA_PCT,
     CFG
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _get_cola_rate_for_year(global_params, year: int) -> float:
+    """
+    Get COLA rate for a specific year from global_params configuration.
+    
+    Looks for cola_hazard.by_year.{year} configuration.
+    Falls back to 0.02 (2%) default if not found.
+    """
+    try:
+        if hasattr(global_params, 'cola_hazard') and hasattr(global_params.cola_hazard, 'by_year'):
+            year_rates = global_params.cola_hazard.by_year
+            if hasattr(year_rates, str(year)):
+                return getattr(year_rates, str(year))
+            elif isinstance(year_rates, dict) and year in year_rates:
+                return year_rates[year]
+            elif isinstance(year_rates, dict) and str(year) in year_rates:
+                return year_rates[str(year)]
+        
+        # Fallback: look for global cola_pct attribute
+        if hasattr(global_params, 'cola_pct'):
+            return global_params.cola_pct
+            
+        # Default fallback
+        logger.warning(f"No COLA rate found for year {year}. Using default 2%.")
+        return 0.02
+        
+    except Exception as e:
+        logger.warning(f"Error getting COLA rate for year {year}: {e}. Using default 2%.")
+        return 0.02
+
 
 def build_hazard_table(
     years: List[int],
@@ -92,9 +124,9 @@ def build_hazard_table(
                 EMP_LEVEL: combo[EMP_LEVEL],
                 EMP_TENURE_BAND: combo[EMP_TENURE_BAND],
                 TERM_RATE: global_term_rate,
-                COMP_RAISE_PCT: global_comp_raise_pct,
+                MERIT_RAISE_PCT: global_comp_raise_pct,  # CRITICAL FIX: Use correct column name
                 NEW_HIRE_TERMINATION_RATE: global_nh_term_rate,
-                COLA_PCT: getattr(global_params, 'cola_pct', 0.0),
+                COLA_PCT: _get_cola_rate_for_year(global_params, year),  # CRITICAL FIX: Look up year-specific COLA rate
                 CFG: plan_rules_config
             })
     if records:
@@ -111,7 +143,7 @@ def build_hazard_table(
 
         logger.info(f"Generated hazard table with {final_rows} rows.")
     else:
-        cols = [SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG]
+        cols = [SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, MERIT_RAISE_PCT, NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG]
         df = pd.DataFrame(columns=cols)
         logger.warning("Empty hazard table created.")
     return df
@@ -144,7 +176,7 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     # Log the actual string values of constants to verify definitions
     # These constants are assumed to be imported e.g., from cost_model.constants
     logger.info(f"DEBUG CONSTANTS: SIMULATION_YEAR='{SIMULATION_YEAR}', EMP_LEVEL='{EMP_LEVEL}', EMP_TENURE_BAND='{EMP_TENURE_BAND}'")
-    logger.info(f"DEBUG CONSTANTS: TERM_RATE='{TERM_RATE}', COMP_RAISE_PCT='{COMP_RAISE_PCT}', NEW_HIRE_TERMINATION_RATE='{NEW_HIRE_TERMINATION_RATE}', COLA_PCT='{COLA_PCT}'")
+    logger.info(f"DEBUG CONSTANTS: TERM_RATE='{TERM_RATE}', MERIT_RAISE_PCT='{MERIT_RAISE_PCT}', NEW_HIRE_TERMINATION_RATE='{NEW_HIRE_TERMINATION_RATE}', COLA_PCT='{COLA_PCT}'")
 
     logger.info(f"Initial columns from Parquet: {df.columns.tolist()}")
 
@@ -154,14 +186,14 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
         'employee_level': EMP_LEVEL,
         'tenure_band': EMP_TENURE_BAND,
         'term_rate': TERM_RATE,
-        'comp_raise_pct': COMP_RAISE_PCT,  # Corrected key based on error log's 'Available columns'
+        'merit_raise_pct': MERIT_RAISE_PCT,  # Corrected key based on new schema
         'new_hire_termination_rate': NEW_HIRE_TERMINATION_RATE,
         'cola_pct': COLA_PCT  # Added key based on error log's 'Available columns'
     }
     logger.info(f"Defined rename_map: {rename_map}")
 
-    # Filter rename_map to only include columns present in the DataFrame.
-    actual_rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
+    # Filter rename_map to only include columns present in the DataFrame and where source != destination
+    actual_rename_map = {k: v for k, v in rename_map.items() if k in df.columns and k != v}
     logger.info(f"Actual rename_map to be applied: {actual_rename_map}")
 
     if actual_rename_map:
@@ -203,18 +235,18 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     ]
 
     # Check for compensation columns - either old schema (comp_raise_pct) or new schema (merit_raise_pct)
-    has_old_comp_schema = COMP_RAISE_PCT in df.columns
+    has_old_comp_schema = 'comp_raise_pct' in df.columns
     has_new_comp_schema = 'merit_raise_pct' in df.columns
 
     if has_old_comp_schema:
-        required_cols = base_required_cols + [COMP_RAISE_PCT]
+        required_cols = base_required_cols + ['comp_raise_pct']
         logger.info("Using old compensation schema with comp_raise_pct")
     elif has_new_comp_schema:
         required_cols = base_required_cols + ['merit_raise_pct']
         logger.info("Using new compensation schema with merit_raise_pct")
     else:
         # Neither schema found - this is an error
-        logger.error(f"Hazard table missing compensation columns. Expected either '{COMP_RAISE_PCT}' or 'merit_raise_pct'. Available columns: {df.columns.tolist()}")
+        logger.error(f"Hazard table missing compensation columns. Expected either 'comp_raise_pct' or 'merit_raise_pct'. Available columns: {df.columns.tolist()}")
         return pd.DataFrame()
 
     logger.info(f"Checking for required_cols (using constant values): {required_cols}")
@@ -249,8 +281,8 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
     rate_columns = [TERM_RATE, NEW_HIRE_TERMINATION_RATE, COLA_PCT]
 
     # Handle both old and new compensation column schemas
-    if COMP_RAISE_PCT in result.columns:
-        rate_columns.append(COMP_RAISE_PCT)
+    if 'comp_raise_pct' in result.columns:
+        rate_columns.append('comp_raise_pct')
     else:
         # New schema with granular raise columns
         granular_raise_columns = ['merit_raise_pct', 'promotion_raise_pct', 'promotion_rate']
@@ -269,10 +301,10 @@ def load_and_expand_hazard_table(path: str = 'data/hazard_table.parquet') -> pd.
             logger.warning(f"Rate column '{col}' not found in hazard table. It might be optional or missing.")
 
     # For backward compatibility, create comp_raise_pct if it doesn't exist but granular columns do
-    if COMP_RAISE_PCT not in result.columns and 'merit_raise_pct' in result.columns:
+    if 'comp_raise_pct' not in result.columns and 'merit_raise_pct' in result.columns:
         # Use merit_raise_pct as the primary annual raise component
         # promotion_raise_pct is handled separately in promotion logic
-        result[COMP_RAISE_PCT] = result['merit_raise_pct']
+        result['comp_raise_pct'] = result['merit_raise_pct']
         logger.info("Created comp_raise_pct column from merit_raise_pct for backward compatibility")
 
     logger.info(f"Final processed hazard table has {len(result)} rows")

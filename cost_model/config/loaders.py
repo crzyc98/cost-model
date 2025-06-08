@@ -164,6 +164,9 @@ def load_config_to_namespace(config_path: Path) -> SimpleNamespace:
         # 2) Pull new_hires sub-dict up
         nh = gp.pop('new_hires', {}) or {}
         gp.update(nh)
+        # 3) Move job_levels from root to global_parameters if present
+        if 'job_levels' in config_data and 'job_levels' not in gp:
+            gp['job_levels'] = config_data['job_levels']
         # Always update config_data with the flattened gp
         config_data['global_parameters'] = gp
         # 4) Process compensation params
