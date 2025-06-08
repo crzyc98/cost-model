@@ -223,6 +223,10 @@ def run_simulation(
     for i in range(projection_years):
         year = start_year + i
         logger.info(f"Simulating year {year}")
+
+        # Store start of year snapshot for enhanced yearly snapshot creation
+        start_of_year_snapshot = snapshot_df.copy()
+
         all_events, snapshot_df = run_one_year(
             event_log=all_events,
             prev_snapshot=snapshot_df,
@@ -260,13 +264,30 @@ def run_simulation(
             logger.debug(f"Sample EMP_AGE_BAND for year {year}: {snapshot_df[EMP_AGE_BAND].head().tolist()}")
         # --- END AGE CALCULATION INTEGRATION ---
 
-        yearly_snapshots[year] = snapshot_df.copy()
+        # Create enhanced yearly snapshot with proper employee_status_eoy
+        from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
+
+        # Get events for this year from the cumulative event log
+        year_events = all_events[all_events['simulation_year'] == year] if 'simulation_year' in all_events.columns else all_events
+
+        # Build the enhanced yearly snapshot that includes all employees active during the year
+        # and properly sets employee_status_eoy
+        enhanced_yearly_snapshot = build_enhanced_yearly_snapshot(
+            start_of_year_snapshot=start_of_year_snapshot,
+            end_of_year_snapshot=snapshot_df,
+            year_events=year_events,
+            simulation_year=year
+        )
+
+        # Use the enhanced snapshot for storage and metrics
+        yearly_snapshots[year] = enhanced_yearly_snapshot.copy()
+
         # Save snapshot and events for this year
         year_dir = scenario_output_dir / f"year={year}"
         year_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_df.to_parquet(year_dir / "snapshot.parquet")
+        enhanced_yearly_snapshot.to_parquet(year_dir / "snapshot.parquet")
         all_events.to_parquet(year_dir / "events.parquet")
-        logger.info(f"Saved outputs for year {year}")
+        logger.info(f"Saved enhanced outputs for year {year} with {len(enhanced_yearly_snapshot)} employees")
 
     logger.info(f"Simulation complete for scenario '{scenario_name}'.")
 

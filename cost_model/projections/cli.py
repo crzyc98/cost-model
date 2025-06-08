@@ -338,8 +338,9 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                 f"Terminations: {employment_summary.get('experienced_terms', 0) + employment_summary.get('new_hire_terms', 0)}"
             )
 
-            # Save EOY snapshot for this year (contains correct compensation updates)
-            yearly_eoy_snapshots[year] = eoy_snapshot
+            # Save enhanced yearly snapshot for this year (contains correct employee_status_eoy and terminated employees)
+            # FIXED: Use enhanced snapshot instead of regular EOY snapshot to preserve employee_status_eoy values
+            yearly_eoy_snapshots[year] = enhanced_yearly_snapshot
 
             # Append employment summary to list (core summaries will be calculated later using corrected function)
             all_employment_summaries.append(employment_summary)
