@@ -308,11 +308,21 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
     comp_upd = new_events[new_events["event_type"] == EVT_COMP]
     if not comp_upd.empty:
         last_comp = comp_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
-        # Only update employees that exist in current
-        valid_emp_ids = last_comp[last_comp[EMP_ID].isin(current.index)][EMP_ID]
-        if not valid_emp_ids.empty:
-            current.loc[valid_emp_ids, EMP_GROSS_COMP] = last_comp.set_index(EMP_ID).loc[valid_emp_ids, "value_num"]
-            logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
+        # Match using EMP_ID column instead of index (handles both indexed and column-based snapshots)
+        if EMP_ID in current.columns:
+            valid_emp_ids = last_comp[last_comp[EMP_ID].isin(current[EMP_ID])][EMP_ID]
+            if not valid_emp_ids.empty:
+                # Update using boolean indexing to handle integer indices
+                for emp_id in valid_emp_ids:
+                    comp_value = last_comp[last_comp[EMP_ID] == emp_id]["value_num"].iloc[0]
+                    current.loc[current[EMP_ID] == emp_id, EMP_GROSS_COMP] = comp_value
+                logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
+        else:
+            # Fallback to index-based matching for legacy snapshots
+            valid_emp_ids = last_comp[last_comp[EMP_ID].isin(current.index)][EMP_ID]
+            if not valid_emp_ids.empty:
+                current.loc[valid_emp_ids, EMP_GROSS_COMP] = last_comp.set_index(EMP_ID).loc[valid_emp_ids, "value_num"]
+                logger.debug("Updated compensation for %d employees", len(valid_emp_ids))
 
     # COLA updates - apply the COLA amount to the current compensation AFTER merit raises (DEFENSIVE)
     cola_upd = new_events[new_events["event_type"] == EVT_COLA]
@@ -321,15 +331,33 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
         last_cola = cola_upd.sort_values("event_time").groupby(EMP_ID).tail(1)
         # Add the COLA amount to the current compensation (DEFENSIVE CALCULATION)
         updated_count = 0
-        for emp_id, row in last_cola.set_index(EMP_ID).iterrows():
-            if emp_id in current.index:
-                # DEFENSIVE: Always read the most current compensation value
-                current_comp = float(current.at[emp_id, EMP_GROSS_COMP])
-                cola_amount = float(row["value_num"])
-                new_comp = current_comp + cola_amount
-                current.at[emp_id, EMP_GROSS_COMP] = new_comp
-                logger.debug(f"Applied COLA {cola_amount:.2f} to current comp {current_comp:.2f} → {new_comp:.2f} for {emp_id}")
-                updated_count += 1
+        
+        # Handle both column-based and index-based snapshots
+        if EMP_ID in current.columns:
+            # Use column-based matching for snapshots with integer indices
+            for _, row in last_cola.iterrows():
+                emp_id = row[EMP_ID]
+                matching_rows = current[current[EMP_ID] == emp_id]
+                if not matching_rows.empty:
+                    # DEFENSIVE: Always read the most current compensation value
+                    current_comp = float(matching_rows[EMP_GROSS_COMP].iloc[0])
+                    cola_amount = float(row["value_num"])
+                    new_comp = current_comp + cola_amount
+                    current.loc[current[EMP_ID] == emp_id, EMP_GROSS_COMP] = new_comp
+                    logger.debug(f"Applied COLA {cola_amount:.2f} to current comp {current_comp:.2f} → {new_comp:.2f} for {emp_id}")
+                    updated_count += 1
+        else:
+            # Fallback to index-based matching for legacy snapshots
+            for emp_id, row in last_cola.set_index(EMP_ID).iterrows():
+                if emp_id in current.index:
+                    # DEFENSIVE: Always read the most current compensation value
+                    current_comp = float(current.at[emp_id, EMP_GROSS_COMP])
+                    cola_amount = float(row["value_num"])
+                    new_comp = current_comp + cola_amount
+                    current.at[emp_id, EMP_GROSS_COMP] = new_comp
+                    logger.debug(f"Applied COLA {cola_amount:.2f} to current comp {current_comp:.2f} → {new_comp:.2f} for {emp_id}")
+                    updated_count += 1
+                    
         if updated_count > 0:
             logger.debug("Applied COLA updates to %d employees", updated_count)
 
