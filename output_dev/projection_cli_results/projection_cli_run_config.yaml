@@ -174,7 +174,7 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
             3-5: 2.0
             5-10: 1.0
             <1: 0.5
-    promotion_matrix_path: null
+    promotion_matrix_path: config/custom_promotion_matrix.yaml
     raises_hazard: !!python/object/apply:types.SimpleNamespace
       state:
         merit_base: 0.03

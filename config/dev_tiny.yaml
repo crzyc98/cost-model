@@ -26,7 +26,7 @@ global_parameters:
 
   # Promotion configuration
   dev_mode: true               # Enable dev mode features like default matrices
-  promotion_matrix_path: ~     # Use null to trigger default matrix in dev mode
+  promotion_matrix_path: "config/custom_promotion_matrix.yaml"  # Use proper promotion matrix with actual promotions
 
   # === DETAILED HAZARD PARAMETERS FOR AUTO-TUNING ===
   # These parameters replace the need for separate config/hazard_defaults.yaml

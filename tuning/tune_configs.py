@@ -1,23 +1,33 @@
 #!/usr/bin/env python3
 """
-Auto-tuning script for cost model configurations.
+Evidence-based auto-tuning script for cost model configurations.
 
-This script automatically searches for optimal configuration parameters by:
-1. Defining a search space of configuration parameters
-2. Iteratively generating random configurations within that space
-3. Running simulations with each configuration
-4. Scoring results against baseline distributions
-5. Finding the best-performing configuration
+This script searches for optimal configuration parameters using realistic ranges
+aligned with U.S. labor market benchmarks and industry data:
+
+EVIDENCE-BASED APPROACH:
+- Hiring rates: Based on BLS JOLTS data (~40% annual for all industries)
+- Termination rates: Financial services first-year attrition (15-25%)
+- Promotion rates: Industry standard 6-9%/year (vs. previous 13.8% extreme)
+- COLA projections: SSA forecasts (2.5% for 2025, declining to ~1.7%)
+- Age multipliers: Moderated to avoid unrealistic retirement cliffs
+
+PROCESS:
+1. Define evidence-based search space with realistic parameter ranges
+2. Generate random configurations within validated bounds
+3. Run simulations and extract demographic/growth metrics
+4. Score against baseline distributions with balanced weights
+5. Log realism metrics to identify outlier configurations
+6. Find best-performing configuration within plausible scenarios
 
 Usage:
-    python tuning/tune_configs.py [--iterations 25] [--output-dir tuned/]
+    python tuning/tune_configs.py [--iterations 50] [--output-dir tuned/]
 """
 
 import argparse
 import json
 import subprocess
 import yaml
-import logging
 import math
 import sys
 from datetime import datetime
@@ -64,71 +74,74 @@ DEFAULT_CENSUS_PATH = project_root / "data/census_template.parquet"
 # Search space for configuration parameters
 # Each key maps to a list of possible values to sample from
 #
-# FINAL PRODUCTION CALIBRATION CAMPAIGN (REDUX) - Based on Best Performing Campaign
-# - ACHIEVEMENT: Previous campaign achieved best score 0.057176 with +1.67% HC growth
-# - STRATEGY: Reproduce the successful Final Production Calibration Campaign parameters
-# - FOCUS: Balanced optimization targeting score <0.08 with positive HC growth +1.5% to +3.0%
-# - APPROACH: Refined parameter ranges based on proven successful configurations
-# - TARGET: Achieve production-ready configuration with score <0.08 and positive HC growth
-# PROVEN SEARCH_SPACE based on Final Production Calibration Campaign success
-# Balanced parameter ranges with demonstrated effectiveness
-# CRITICAL: COLA duplicate keys issue completely resolved
+# EVIDENCE-BASED SEARCH SPACE - Aligned with U.S. Labor Market Benchmarks
+# Based on BLS JOLTS data, SSA COLA projections, and financial services industry norms
+# - HIRING: BLS JOLTS shows ~3.5% monthly hires → ~40% annual for all industries
+# - TERMINATION: First-year attrition in white-collar financial services: 15-25%
+# - PROMOTION: Average promotion rate in financial firms: 6-9%/yr
+# - COMPENSATION: BLS ECI 10-yr avg ≈ 3.0%, SSA projects 2.5% COLA for 2025
+# - DEMOGRAPHICS: Balanced to reflect realistic age/tenure distributions
 SEARCH_SPACE = {
-    # === CORE STABILITY PARAMETERS (Final Production Calibration) ===
-    # Refined ranges based on successful Final Production Calibration Campaign
-    "global_parameters.new_hires.new_hire_rate": [0.35, 0.40, 0.45, 0.50, 0.55],
+    # === HIRING & HEADCOUNT GROWTH (Evidence-Based) ===
+    # BLS JOLTS: ~40% annual hiring for all industries, adjusted for white-collar retention
+    "global_parameters.new_hires.new_hire_rate": [0.25, 0.30, 0.35, 0.40, 0.45],
 
-    # Conservative compensation increase rates for cost control
+    # BLS ECI 10-year average ≈ 3.0% - keep existing range as appropriate
     "global_parameters.annual_compensation_increase_rate": [0.025, 0.028, 0.030, 0.032, 0.035],
 
-    # Balanced target growth for sustainable positive HC growth
+    # Typical FTE growth in mature financial services: low single digits
     "global_parameters.target_growth": [0.035, 0.040, 0.045, 0.050, 0.055],
-    
-    # New hire termination rates for balanced retention
-    "global_parameters.termination_hazard.base_rate_for_new_hire": [0.05, 0.06, 0.07, 0.08, 0.10],
-    
-    # From analysis: safe range 0.080-0.138 (mean 0.101)
-    "global_parameters.promotion_hazard.base_rate": [0.080, 0.090, 0.100, 0.120, 0.138],
-    
-    # From analysis: safe range 0.10-0.20 (mean 0.15)
+
+    # First-year attrition in white-collar financial services: 15-25%
+    "global_parameters.termination_hazard.base_rate_for_new_hire": [0.12, 0.15, 0.18, 0.20, 0.25],
+
+    # Average promotion rate in financial firms: 6-9%/yr (narrowed from 13.8% extreme)
+    "global_parameters.promotion_hazard.base_rate": [0.050, 0.065, 0.080, 0.095, 0.110],
+
+    # Keep existing range - reasonable for level dampening
     "global_parameters.promotion_hazard.level_dampener_factor": [0.10, 0.12, 0.15, 0.18, 0.20],
-    
-    # From analysis: safe range 0.020-0.032 (mean 0.026)
+
+    # Keep existing range - aligns with compensation benchmarks
     "global_parameters.raises_hazard.merit_base": [0.020, 0.023, 0.026, 0.030, 0.032],
-    
-    # === AGE AND WORKFORCE PARAMETERS ===
-    "global_parameters.new_hire_average_age": [22, 25, 27, 28],
-    "global_parameters.new_hire_age_std_dev": [2, 3, 4],
+
+    # === DEMOGRAPHIC PARAMETERS (Realistic Workforce) ===
+    # Expanded to include early-30s transfers common in financial services
+    "global_parameters.new_hire_average_age": [22, 25, 28, 30, 32],
+    "global_parameters.new_hire_age_std_dev": [2, 3, 4, 5],
     "global_parameters.max_working_age": [62, 63, 64, 65],
     
-    # === TERMINATION HAZARD MULTIPLIERS ===
+    # === TERMINATION HAZARD MULTIPLIERS (Realistic Attrition Patterns) ===
     "global_parameters.termination_hazard.level_discount_factor": [0.05, 0.08, 0.10, 0.12, 0.15],
     "global_parameters.termination_hazard.min_level_discount_multiplier": [0.3, 0.4, 0.5, 0.6],
-    
-    # Tenure multipliers - empirically validated ranges
+
+    # Tenure multipliers - realistic retention patterns
     "global_parameters.termination_hazard.tenure_multipliers.<1": [0.1, 0.2, 0.3],
     "global_parameters.termination_hazard.tenure_multipliers.1-3": [0.4, 0.6, 0.8],
     "global_parameters.termination_hazard.tenure_multipliers.3-5": [0.3, 0.4, 0.5],
     "global_parameters.termination_hazard.tenure_multipliers.5-10": [0.15, 0.20, 0.25],
     "global_parameters.termination_hazard.tenure_multipliers.10-15": [0.10, 0.12, 0.15],
     "global_parameters.termination_hazard.tenure_multipliers.15+": [0.2, 0.24, 0.3],
-    
-    # Age multipliers - from analysis: high variance acceptable
+
+    # Age multipliers - moderated to avoid unrealistic retirement cliffs
     "global_parameters.termination_hazard.age_multipliers.<30": [0.2, 0.3, 0.4],
     "global_parameters.termination_hazard.age_multipliers.30-39": [0.6, 0.8, 1.0],
     "global_parameters.termination_hazard.age_multipliers.40-49": [0.8, 1.0, 1.2],
     "global_parameters.termination_hazard.age_multipliers.50-59": [1.0, 1.5, 2.0],
-    "global_parameters.termination_hazard.age_multipliers.60-65": [4.0, 6.0, 8.0, 10.0, 15.0],
-    "global_parameters.termination_hazard.age_multipliers.65+": [5.0, 8.0, 12.0, 15.0, 20.0],
+    # Moderated from 15x to 8x max to avoid wiping out late-career talent in 1-2 years
+    "global_parameters.termination_hazard.age_multipliers.60-65": [3.0, 4.0, 5.0, 6.0, 8.0],
+    # Moderated from 20x to 10x max to avoid unrealistically instant post-65 exits
+    "global_parameters.termination_hazard.age_multipliers.65+": [6.0, 7.0, 8.0, 9.0, 10.0],
     
-    # === PROMOTION HAZARD PARAMETERS ===
-    "global_parameters.promotion_hazard.tenure_multipliers.<1": [0.3, 0.5, 0.7],
-    "global_parameters.promotion_hazard.tenure_multipliers.1-3": [1.2, 1.5, 1.8],
+    # === PROMOTION HAZARD PARAMETERS (Realistic Career Progression) ===
+    # Promotions in year 1 are rare - keep lower end
+    "global_parameters.promotion_hazard.tenure_multipliers.<1": [0.3, 0.4, 0.5],
+    # Many first promotions in 2-3 years - moderated from 1.8x
+    "global_parameters.promotion_hazard.tenure_multipliers.1-3": [1.1, 1.3, 1.5],
     "global_parameters.promotion_hazard.tenure_multipliers.3-5": [1.5, 2.0, 2.5],
     "global_parameters.promotion_hazard.tenure_multipliers.5-10": [0.8, 1.0, 1.2],
     "global_parameters.promotion_hazard.tenure_multipliers.10-15": [0.2, 0.3, 0.4],
     "global_parameters.promotion_hazard.tenure_multipliers.15+": [0.05, 0.1, 0.15],
-    
+
     "global_parameters.promotion_hazard.age_multipliers.<30": [1.2, 1.4, 1.6],
     "global_parameters.promotion_hazard.age_multipliers.30-39": [1.0, 1.1, 1.3],
     "global_parameters.promotion_hazard.age_multipliers.40-49": [0.7, 0.9, 1.1],
@@ -140,13 +153,14 @@ SEARCH_SPACE = {
     "global_parameters.raises_hazard.merit_low_level_bump_value": [0.002, 0.003, 0.005],
     "global_parameters.raises_hazard.promotion_raise": [0.08, 0.10, 0.12],
     
-    # === COLA PARAMETERS - SPECIAL HANDLING TO PREVENT DUPLICATE KEYS ===
-    # These will be handled separately to ensure clean generation
-    "_cola_2025": [0.015, 0.018, 0.020],
-    "_cola_2026": [0.012, 0.015, 0.018], 
-    "_cola_2027": [0.008, 0.010, 0.015],
-    "_cola_2028": [0.007, 0.010, 0.012],
-    "_cola_2029": [0.004, 0.008, 0.010]
+    # === COLA PARAMETERS - Based on SSA Projections and CPI Forecasts ===
+    # SSA projects 2.5% for 2025; recent years rarely sub-1%
+    # Updated to reflect realistic inflation path vs. previous low estimates
+    "_cola_2025": [0.020, 0.025, 0.030],  # SSA projects 2.5% for 2025
+    "_cola_2026": [0.018, 0.020, 0.025],  # Gradual decline from 2025 peak
+    "_cola_2027": [0.015, 0.018, 0.022],  # Continued moderation
+    "_cola_2028": [0.015, 0.017, 0.020],  # Stabilizing around long-term avg
+    "_cola_2029": [0.015, 0.017, 0.020]   # Long-term inflation expectations
 }
 
 
@@ -340,16 +354,13 @@ def score(sim_summary: Dict[str, Any]) -> float:
     pay_growth_err = abs(sim_pay_growth - TARGET_PAY_GROWTH)
 
     # Define weights for different error components
-    # UPDATED for Final Production Calibration Campaign (REDUX):
-    # Based on the most successful campaign that achieved score 0.057176 with +1.67% HC growth
-    # - BALANCED HC_GROWTH weight to 0.50 (Strong focus but not overwhelming)
-    # - MAINTAIN AGE weight at 0.25 (Important for workforce demographics)
-    # - MAINTAIN TENURE weight at 0.20 (Critical for retention patterns)
-    # - MAINTAIN PAY_GROWTH weight at 0.05 (Controlled compensation costs)
-    WEIGHT_HC_GROWTH = 0.50    # STRONG: Prioritize positive headcount growth achievement
-    WEIGHT_AGE = 0.25          # IMPORTANT: Maintain age distribution balance
-    WEIGHT_TENURE = 0.20       # IMPORTANT: Tenure balance for retention
-    WEIGHT_PAY_GROWTH = 0.05   # LOW: Controlled compensation growth
+    # EVIDENCE-BASED SCORING WEIGHTS:
+    # Rebalanced to prioritize demographic preservation over pure growth chasing
+    # Based on recommendation: "If the real objective is maintain age + tenure first"
+    WEIGHT_AGE = 0.35          # HIGH: Preserve age distribution (primary objective)
+    WEIGHT_TENURE = 0.30       # HIGH: Maintain tenure balance (retention patterns)
+    WEIGHT_HC_GROWTH = 0.30    # MODERATE: Sustainable headcount growth
+    WEIGHT_PAY_GROWTH = 0.05   # LOW: Controlled compensation costs
 
     # Calculate weighted total score
     total_score = (
@@ -364,6 +375,46 @@ def score(sim_summary: Dict[str, Any]) -> float:
           f"hc_growth_err={hc_growth_err:.4f}, pay_growth_err={pay_growth_err:.4f}")
 
     return total_score
+
+
+def log_realism_metrics(sim_summary: Dict[str, Any]) -> None:
+    """
+    Log realism metrics to help identify outlier configurations.
+
+    Tracks key indicators that should align with observable labor market behavior:
+    - First-year attrition rate
+    - Workforce age distribution skew
+    - Promotion rate per FTE
+    - Total compensation growth vs. inflation
+
+    Args:
+        sim_summary: Dictionary containing simulation summary statistics
+    """
+    # Extract key metrics for realism checking
+    tenure_hist = sim_summary.get("tenure_hist", {})
+    age_hist = sim_summary.get("age_hist", {})
+    hc_growth = sim_summary.get("hc_growth", 0.0)
+    pay_growth = sim_summary.get("pay_growth", 0.0)
+
+    # Calculate realism indicators
+    first_year_pct = tenure_hist.get("<1", 0.0) * 100
+    young_workforce_pct = age_hist.get("<30", 0.0) * 100
+
+    # Log realism warnings for extreme values
+    if first_year_pct > 40:
+        print(f"REALISM WARNING: High first-year workforce ({first_year_pct:.1f}%) - may indicate excessive turnover")
+
+    if young_workforce_pct > 40:
+        print(f"REALISM WARNING: Very young workforce ({young_workforce_pct:.1f}% <30) - unusual for financial services")
+
+    if abs(hc_growth) > 0.15:  # >15% growth/decline
+        print(f"REALISM WARNING: Extreme headcount change ({hc_growth*100:.1f}%) - unsustainable in practice")
+
+    if pay_growth > 0.08:  # >8% compensation growth
+        print(f"REALISM WARNING: High compensation growth ({pay_growth*100:.1f}%) - may exceed budget constraints")
+
+    print(f"Realism metrics: <1yr={first_year_pct:.1f}%, <30age={young_workforce_pct:.1f}%, "
+          f"HC_growth={hc_growth*100:.1f}%, Pay_growth={pay_growth*100:.1f}%")
 
 
 def set_nested(config: Dict[str, Any], key: str, value: Any) -> None:
@@ -416,11 +467,22 @@ def iterate_configs(n: int = 25) -> List[Path]:
     """
     Generate n random configurations by sampling from the search space.
 
+    Uses evidence-based parameter ranges aligned with U.S. labor market benchmarks:
+    - Hiring rates based on BLS JOLTS data
+    - Termination rates reflecting financial services norms
+    - Promotion rates within industry standards
+    - COLA projections based on SSA forecasts
+
+    Future improvements:
+    - Implement conditional sampling to avoid impossible pay budgets
+    - Add empirical baselines from historical HRIS data
+    - Convert extreme multipliers to additive modifiers
+
     Args:
         n: Number of configurations to generate
 
-    Yields:
-        Path to each generated configuration file
+    Returns:
+        List of paths to generated configuration files
     """
     if not TEMPLATE.exists():
         raise FileNotFoundError(f"Template configuration not found: {TEMPLATE}")
@@ -769,8 +831,10 @@ def main():
             print(f"Skipping {cfg_path} due to simulation failure")
             continue
 
-        # Score results
+        # Score results and log realism metrics
         score_val = score(summary)
+        log_realism_metrics(summary)  # Add realism checking
+
         results.append({
             "config_path": str(cfg_path),
             "score": score_val,

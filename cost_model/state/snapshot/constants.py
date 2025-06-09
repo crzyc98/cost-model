@@ -75,3 +75,62 @@ SNAPSHOT_DTYPES = {
     EMP_EXITED: pd.BooleanDtype(),
     SIMULATION_YEAR: pd.Int64Dtype()  # Make nullable
 }
+
+# Default compensation values
+DEFAULT_COMPENSATION = 50000.0
+
+# Level-based default compensation
+LEVEL_BASED_DEFAULTS = {
+    1: 50000.0,
+    2: 75000.0,
+    3: 100000.0,
+    4: 150000.0
+}
+
+# Column name mappings for standardization
+COLUMN_MAPPING = {
+    # Standard mappings from schema.py
+    'ssn': EMP_ID,
+    'employee_ssn': EMP_ID,
+    'birth_date': EMP_BIRTH_DATE,
+    'hire_date': EMP_HIRE_DATE,
+    'termination_date': EMP_TERM_DATE,
+    'gross_compensation': EMP_GROSS_COMP,
+    
+    # Additional mappings specific to CSV structure
+    'employee_birth_date': EMP_BIRTH_DATE,
+    'employee_hire_date': EMP_HIRE_DATE,
+    'employee_termination_date': EMP_TERM_DATE,
+    'employee_gross_compensation': EMP_GROSS_COMP,
+    'employee_deferral_rate': EMP_DEFERRAL_RATE
+}
+
+# Tenure band definitions
+TENURE_BANDS = {
+    '<1': (0, 1),
+    '1-3': (1, 3),
+    '3-5': (3, 5),
+    '5-10': (5, 10),
+    '10-15': (10, 15),
+    '15+': (15, float('inf'))
+}
+
+# Tenure bins and labels for pd.cut
+TENURE_BINS = [0, 1, 3, 5, 10, 15, float('inf')]
+TENURE_LABELS = ['<1', '1-3', '3-5', '5-10', '10-15', '15+']
+
+# Columns to remove from consolidated snapshots
+COLUMNS_TO_REMOVE = [
+    'term_rate',
+    'comp_raise_pct',
+    'new_hire_term_rate',
+    'cola_pct',
+    'cfg'
+]
+
+# Default employee status
+DEFAULT_EMPLOYEE_STATUS = {
+    'ACTIVE': 'Active',
+    'TERMINATED': 'Terminated',
+    'INACTIVE': 'Inactive'
+}

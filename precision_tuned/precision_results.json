@@ -1,7 +1,0 @@
-[
-  {
-    "config_path": "precision_tuned/precision_config_000_20250606_210148.yaml",
-    "precision_score": 0.039901542954105994,
-    "hc_growth": 0.03333333333333333,
-    "pay_growth": -0.05646975257487866,
-    "within_tolerance": 

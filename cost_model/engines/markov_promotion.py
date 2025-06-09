@@ -404,9 +404,24 @@ def apply_markov_promotions(
     else:
         logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: No NaN values in {EMP_LEVEL}, all good!")
 
-    # Create promotion events for level changes
-    promoted_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
+    # Create promotion events ONLY for UPWARD level changes (actual promotions)
+    # Demotions should not be treated as "promotions" or get promotion raises
+    promoted_mask = (out[EMP_LEVEL] > snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
     promoted = out[promoted_mask].copy()
+    
+    # Log promotion vs demotion statistics for debugging
+    all_changes_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
+    demotion_mask = (out[EMP_LEVEL] < snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
+    
+    num_promotions = promoted_mask.sum()
+    num_demotions = demotion_mask.sum()
+    num_no_change = ((out[EMP_LEVEL] == snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]).sum()
+    
+    logger.info(f"[PROMOTION] Year {simulation_year}: Actual promotions: {num_promotions}, "
+               f"Demotions: {num_demotions}, No change: {num_no_change}")
+    
+    if num_demotions > 0:
+        logger.debug(f"[PROMOTION] Demotions detected but will NOT create promotion events for them")
 
     if promoted.empty:
         return (
