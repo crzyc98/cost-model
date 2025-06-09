@@ -48,21 +48,28 @@ class SnapshotTransformer:
         Returns:
             DataFrame with tenure calculations added
         """
-        # Use standardized column names
-        EMP_HIRE_DATE = 'EMP_HIRE_DATE'
+        # Check which hire date column is available
+        hire_date_columns = ['EMP_HIRE_DATE', 'employee_hire_date']
+        hire_date_col = None
+        for col in hire_date_columns:
+            if col in df.columns:
+                hire_date_col = col
+                break
+        
+        if hire_date_col is None:
+            raise SnapshotBuildError(f"Cannot calculate tenure: No hire date column found. Available columns: {list(df.columns)}")
+        
+        # Use standardized column names for outputs
         EMP_TENURE = 'EMP_TENURE'
         EMP_TENURE_BAND = 'EMP_TENURE_BAND'
         
         if reference_date is None:
             reference_date = datetime(self.config.start_year, 1, 1)
         
-        logger.debug(f"Calculating tenure as of {reference_date}")
-        
-        if EMP_HIRE_DATE not in df.columns:
-            raise SnapshotBuildError("Cannot calculate tenure: EMP_HIRE_DATE column missing")
+        logger.debug(f"Calculating tenure as of {reference_date} using column {hire_date_col}")
         
         # Calculate tenure in years
-        hire_dates = pd.to_datetime(df[EMP_HIRE_DATE])
+        hire_dates = pd.to_datetime(df[hire_date_col])
         tenure_days = (reference_date - hire_dates).dt.days
         df[EMP_TENURE] = tenure_days / 365.25  # Account for leap years
         
@@ -105,11 +112,22 @@ class SnapshotTransformer:
         logger.debug(f"Calculating age as of {reference_date}")
         
         # Use existing age calculation function if available
-        try:
-            df = apply_age(df, reference_date)
-            logger.debug(f"Applied age calculations using existing function")
-        except Exception as e:
-            logger.warning(f"Existing age function failed, using manual calculation: {e}")
+        if apply_age is not None:
+            try:
+                # Call apply_age with the required birth_col parameter
+                df = apply_age(
+                    df=df,
+                    birth_col=EMP_BIRTH_DATE,
+                    as_of=reference_date,
+                    out_age_col=EMP_AGE,
+                    out_band_col=EMP_AGE_BAND
+                )
+                logger.debug(f"Applied age calculations using existing function")
+            except Exception as e:
+                logger.warning(f"Existing age function failed, using manual calculation: {e}")
+                df = self._manual_age_calculation(df, reference_date)
+        else:
+            logger.debug("Existing age function not available, using manual calculation")
             df = self._manual_age_calculation(df, reference_date)
         
         return df
@@ -281,10 +299,24 @@ class SnapshotTransformer:
         # Use standardized column names
         EMP_LEVEL = 'EMP_LEVEL'
         EMP_LEVEL_SOURCE = 'EMP_LEVEL_SOURCE'
-        EMP_GROSS_COMP = 'EMP_GROSS_COMP'
+        
+        # Check which compensation column is available
+        comp_columns = ['EMP_GROSS_COMP', 'employee_gross_compensation']
+        comp_col = None
+        for col in comp_columns:
+            if col in df.columns:
+                comp_col = col
+                break
+        
+        if comp_col is None:
+            logger.error(f"No compensation column found. Available columns: {list(df.columns)}")
+            # Set default levels
+            df[EMP_LEVEL] = 'BAND_1'
+            df[EMP_LEVEL_SOURCE] = 'NO_COMPENSATION_DATA'
+            return df
         
         # Simple compensation-based level assignment
-        compensation = df[EMP_GROSS_COMP].fillna(0)
+        compensation = df[comp_col].fillna(0)
         
         conditions = [
             compensation >= 100000,

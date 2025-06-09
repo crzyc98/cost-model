@@ -669,13 +669,22 @@ def _apply_forced_terminations(
     # Create events DataFrame
     term_events_df = pd.DataFrame(term_events, columns=EVENT_COLS) if term_events else pd.DataFrame(columns=EVENT_COLS)
 
-    # Update snapshot to remove terminated employees
+    # Update snapshot to mark terminated employees as inactive (don't remove them)
     terminated_ids = set(selected_for_termination[EMP_ID])
-    updated_snapshot = snapshot[~snapshot[EMP_ID].isin(terminated_ids)].copy()
+    updated_snapshot = snapshot.copy()
+
+    # Mark terminated employees as inactive and set termination date
+    terminated_mask = updated_snapshot[EMP_ID].isin(terminated_ids)
+    updated_snapshot.loc[terminated_mask, EMP_ACTIVE] = False
+    updated_snapshot.loc[terminated_mask, 'employee_termination_date'] = term_date
+
+    # Count active employees before and after
+    active_before = snapshot[EMP_ACTIVE].sum()
+    active_after = updated_snapshot[EMP_ACTIVE].sum()
 
     logger.info(
         f"[FORCED TERMS] Applied {len(term_events)} forced terminations. "
-        f"Snapshot size: {len(snapshot)} → {len(updated_snapshot)}"
+        f"Active employees: {active_before} → {active_after} (terminated: {len(terminated_ids)})"
     )
 
     return [term_events_df], updated_snapshot

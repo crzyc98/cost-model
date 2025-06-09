@@ -210,8 +210,8 @@ EVENT_COLS: List[str] = [
 ]
 
 # Configuration columns for snapshot defaults
-EMP_TENURE_BAND = "employee_tenure_band"
-EMP_AGE_BAND = "employee_age_band"
+# EMP_TENURE_BAND already defined above at line 77
+# EMP_AGE_BAND already defined above at line 78
 COMP_RAISE_PCT = "comp_raise_pct"
 COLA_PCT = "cola_pct"
 CFG = "cfg"
