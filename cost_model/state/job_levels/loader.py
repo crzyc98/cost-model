@@ -106,32 +106,65 @@ def ingest_with_imputation(
     df = assign_levels_to_dataframe(df, comp_col, target_level_col)
     
     # Then, perform percentile-based imputation for any remaining NAs
-    if df[target_level_col].isna().any():
+    # Handle potential duplicate columns by selecting the first one
+    level_series = df[target_level_col]
+    if isinstance(level_series, pd.DataFrame):
+        level_series = level_series.iloc[:, 0]
+    
+    if level_series.isna().any():
         # Create a temporary column for imputed levels
         df = infer_job_level_by_percentile(df, comp_col)
         
         # Fill any remaining NAs with the imputed levels
-        na_mask = df[target_level_col].isna()
+        # Refresh level_series after imputation
+        level_series = df[target_level_col]
+        if isinstance(level_series, pd.DataFrame):
+            level_series = level_series.iloc[:, 0]
+        na_mask = level_series.isna()
+        
         if 'imputed_level' in df.columns and na_mask.any():
             df.loc[na_mask, target_level_col] = df.loc[na_mask, 'imputed_level']
     
     # Ensure the target column is of integer type
-    df[target_level_col] = pd.to_numeric(df[target_level_col], errors='coerce').astype('Int64')
+    # Handle potential duplicate columns for conversion
+    target_series = df[target_level_col]
+    if isinstance(target_series, pd.DataFrame):
+        target_series = target_series.iloc[:, 0]
+    df[target_level_col] = pd.to_numeric(target_series, errors='coerce').astype('Int64')
     
     # Track source of the level assignment
     if EMP_LEVEL_SOURCE not in df.columns:
         df[EMP_LEVEL_SOURCE] = pd.NA
+    else:
+        # Ensure the column can accept the values we want to set
+        # Convert to object type if it's categorical to avoid category errors
+        if hasattr(df[EMP_LEVEL_SOURCE], 'dtype') and hasattr(df[EMP_LEVEL_SOURCE].dtype, 'name'):
+            if 'category' in str(df[EMP_LEVEL_SOURCE].dtype):
+                df[EMP_LEVEL_SOURCE] = df[EMP_LEVEL_SOURCE].astype('object')
     
     # Update source information
-    assigned_mask = df[target_level_col].notna()
+    # Handle potential duplicate columns for assigned mask
+    assigned_level_series = df[target_level_col]
+    if isinstance(assigned_level_series, pd.DataFrame):
+        assigned_level_series = assigned_level_series.iloc[:, 0]
+    assigned_mask = assigned_level_series.notna()
     
     # Mark levels that came from the input level_col
-    if level_col in df.columns and not df[level_col].isna().all():
-        from_band = df[level_col].notna() & assigned_mask
-        df.loc[from_band, EMP_LEVEL_SOURCE] = 'salary-band'
+    if level_col in df.columns:
+        # Handle potential duplicate columns for level_col
+        level_col_series = df[level_col]
+        if isinstance(level_col_series, pd.DataFrame):
+            level_col_series = level_col_series.iloc[:, 0]
+        
+        if not level_col_series.isna().all():
+            from_band = level_col_series.notna() & assigned_mask
+            df.loc[from_band, EMP_LEVEL_SOURCE] = 'salary-band'
     
     # Mark levels that were imputed
-    from_imputed = assigned_mask & (~from_band if 'from_band' in locals() else assigned_mask)
+    if 'from_band' in locals():
+        from_imputed = assigned_mask & (~from_band)
+    else:
+        from_imputed = assigned_mask
     df.loc[from_imputed, EMP_LEVEL_SOURCE] = 'percentile-impute'
     
     # Clean up any temporary columns

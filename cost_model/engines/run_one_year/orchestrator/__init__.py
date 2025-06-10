@@ -95,7 +95,7 @@ def run_one_year(
         )
 
         # Create year context
-        year_context = YearContext(
+        year_context = YearContext.create(
             year=year,
             global_params=global_params,
             plan_rules=plan_rules,
@@ -107,28 +107,28 @@ def run_one_year(
         )
 
         # Step 1: Process promotions for experienced employees
-        promotion_events, snapshot = promotion_orchestrator.process_promotions(
+        promotion_events, snapshot = promotion_orchestrator.get_events(
             snapshot, year_context
         )
         event_manager.add_events(promotion_events, 'promotion')
         diagnostic_tracker.track_stage(snapshot, "Post-Promotions")
 
         # Step 2: Process terminations for experienced employees
-        termination_events, snapshot = termination_orchestrator.process_experienced_terminations(
+        termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
             snapshot, year_context
         )
         event_manager.add_events(termination_events, 'termination')
         diagnostic_tracker.track_stage(snapshot, "Post-Experienced-Terminations")
 
         # Step 3: Process hiring
-        hiring_events, snapshot = hiring_orchestrator.process_hiring(
+        hiring_events, snapshot = hiring_orchestrator.get_events(
             snapshot, year_context
         )
         event_manager.add_events(hiring_events, 'hiring')
         diagnostic_tracker.track_stage(snapshot, "Post-Hiring")
 
         # Step 4: Process new hire terminations
-        nh_termination_events, snapshot = termination_orchestrator.process_new_hire_terminations(
+        nh_termination_events, snapshot = termination_orchestrator.get_new_hire_termination_events(
             snapshot, year_context
         )
         event_manager.add_events(nh_termination_events, 'nh_termination')
@@ -194,11 +194,10 @@ def _prepare_inputs(
     diagnostic_tracker.track_stage(snapshot, "Initial-Snapshot")
 
     # Validate and extract hazard slice
-    hazard_slice = validate_and_extract_hazard_slice(hazard_table, year, logger)
+    hazard_slice = validate_and_extract_hazard_slice(hazard_table, year)
 
     # Filter to valid employee IDs
-    valid_employee_ids = filter_valid_employee_ids(snapshot)
-    snapshot = snapshot[snapshot[EMP_ID].isin(valid_employee_ids)]
+    snapshot = filter_valid_employee_ids(snapshot, logger)
 
     # Ensure simulation year column
     snapshot = ensure_simulation_year_column(snapshot, year)

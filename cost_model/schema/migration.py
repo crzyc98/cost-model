@@ -261,6 +261,28 @@ def migrate_legacy_columns(df: pd.DataFrame,
         
         # Rename columns
         if column_mapping:
+            # Check for potential duplicate target columns before renaming
+            target_columns = list(column_mapping.values())
+            target_counts = {}
+            for target in target_columns:
+                target_counts[target] = target_counts.get(target, 0) + 1
+            
+            duplicated_targets = {k: v for k, v in target_counts.items() if v > 1}
+            if duplicated_targets:
+                logger.warning(f"Multiple source columns map to the same target: {duplicated_targets}")
+                
+                # Remove columns that would create duplicates - keep the first mapping
+                filtered_mapping = {}
+                seen_targets = set()
+                for old_col, new_col in column_mapping.items():
+                    if new_col not in seen_targets:
+                        filtered_mapping[old_col] = new_col
+                        seen_targets.add(new_col)
+                    else:
+                        logger.debug(f"Skipping duplicate mapping: {old_col} -> {new_col}")
+                
+                column_mapping = filtered_mapping
+            
             migrated_df = migrated_df.rename(columns=column_mapping)
             result.migrated_columns = column_mapping
             logger.info(f"Migrated {len(column_mapping)} columns to new schema")

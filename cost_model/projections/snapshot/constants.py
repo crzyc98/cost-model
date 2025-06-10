@@ -10,7 +10,13 @@ from typing import Dict, Any
 # Default compensation values
 DEFAULT_COMPENSATION = 50000.0
 
-# Level-based default compensation
+# Level-based default compensation mapping
+LEVEL_COMPENSATION_MAP = {
+    1: 40000, 2: 50000, 3: 65000, 4: 85000, 5: 110000,
+    6: 140000, 7: 180000, 8: 230000, 9: 300000, 10: 400000
+}
+
+# Legacy level-based defaults for backward compatibility
 LEVEL_BASED_DEFAULTS: Dict[str, float] = {
     'BAND_1': 45000.0,
     'BAND_2': 55000.0, 

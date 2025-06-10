@@ -19,6 +19,7 @@ from .types import (
     TransformerConfig, CompensationExtractionResult
 )
 # Import unified schema
+from cost_model.utils.frame_tools import _dedup_columns
 from cost_model.schema import SnapshotColumns, migrate_legacy_columns
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,19 @@ class SnapshotTransformer:
             config: Snapshot configuration containing transformation parameters.
         """
         self.config = config
+        self._migration_done = False  # Track if migration has been performed
+    
+    def _ensure_schema_migration(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Ensure schema migration is performed once and deduplication is applied."""
+        if not self._migration_done:
+            df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
+            if not migration_result.success:
+                logger.warning(f"Column migration issues: {migration_result.warnings}")
+            self._migration_done = True
+        
+        # Always apply deduplication to handle any other sources of duplicate columns
+        df = _dedup_columns(df)
+        return df
     
     def apply_tenure_calculations(self, df: pd.DataFrame, reference_date: Optional[datetime] = None) -> pd.DataFrame:
         """
@@ -50,11 +64,9 @@ class SnapshotTransformer:
         Returns:
             DataFrame with tenure calculations added
         """
-        # Migrate legacy columns if needed
-        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
-        if not migration_result.success:
-            logger.warning(f"Column migration issues: {migration_result.warnings}")
-        
+        # Ensure schema migration and deduplication
+        df = self._ensure_schema_migration(df)
+
         # Use unified schema column names
         hire_date_col = SnapshotColumns.EMP_HIRE_DATE
         if hire_date_col not in df.columns:
@@ -97,10 +109,8 @@ class SnapshotTransformer:
         Returns:
             DataFrame with age calculations added
         """
-        # Migrate legacy columns if needed
-        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
-        if not migration_result.success:
-            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        # Ensure schema migration and deduplication
+        df = self._ensure_schema_migration(df)
         
         # Use unified schema column names
         birth_date_col = SnapshotColumns.EMP_BIRTH_DATE
@@ -148,10 +158,8 @@ class SnapshotTransformer:
         Returns:
             DataFrame with contribution calculations added
         """
-        # Migrate legacy columns if needed
-        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
-        if not migration_result.success:
-            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        # Ensure schema migration and deduplication
+        df = self._ensure_schema_migration(df)
         
         # Use unified schema column names
         comp_col = SnapshotColumns.EMP_GROSS_COMP
@@ -191,10 +199,8 @@ class SnapshotTransformer:
         Returns:
             DataFrame with job level inference applied
         """
-        # Migrate legacy columns if needed
-        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
-        if not migration_result.success:
-            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        # Ensure schema migration and deduplication
+        df = self._ensure_schema_migration(df)
         
         # Use unified schema column names
         level_col = SnapshotColumns.EMP_LEVEL
@@ -210,8 +216,27 @@ class SnapshotTransformer:
         
         if ingest_with_imputation is not None:
             try:
+                # Store original DataFrame structure
+                original_df = df.copy()
+                
                 # Use existing job level inference if available
-                df = ingest_with_imputation(df)
+                level_result = ingest_with_imputation(df)
+                
+                # Merge the level inference results back into the original DataFrame
+                # ingest_with_imputation returns only [EMP_ID, EMP_LEVEL, EMP_LEVEL_SOURCE]
+                emp_id_col = SnapshotColumns.EMP_ID
+                
+                # Update the levels in the original DataFrame
+                if emp_id_col in level_result.columns and emp_id_col in original_df.columns:
+                    # Create a mapping of employee IDs to levels
+                    level_mapping = level_result.set_index(emp_id_col)
+                    
+                    # Update levels in original DataFrame
+                    for col in [level_col, level_source_col]:
+                        if col in level_mapping.columns:
+                            original_df[col] = original_df[emp_id_col].map(level_mapping[col]).fillna(original_df.get(col, pd.NA))
+                
+                df = original_df
                 logger.debug("Applied job level inference using existing function")
             except Exception as e:
                 logger.warning(f"Existing job level function failed, using fallback: {e}")
@@ -232,10 +257,8 @@ class SnapshotTransformer:
         Returns:
             DataFrame with normalized compensation
         """
-        # Migrate legacy columns if needed
-        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
-        if not migration_result.success:
-            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        # Ensure schema migration and deduplication
+        df = self._ensure_schema_migration(df)
         
         # Use unified schema column names
         level_col = SnapshotColumns.EMP_LEVEL
@@ -253,8 +276,19 @@ class SnapshotTransformer:
         
         # Fill missing compensation with level-based defaults
         missing_comp = df[comp_col].isna()
-        if missing_comp.any():
-            logger.info(f"Filling {missing_comp.sum()} missing compensation values")
+        # Safely handle any type of Series result
+        try:
+            missing_count = missing_comp.sum()
+            # Convert to Python int safely
+            if isinstance(missing_count, (int, float, np.number)):
+                missing_count = int(missing_count)
+            else:
+                missing_count = 0  # Default if sum() returns something unexpected
+        except Exception:
+            missing_count = 0  # Handle any errors
+
+        if missing_count > 0:
+            logger.info(f"Filling {missing_count} missing compensation values")
             
             for level, default_comp in LEVEL_BASED_DEFAULTS.items():
                 level_mask = (df[level_col] == level) & missing_comp
@@ -262,10 +296,21 @@ class SnapshotTransformer:
             
             # Fill any remaining missing values with global default
             still_missing = df[comp_col].isna()
-            if still_missing.any():
+            # Safely handle any type of Series result
+            try:
+                still_missing_count = still_missing.sum()
+                # Convert to Python int safely
+                if isinstance(still_missing_count, (int, float, np.number)):
+                    still_missing_count = int(still_missing_count)
+                else:
+                    still_missing_count = 0  # Default if sum() returns something unexpected
+            except Exception:
+                still_missing_count = 0  # Handle any errors
+
+            if still_missing_count > 0:
                 from .constants import DEFAULT_COMPENSATION
                 df.loc[still_missing, comp_col] = DEFAULT_COMPENSATION
-                logger.warning(f"Used global default compensation for {still_missing.sum()} employees")
+                logger.warning(f"Used global default compensation for {still_missing_count} employees")
         
         return df
     
@@ -336,21 +381,35 @@ class SnapshotTransformer:
             df[level_source_col] = 'NO_COMPENSATION_DATA'
             return df
         
+        # Handle empty DataFrame
+        if df.empty:
+            logger.warning("Empty DataFrame provided to fallback job level inference")
+            return df
+        
         # Simple compensation-based level assignment
-        compensation = df[comp_col].fillna(0)
+        try:
+            compensation = df[comp_col].fillna(0).astype(float)
+            
+            # Use numpy arrays to ensure proper boolean conditions for np.select
+            conditions = [
+                (compensation >= 100000).values,
+                (compensation >= 80000).values,
+                (compensation >= 60000).values,
+                (compensation >= 40000).values,
+                (compensation >= 20000).values
+            ]
+            
+            choices = ['BAND_5', 'BAND_4', 'BAND_3', 'BAND_2', 'BAND_1']
+            
+            df[level_col] = np.select(conditions, choices, default='BAND_1')
+            df[level_source_col] = 'INFERRED_FROM_COMPENSATION'
+            
+            logger.warning("Used fallback job level inference based on compensation")
+            
+        except Exception as e:
+            logger.error(f"Error in fallback job level inference: {e}")
+            # Set default values as final fallback
+            df[level_col] = 'BAND_1'
+            df[level_source_col] = 'FALLBACK_DEFAULT'
         
-        conditions = [
-            compensation >= 100000,
-            compensation >= 80000,
-            compensation >= 60000,
-            compensation >= 40000,
-            compensation >= 20000
-        ]
-        
-        choices = ['BAND_5', 'BAND_4', 'BAND_3', 'BAND_2', 'BAND_1']
-        
-        df[level_col] = np.select(conditions, choices, default='BAND_1')
-        df[level_source_col] = 'INFERRED_FROM_COMPENSATION'
-        
-        logger.warning("Used fallback job level inference based on compensation")
         return df

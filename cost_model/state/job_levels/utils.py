@@ -39,7 +39,19 @@ def assign_levels_to_dataframe(
         df[target_level_col] = pd.NA
         
     # Only process rows where level is not already set
-    mask = df[target_level_col].isna()
+    # Handle potential duplicate columns by selecting the first one
+    if target_level_col in df.columns:
+        level_series = df[target_level_col]
+        # If duplicate columns exist, pandas returns a DataFrame - take the first column
+        if isinstance(level_series, pd.DataFrame):
+            level_series = level_series.iloc[:, 0]
+        mask = level_series.isna()
+    else:
+        # Column doesn't exist, all values need to be set
+        mask = pd.Series([True] * len(df), index=df.index)
+    
+    if len(mask) == 0:
+        return df
     if not mask.any():
         return df
         
@@ -64,7 +76,11 @@ def assign_levels_to_dataframe(
     labels = [level.level_id for level in sorted_levels]
     
     # Create a copy of the compensation column for processing
-    comp_values = df.loc[mask, comp_column].copy()
+    # Handle potential duplicate columns by selecting the first one
+    comp_series = df[comp_column]
+    if isinstance(comp_series, pd.DataFrame):
+        comp_series = comp_series.iloc[:, 0]
+    comp_values = comp_series.loc[mask].copy()
     
     # Log any values outside the expected range
     below_min = (comp_values < min_comp).sum()
@@ -97,7 +113,12 @@ def assign_levels_to_dataframe(
     
     # Handle any values that couldn't be binned (shouldn't happen with clip)
     # but just in case, assign them to the closest level
-    na_mask = df[target_level_col].isna() & mask
+    # Handle potential duplicate columns for level checking
+    level_check_series = df[target_level_col]
+    if isinstance(level_check_series, pd.DataFrame):
+        level_check_series = level_check_series.iloc[:, 0]
+    na_mask = level_check_series.isna() & mask
+    
     if na_mask.any():
         logger.warning(
             f"Could not assign levels to {na_mask.sum()} employees. "
@@ -105,7 +126,11 @@ def assign_levels_to_dataframe(
         )
         
         for idx in df[na_mask].index:
-            comp = df.at[idx, comp_column]
+            # Handle potential duplicate columns for compensation access
+            if isinstance(comp_series, pd.DataFrame):
+                comp = comp_series.iloc[0].at[idx]
+            else:
+                comp = comp_series.at[idx]
             # Find the level with the closest min_compensation
             closest_level = min(
                 sorted_levels,
@@ -117,7 +142,12 @@ def assign_levels_to_dataframe(
             df.at[idx, target_level_col] = closest_level.level_id
     
     # Handle any remaining NAs by assigning to the closest level
-    na_mask = df[target_level_col].isna() & mask
+    # Refresh the level check series
+    level_check_series = df[target_level_col]
+    if isinstance(level_check_series, pd.DataFrame):
+        level_check_series = level_check_series.iloc[:, 0]
+    na_mask = level_check_series.isna() & mask
+    
     if na_mask.any():
         logger.warning(
             f"Could not assign levels to {na_mask.sum()} employees. "
@@ -126,7 +156,11 @@ def assign_levels_to_dataframe(
         
         # For each NA, find the closest level by min_compensation
         for idx in df[na_mask].index:
-            comp = df.at[idx, comp_column]
+            # Handle potential duplicate columns for compensation access
+            if isinstance(comp_series, pd.DataFrame):
+                comp = comp_series.iloc[0].at[idx]
+            else:
+                comp = comp_series.at[idx]
             # Find the level with the closest min_compensation
             closest_level = min(
                 sorted_levels,

@@ -284,8 +284,14 @@ def create_initial_snapshot(start_year: int, census_path: Union[str, Path]) -> p
         snapshot_df[SIMULATION_YEAR] = start_year
 
     # Ensure 'active' column is broadcasted if it was a scalar
-    if 'active' in snapshot_df.columns and len(snapshot_df) > 1 and isinstance(snapshot_df['active'].iloc[0], bool):
-        snapshot_df['active'] = [snapshot_df['active'].iloc[0]] * len(snapshot_df)
+    if 'active' in snapshot_df.columns:
+        if len(snapshot_df) > 1:
+            # Check if the column has a scalar value that needs broadcasting
+            active_col = snapshot_df['active']
+            if not active_col.empty and isinstance(active_col.iloc[0], bool):
+                # Only broadcast if all values are the same (scalar-like)
+                if active_col.nunique() == 1:
+                    snapshot_df['active'] = [active_col.iloc[0]] * len(snapshot_df)
 
     # Calculate tenure in years
     current_date_for_tenure = pd.Timestamp(f"{start_year}-01-01")
@@ -643,8 +649,10 @@ def build_enhanced_yearly_snapshot(
         if not term_events.empty and EMP_ID in term_events.columns:
             terminated_this_year = set(term_events[EMP_ID].unique())
             # Log breakdown of termination types for debugging
-            regular_terms = len(year_events[year_events['event_type'] == EVT_TERM][EMP_ID].unique()) if EVT_TERM in year_events['event_type'].values else 0
-            new_hire_terms = len(year_events[year_events['event_type'] == EVT_NEW_HIRE_TERM][EMP_ID].unique()) if EVT_NEW_HIRE_TERM in year_events['event_type'].values else 0
+            regular_term_events = year_events[year_events['event_type'] == EVT_TERM]
+            regular_terms = len(regular_term_events[EMP_ID].unique()) if not regular_term_events.empty else 0
+            new_hire_term_events = year_events[year_events['event_type'] == EVT_NEW_HIRE_TERM] 
+            new_hire_terms = len(new_hire_term_events[EMP_ID].unique()) if not new_hire_term_events.empty else 0
             logger.info(f"Found {len(terminated_this_year)} employees terminated during year {simulation_year} "
                        f"(regular: {regular_terms}, new hire: {new_hire_terms})")
 
