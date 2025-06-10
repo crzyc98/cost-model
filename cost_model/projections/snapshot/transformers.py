@@ -18,6 +18,8 @@ from .types import (
     CompensationAmount, TenureYears, AgeYears, ColumnName,
     TransformerConfig, CompensationExtractionResult
 )
+# Import unified schema
+from cost_model.schema import SnapshotColumns, migrate_legacy_columns
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +50,19 @@ class SnapshotTransformer:
         Returns:
             DataFrame with tenure calculations added
         """
-        # Check which hire date column is available
-        hire_date_columns = ['EMP_HIRE_DATE', 'employee_hire_date']
-        hire_date_col = None
-        for col in hire_date_columns:
-            if col in df.columns:
-                hire_date_col = col
-                break
+        # Migrate legacy columns if needed
+        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
+        if not migration_result.success:
+            logger.warning(f"Column migration issues: {migration_result.warnings}")
         
-        if hire_date_col is None:
-            raise SnapshotBuildError(f"Cannot calculate tenure: No hire date column found. Available columns: {list(df.columns)}")
+        # Use unified schema column names
+        hire_date_col = SnapshotColumns.EMP_HIRE_DATE
+        if hire_date_col not in df.columns:
+            raise SnapshotBuildError(f"Cannot calculate tenure: {hire_date_col} column missing. Available columns: {list(df.columns)}")
         
-        # Use standardized column names for outputs
-        EMP_TENURE = 'EMP_TENURE'
-        EMP_TENURE_BAND = 'EMP_TENURE_BAND'
+        # Use unified schema for output columns
+        tenure_col = SnapshotColumns.EMP_TENURE
+        tenure_band_col = SnapshotColumns.EMP_TENURE_BAND
         
         if reference_date is None:
             reference_date = datetime(self.config.start_year, 1, 1)
@@ -71,16 +72,16 @@ class SnapshotTransformer:
         # Calculate tenure in years
         hire_dates = pd.to_datetime(df[hire_date_col])
         tenure_days = (reference_date - hire_dates).dt.days
-        df[EMP_TENURE] = tenure_days / 365.25  # Account for leap years
+        df[tenure_col] = tenure_days / 365.25  # Account for leap years
         
         # Handle negative tenure (future hire dates)
-        negative_tenure = df[EMP_TENURE] < 0
+        negative_tenure = df[tenure_col] < 0
         if negative_tenure.any():
             logger.warning(f"Found {negative_tenure.sum()} employees with future hire dates")
-            df.loc[negative_tenure, EMP_TENURE] = 0
+            df.loc[negative_tenure, tenure_col] = 0
         
         # Calculate tenure bands
-        df[EMP_TENURE_BAND] = df[EMP_TENURE].apply(self._calculate_tenure_band)
+        df[tenure_band_col] = df[tenure_col].apply(self._calculate_tenure_band)
         
         logger.debug(f"Calculated tenure for {len(df)} employees")
         return df
@@ -96,10 +97,15 @@ class SnapshotTransformer:
         Returns:
             DataFrame with age calculations added
         """
-        # Use standardized column names
-        EMP_BIRTH_DATE = 'EMP_BIRTH_DATE'
-        EMP_AGE = 'EMP_AGE'
-        EMP_AGE_BAND = 'EMP_AGE_BAND'
+        # Migrate legacy columns if needed
+        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
+        if not migration_result.success:
+            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        
+        # Use unified schema column names
+        birth_date_col = SnapshotColumns.EMP_BIRTH_DATE
+        age_col = SnapshotColumns.EMP_AGE
+        age_band_col = SnapshotColumns.EMP_AGE_BAND
         
         try:
             from cost_model.state.age import apply_age
@@ -117,10 +123,10 @@ class SnapshotTransformer:
                 # Call apply_age with the required birth_col parameter
                 df = apply_age(
                     df=df,
-                    birth_col=EMP_BIRTH_DATE,
+                    birth_col=birth_date_col,
                     as_of=reference_date,
-                    out_age_col=EMP_AGE,
-                    out_band_col=EMP_AGE_BAND
+                    out_age_col=age_col,
+                    out_band_col=age_band_col
                 )
                 logger.debug(f"Applied age calculations using existing function")
             except Exception as e:
@@ -142,29 +148,35 @@ class SnapshotTransformer:
         Returns:
             DataFrame with contribution calculations added
         """
-        # Use standardized column names
-        EMP_GROSS_COMP = 'EMP_GROSS_COMP'
-        EMP_DEFERRAL_RATE = 'EMP_DEFERRAL_RATE'
-        EMP_EMPLOYEE_CONTRIB = 'EMP_EMPLOYEE_CONTRIB'
-        EMP_EMPLOYER_MATCH = 'EMP_EMPLOYER_MATCH'
+        # Migrate legacy columns if needed
+        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
+        if not migration_result.success:
+            logger.warning(f"Column migration issues: {migration_result.warnings}")
         
-        logger.debug("Calculating contribution amounts")
+        # Use unified schema column names
+        comp_col = SnapshotColumns.EMP_GROSS_COMP
+        deferral_col = SnapshotColumns.EMP_DEFERRAL_RATE
         
-        # Ensure required columns exist
-        if EMP_GROSS_COMP not in df.columns:
-            raise SnapshotBuildError("Cannot calculate contributions: EMP_GROSS_COMP column missing")
+        if comp_col not in df.columns:
+            raise SnapshotBuildError(f"Cannot calculate contributions: {comp_col} column missing. Available columns: {list(df.columns)}")
         
-        if EMP_DEFERRAL_RATE not in df.columns:
-            logger.warning("EMP_DEFERRAL_RATE missing, defaulting to 0.0")
-            df[EMP_DEFERRAL_RATE] = 0.0
+        # Use unified schema for output columns
+        employee_contrib_col = SnapshotColumns.EMP_CONTRIBUTION
+        employer_match_col = SnapshotColumns.EMPLOYER_MATCH_CONTRIBUTION
+        
+        logger.debug(f"Calculating contribution amounts using compensation column {comp_col}")
+        
+        if deferral_col not in df.columns:
+            logger.warning(f"No deferral rate column {deferral_col} found, defaulting to 0.0")
+            df[deferral_col] = 0.0
         
         # Calculate employee contributions
-        df[EMP_EMPLOYEE_CONTRIB] = df[EMP_GROSS_COMP] * df[EMP_DEFERRAL_RATE]
+        df[employee_contrib_col] = df[comp_col] * df[deferral_col]
         
         # Calculate employer match (simple 50% of employee contribution up to 6% of compensation)
-        max_match_base = df[EMP_GROSS_COMP] * 0.06  # 6% of compensation
-        employee_contrib_eligible = df[EMP_EMPLOYEE_CONTRIB].clip(upper=max_match_base)
-        df[EMP_EMPLOYER_MATCH] = employee_contrib_eligible * 0.5  # 50% match
+        max_match_base = df[comp_col] * 0.06  # 6% of compensation
+        employee_contrib_eligible = df[employee_contrib_col].clip(upper=max_match_base)
+        df[employer_match_col] = employee_contrib_eligible * 0.5  # 50% match
         
         logger.debug(f"Calculated contributions for {len(df)} employees")
         return df
@@ -179,10 +191,15 @@ class SnapshotTransformer:
         Returns:
             DataFrame with job level inference applied
         """
-        # Use standardized column names
-        EMP_LEVEL = 'EMP_LEVEL'
-        EMP_LEVEL_SOURCE = 'EMP_LEVEL_SOURCE'
-        EMP_GROSS_COMP = 'EMP_GROSS_COMP'
+        # Migrate legacy columns if needed
+        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
+        if not migration_result.success:
+            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        
+        # Use unified schema column names
+        level_col = SnapshotColumns.EMP_LEVEL
+        level_source_col = SnapshotColumns.EMP_LEVEL_SOURCE
+        comp_col = SnapshotColumns.EMP_GROSS_COMP
         
         try:
             from cost_model.state.job_levels.loader import ingest_with_imputation
@@ -215,30 +232,39 @@ class SnapshotTransformer:
         Returns:
             DataFrame with normalized compensation
         """
-        # Use standardized column names
-        EMP_LEVEL = 'EMP_LEVEL'
-        EMP_GROSS_COMP = 'EMP_GROSS_COMP'
+        # Migrate legacy columns if needed
+        df, migration_result = migrate_legacy_columns(df, schema_type="snapshot", strict_mode=False)
+        if not migration_result.success:
+            logger.warning(f"Column migration issues: {migration_result.warnings}")
+        
+        # Use unified schema column names
+        level_col = SnapshotColumns.EMP_LEVEL
+        comp_col = SnapshotColumns.EMP_GROSS_COMP
         
         logger.debug("Normalizing compensation by job level")
         
-        if EMP_LEVEL not in df.columns:
-            logger.warning("No job level column available for compensation normalization")
+        if level_col not in df.columns:
+            logger.warning(f"No job level column {level_col} available for compensation normalization")
+            return df
+            
+        if comp_col not in df.columns:
+            logger.warning(f"No compensation column {comp_col} available for normalization")
             return df
         
         # Fill missing compensation with level-based defaults
-        missing_comp = df[EMP_GROSS_COMP].isna()
+        missing_comp = df[comp_col].isna()
         if missing_comp.any():
             logger.info(f"Filling {missing_comp.sum()} missing compensation values")
             
             for level, default_comp in LEVEL_BASED_DEFAULTS.items():
-                level_mask = (df[EMP_LEVEL] == level) & missing_comp
-                df.loc[level_mask, EMP_GROSS_COMP] = default_comp
+                level_mask = (df[level_col] == level) & missing_comp
+                df.loc[level_mask, comp_col] = default_comp
             
             # Fill any remaining missing values with global default
-            still_missing = df[EMP_GROSS_COMP].isna()
+            still_missing = df[comp_col].isna()
             if still_missing.any():
                 from .constants import DEFAULT_COMPENSATION
-                df.loc[still_missing, EMP_GROSS_COMP] = DEFAULT_COMPENSATION
+                df.loc[still_missing, comp_col] = DEFAULT_COMPENSATION
                 logger.warning(f"Used global default compensation for {still_missing.sum()} employees")
         
         return df
@@ -267,52 +293,47 @@ class SnapshotTransformer:
     
     def _manual_age_calculation(self, df: pd.DataFrame, reference_date: datetime) -> pd.DataFrame:
         """Manual age calculation when existing function is not available."""
-        # Use standardized column names
-        EMP_BIRTH_DATE = 'EMP_BIRTH_DATE'
-        EMP_AGE = 'EMP_AGE'
-        EMP_AGE_BAND = 'EMP_AGE_BAND'
+        # Use unified schema column names
+        birth_date_col = SnapshotColumns.EMP_BIRTH_DATE
+        age_col = SnapshotColumns.EMP_AGE
+        age_band_col = SnapshotColumns.EMP_AGE_BAND
         
-        if EMP_BIRTH_DATE not in df.columns:
-            logger.warning("No birth date column available for age calculation")
-            df[EMP_AGE] = np.nan
-            df[EMP_AGE_BAND] = 'UNKNOWN'
+        if birth_date_col not in df.columns:
+            logger.warning(f"No birth date column {birth_date_col} available for age calculation")
+            df[age_col] = np.nan
+            df[age_band_col] = 'UNKNOWN'
             return df
         
+        logger.debug(f"Calculating age using column {birth_date_col}")
+        
         # Calculate age in years
-        birth_dates = pd.to_datetime(df[EMP_BIRTH_DATE])
+        birth_dates = pd.to_datetime(df[birth_date_col])
         age_days = (reference_date - birth_dates).dt.days
-        df[EMP_AGE] = age_days / 365.25
+        df[age_col] = age_days / 365.25
         
         # Handle invalid ages
-        invalid_age = (df[EMP_AGE] < 0) | (df[EMP_AGE] > 100)
+        invalid_age = (df[age_col] < 0) | (df[age_col] > 100)
         if invalid_age.any():
             logger.warning(f"Found {invalid_age.sum()} employees with invalid ages")
-            df.loc[invalid_age, EMP_AGE] = np.nan
+            df.loc[invalid_age, age_col] = np.nan
         
         # Calculate age bands
-        df[EMP_AGE_BAND] = df[EMP_AGE].apply(self._calculate_age_band)
+        df[age_band_col] = df[age_col].apply(self._calculate_age_band)
         
         return df
     
     def _fallback_job_level_inference(self, df: pd.DataFrame) -> pd.DataFrame:
         """Fallback job level inference based on compensation."""
-        # Use standardized column names
-        EMP_LEVEL = 'EMP_LEVEL'
-        EMP_LEVEL_SOURCE = 'EMP_LEVEL_SOURCE'
+        # Use unified schema column names
+        level_col = SnapshotColumns.EMP_LEVEL
+        level_source_col = SnapshotColumns.EMP_LEVEL_SOURCE
+        comp_col = SnapshotColumns.EMP_GROSS_COMP
         
-        # Check which compensation column is available
-        comp_columns = ['EMP_GROSS_COMP', 'employee_gross_compensation']
-        comp_col = None
-        for col in comp_columns:
-            if col in df.columns:
-                comp_col = col
-                break
-        
-        if comp_col is None:
-            logger.error(f"No compensation column found. Available columns: {list(df.columns)}")
+        if comp_col not in df.columns:
+            logger.error(f"No compensation column {comp_col} found. Available columns: {list(df.columns)}")
             # Set default levels
-            df[EMP_LEVEL] = 'BAND_1'
-            df[EMP_LEVEL_SOURCE] = 'NO_COMPENSATION_DATA'
+            df[level_col] = 'BAND_1'
+            df[level_source_col] = 'NO_COMPENSATION_DATA'
             return df
         
         # Simple compensation-based level assignment
@@ -328,8 +349,8 @@ class SnapshotTransformer:
         
         choices = ['BAND_5', 'BAND_4', 'BAND_3', 'BAND_2', 'BAND_1']
         
-        df[EMP_LEVEL] = np.select(conditions, choices, default='BAND_1')
-        df[EMP_LEVEL_SOURCE] = 'INFERRED_FROM_COMPENSATION'
+        df[level_col] = np.select(conditions, choices, default='BAND_1')
+        df[level_source_col] = 'INFERRED_FROM_COMPENSATION'
         
         logger.warning("Used fallback job level inference based on compensation")
         return df
