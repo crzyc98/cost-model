@@ -4,27 +4,40 @@ Compatibility layer for the workforce snapshot module.
 This file maintains backward compatibility while gradually transitioning to the new modular structure.
 """
 
-import warnings
-import logging
-from typing import Dict, List, Any, Optional, Set, Tuple, Union
-import pandas as pd
-import numpy as np
-
-from .snapshot_build import build_full
-from .snapshot_update import update
-from .schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_LEVEL, EMP_GROSS_COMP,
-    EMP_TERM_DATE, EMP_ACTIVE, EMP_TENURE, EMP_TENURE_BAND,
-    EMP_DEFERRAL_RATE, SNAPSHOT_COLS, SNAPSHOT_DTYPES,
-    TERM_RATE, COMP_RAISE_PCT, NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG
-)
-
 # Import json for hire details extraction
 import json
+import logging
+import warnings
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+import numpy as np
+import pandas as pd
+
+from .schema import (
+    CFG,
+    COLA_PCT,
+    COMP_RAISE_PCT,
+    EMP_ACTIVE,
+    EMP_BIRTH_DATE,
+    EMP_DEFERRAL_RATE,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_LEVEL,
+    EMP_TENURE,
+    EMP_TENURE_BAND,
+    EMP_TERM_DATE,
+    NEW_HIRE_TERMINATION_RATE,
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
+    TERM_RATE,
+)
+from .snapshot_build import build_full
+from .snapshot_update import update
 
 # Legacy imports for compatibility
 try:
-    from .event_log import EVT_HIRE, EVT_TERM, EVT_COMP, EVT_NEW_HIRE_TERM, EVENT_COLS
+    from .event_log import EVENT_COLS, EVT_COMP, EVT_HIRE, EVT_NEW_HIRE_TERM, EVT_TERM
 except ImportError:
     # Define fallbacks if run standalone or structure changes
     EVT_HIRE, EVT_TERM, EVT_COMP = "EVT_HIRE", "EVT_TERM", "EVT_COMP"
@@ -42,43 +55,44 @@ logger = logging.getLogger(__name__)
 
 # --- Legacy API ---
 SNAPSHOT_COLS = [
-    EMP_ID,          # Ensure EMP_ID is part of the columns
+    EMP_ID,  # Ensure EMP_ID is part of the columns
     EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
     EMP_LEVEL,
     EMP_GROSS_COMP,  # Was "current_comp", maps to gross compensation
-    EMP_TERM_DATE,   # Was "term_date"
-    EMP_ACTIVE,        # pandas BooleanDtype (True/False/NA) - snapshot specific
-    EMP_DEFERRAL_RATE, # Was "employee_deferral_rate"
-    EMP_TENURE_BAND,   # Snapshot specific for grouping/logic
-    EMP_TENURE,      # Standardized tenure column
+    EMP_TERM_DATE,  # Was "term_date"
+    EMP_ACTIVE,  # pandas BooleanDtype (True/False/NA) - snapshot specific
+    EMP_DEFERRAL_RATE,  # Was "employee_deferral_rate"
+    EMP_TENURE_BAND,  # Snapshot specific for grouping/logic
+    EMP_TENURE,  # Standardized tenure column
     TERM_RATE,
     COMP_RAISE_PCT,
     NEW_HIRE_TERMINATION_RATE,
     COLA_PCT,
-    CFG
+    CFG,
 ]
 
 # Corresponding Pandas dtypes using nullable types where appropriate
 SNAPSHOT_DTYPES = {
-    EMP_ID: pd.StringDtype(),           # Add dtype for EMP_ID
+    EMP_ID: pd.StringDtype(),  # Add dtype for EMP_ID
     EMP_HIRE_DATE: "datetime64[ns]",
     EMP_BIRTH_DATE: "datetime64[ns]",
-    EMP_LEVEL: pd.Int64Dtype(),          # Nullable string
+    EMP_LEVEL: pd.Int64Dtype(),  # Nullable string
     EMP_GROSS_COMP: pd.Float64Dtype(),  # Nullable float, was "current_comp"
-    EMP_TERM_DATE: "datetime64[ns]",     # Stays datetime, NaT represents null
-    "active": pd.BooleanDtype(),         # Nullable boolean - snapshot specific
-    EMP_DEFERRAL_RATE: pd.Float64Dtype(),# Was "employee_deferral_rate"
-    EMP_TENURE_BAND: pd.StringDtype(),     # Snapshot specific
-    EMP_TENURE: 'float64',               # Standardized tenure dtype
+    EMP_TERM_DATE: "datetime64[ns]",  # Stays datetime, NaT represents null
+    "active": pd.BooleanDtype(),  # Nullable boolean - snapshot specific
+    EMP_DEFERRAL_RATE: pd.Float64Dtype(),  # Was "employee_deferral_rate"
+    EMP_TENURE_BAND: pd.StringDtype(),  # Snapshot specific
+    EMP_TENURE: "float64",  # Standardized tenure dtype
     TERM_RATE: pd.Float64Dtype(),
     COMP_RAISE_PCT: pd.Float64Dtype(),
     NEW_HIRE_TERMINATION_RATE: pd.Float64Dtype(),
     COLA_PCT: pd.Float64Dtype(),
-    CFG: pd.StringDtype()
+    CFG: pd.StringDtype(),
 }
 
 # --- Helper Functions ---
+
 
 def _get_first_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> pd.DataFrame:
     """
@@ -86,9 +100,10 @@ def _get_first_event(events: pd.DataFrame, event_type: Union[str, List[str]]) ->
     """
     if isinstance(event_type, str):
         events_of_type = events[events["event_type"] == event_type]
-    else: # it's a list
+    else:  # it's a list
         events_of_type = events[events["event_type"].isin(event_type)]
     return events_of_type.drop_duplicates(subset=EMP_ID, keep="first")
+
 
 def _get_last_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> pd.DataFrame:
     """
@@ -96,9 +111,10 @@ def _get_last_event(events: pd.DataFrame, event_type: Union[str, List[str]]) -> 
     """
     if isinstance(event_type, str):
         events_of_type = events[events["event_type"] == event_type]
-    else: # it's a list
+    else:  # it's a list
         events_of_type = events[events["event_type"].isin(event_type)]
     return events_of_type.drop_duplicates(subset=EMP_ID, keep="last")
+
 
 def _assign_tenure_band(tenure: float) -> str:
     """
@@ -107,17 +123,18 @@ def _assign_tenure_band(tenure: float) -> str:
     if pd.isna(tenure):
         return pd.NA
     if tenure < 1:
-        return '<1'  # Standardized to match hazard table format
+        return "<1"  # Standardized to match hazard table format
     elif tenure < 3:
-        return '1-3'
+        return "1-3"
     elif tenure < 5:
-        return '3-5'
+        return "3-5"
     elif tenure < 10:
-        return '5-10'
+        return "5-10"
     elif tenure < 15:
-        return '10-15'
+        return "10-15"
     else:
-        return '15+'
+        return "15+"
+
 
 def _ensure_columns_and_types(df: pd.DataFrame, columns: list, dtypes: dict) -> pd.DataFrame:
     """
@@ -152,6 +169,7 @@ def _ensure_columns_and_types(df: pd.DataFrame, columns: list, dtypes: dict) -> 
     df = df.astype(dtypes)
     return df
 
+
 def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
     """
     Extracts static details (role, birth_date) from hire event records.
@@ -165,9 +183,7 @@ def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
     """
     details = []
     if hire_events.empty:
-        return pd.DataFrame(
-            columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID)
-        )
+        return pd.DataFrame(columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID))
 
     for index, event in hire_events.iterrows():
         employee_id = event[EMP_ID]
@@ -193,9 +209,7 @@ def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
         #     pass
 
         if role is None:
-            logger.debug(
-                f"Could not extract 'role' for emp {employee_id} from hire event."
-            )
+            logger.debug(f"Could not extract 'role' for emp {employee_id} from hire event.")
         if pd.isna(birth_date):
             logger.debug(
                 f"Could not extract valid 'birth_date' for emp {employee_id} from hire event."
@@ -204,9 +218,7 @@ def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
         details.append({EMP_ID: employee_id, EMP_ROLE: role, EMP_BIRTH_DATE: birth_date})
 
     if not details:  # Should not happen if hire_events was not empty, but safeguard
-        return pd.DataFrame(
-            columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID)
-        )
+        return pd.DataFrame(columns=[EMP_ROLE, EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID))
 
     details_df = pd.DataFrame(details).set_index(EMP_ID)
 
@@ -216,6 +228,7 @@ def _extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
         details_df[EMP_BIRTH_DATE]
     )  # Already datetime, but ensures consistency
     return details_df
+
 
 def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
     """
@@ -287,15 +300,26 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
         snapshot_df[EMP_TENURE] = tenure_years.round(3)
         snapshot_df[EMP_TENURE_BAND] = _calculate_tenure_band(snapshot_df[EMP_TENURE])
         for eid, hd, ty in zip(snapshot_df.index, hire_dates, tenure_years):
-            logger.debug(f"[DEBUG tenure] {eid} hired {hd.date()}   as_of {as_of.date()}   years={ty:.2f}")
+            logger.debug(
+                f"[DEBUG tenure] {eid} hired {hd.date()}   as_of {as_of.date()}   years={ty:.2f}"
+            )
+
         def band(tenure):
-            if pd.isna(tenure): return pd.NA
-            if tenure < 1: return '<1'  # Standardized to match hazard table format
-            elif tenure < 3: return '1-3'
-            elif tenure < 5: return '3-5'
-            elif tenure < 10: return '5-10'
-            elif tenure < 15: return '10-15'
-            else: return '15+'
+            if pd.isna(tenure):
+                return pd.NA
+            if tenure < 1:
+                return "<1"  # Standardized to match hazard table format
+            elif tenure < 3:
+                return "1-3"
+            elif tenure < 5:
+                return "3-5"
+            elif tenure < 10:
+                return "5-10"
+            elif tenure < 15:
+                return "10-15"
+            else:
+                return "15+"
+
         snapshot_df[EMP_TENURE_BAND] = snapshot_df[EMP_TENURE].map(band).astype(pd.StringDtype())
     else:
         snapshot_df[EMP_TENURE] = pd.NA
@@ -304,11 +328,11 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
     # Ensure EMP_ID is a column for output/export
     snapshot_df[EMP_ID] = snapshot_df.index.astype(str)
     # Add simulation_year
-    snapshot_df['simulation_year'] = snapshot_year
+    snapshot_df["simulation_year"] = snapshot_year
     # Select final columns in desired order and enforce final dtypes
     # Add EMP_TENURE and simulation_year to output columns and dtypes
-    output_cols = SNAPSHOT_COLS + [EMP_TENURE, 'simulation_year']
-    output_dtypes = {**SNAPSHOT_DTYPES, EMP_TENURE: 'float64', 'simulation_year': 'int64'}
+    output_cols = SNAPSHOT_COLS + [EMP_TENURE, "simulation_year"]
+    output_dtypes = {**SNAPSHOT_DTYPES, EMP_TENURE: "float64", "simulation_year": "int64"}
     snapshot_df = snapshot_df[output_cols]  # Select and order columns
     snapshot_df = snapshot_df.astype(output_dtypes)  # Enforce dtypes
     snapshot_df.index.name = EMP_ID  # Ensure index name is set
@@ -344,12 +368,10 @@ def update(
             f"Previous snapshot index name is '{prev_snapshot.index.name}', expected '{EMP_ID}'. Attempting to proceed."
         )
 
-    logger.info(
-        f"Updating snapshot ({prev_snapshot.shape}) with {len(new_events)} new events..."
-    )
+    logger.info(f"Updating snapshot ({prev_snapshot.shape}) with {len(new_events)} new events...")
     current_snapshot = prev_snapshot.copy()
     # Ensure simulation_year is set
-    current_snapshot['simulation_year'] = snapshot_year
+    current_snapshot["simulation_year"] = snapshot_year
 
     # Ensure new events are sorted by time and type
     new_events = new_events.sort_values(by=["event_time", "event_type"], ascending=[True, True])
@@ -365,25 +387,33 @@ def update(
         events_for_new_hires = new_events[new_events[EMP_ID].isin(new_hire_ids)]
         first_hire_events_for_new_filtered = _get_first_event(events_for_new_hires, EVT_HIRE)
         new_hire_details = _extract_hire_details(first_hire_events_for_new_filtered)
-        last_comp_for_new = _get_last_event(events_for_new_hires, EVT_COMP).set_index(EMP_ID)["value_num"]
-        last_term_for_new = _get_last_event(events_for_new_hires, EVT_TERM).set_index(EMP_ID)["event_time"]
+        last_comp_for_new = _get_last_event(events_for_new_hires, EVT_COMP).set_index(EMP_ID)[
+            "value_num"
+        ]
+        last_term_for_new = _get_last_event(events_for_new_hires, EVT_TERM).set_index(EMP_ID)[
+            "event_time"
+        ]
 
         new_hire_base = pd.DataFrame(index=pd.Index(new_hire_ids, name=EMP_ID))
         new_hire_base = new_hire_base.merge(
-            first_hire_events_for_new_filtered.set_index(EMP_ID)["event_time"].rename(EMP_HIRE_DATE),
-            left_index=True, right_index=True, how="left"
+            first_hire_events_for_new_filtered.set_index(EMP_ID)["event_time"].rename(
+                EMP_HIRE_DATE
+            ),
+            left_index=True,
+            right_index=True,
+            how="left",
         )
         new_hire_base = new_hire_base.merge(
             new_hire_details[[EMP_ROLE, EMP_BIRTH_DATE]],
-            left_index=True, right_index=True, how="left"
+            left_index=True,
+            right_index=True,
+            how="left",
         )
         new_hire_base = new_hire_base.merge(
-            last_comp_for_new.rename(EMP_GROSS_COMP),
-            left_index=True, right_index=True, how="left"
+            last_comp_for_new.rename(EMP_GROSS_COMP), left_index=True, right_index=True, how="left"
         )
         new_hire_base = new_hire_base.merge(
-            last_term_for_new.rename(EMP_TERM_DATE),
-            left_index=True, right_index=True, how="left"
+            last_term_for_new.rename(EMP_TERM_DATE), left_index=True, right_index=True, how="left"
         )
         new_hire_base["active"] = new_hire_base[EMP_TERM_DATE].isna()
         new_hire_base = _ensure_columns_and_types(new_hire_base, SNAPSHOT_COLS, SNAPSHOT_DTYPES)
@@ -394,7 +424,9 @@ def update(
             hire_dates = pd.to_datetime(new_hire_base[EMP_HIRE_DATE], errors="coerce")
             tenure_years = (as_of - hire_dates).dt.days / 365.25
             new_hire_base[EMP_TENURE] = tenure_years.round(3)
-            new_hire_base[EMP_TENURE_BAND] = new_hire_base[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+            new_hire_base[EMP_TENURE_BAND] = (
+                new_hire_base[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+            )
         else:
             new_hire_base[EMP_TENURE] = pd.NA
             new_hire_base[EMP_TENURE_BAND] = pd.NA
@@ -409,35 +441,33 @@ def update(
 
         # Recompute tenure & tenure_band for the full updated snapshot
         as_of = pd.Timestamp(f"{snapshot_year}-12-31")
-        hire_dates = pd.to_datetime(current_snapshot[EMP_HIRE_DATE], errors='coerce')
+        hire_dates = pd.to_datetime(current_snapshot[EMP_HIRE_DATE], errors="coerce")
         tenure_years = (as_of - hire_dates).dt.days / 365.25
         current_snapshot[EMP_TENURE] = tenure_years.round(3)
-        current_snapshot[EMP_TENURE_BAND] = current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+        current_snapshot[EMP_TENURE_BAND] = (
+            current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+        )
 
     # --- 2. Process Updates for Existing Employees ---
-    existing_ids_in_batch = new_events[new_events[EMP_ID].isin(prev_snapshot.index)][EMP_ID].unique()
+    existing_ids_in_batch = new_events[new_events[EMP_ID].isin(prev_snapshot.index)][
+        EMP_ID
+    ].unique()
     if len(existing_ids_in_batch) > 0:
         logger.debug(
             f"Processing updates for {len(existing_ids_in_batch)} potentially existing employees found in new events."
         )
         comp_updates = new_events[new_events["event_type"] == EVT_COMP]
         if not comp_updates.empty:
-            last_comp_updates = (
-                comp_updates.sort_values("event_time").groupby(EMP_ID).tail(1)
-            )
+            last_comp_updates = comp_updates.sort_values("event_time").groupby(EMP_ID).tail(1)
             comp_update_map = last_comp_updates.set_index(EMP_ID)["value_num"]
             active_employees = current_snapshot[current_snapshot["active"]].index
-            valid_updates = comp_update_map[
-                comp_update_map.index.isin(active_employees)
-            ]
+            valid_updates = comp_update_map[comp_update_map.index.isin(active_employees)]
             current_snapshot.loc[valid_updates.index, EMP_GROSS_COMP] = valid_updates
 
         # Process termination updates
         term_updates = new_events[new_events["event_type"] == EVT_TERM]
         if not term_updates.empty:
-            last_term_updates = (
-                term_updates.sort_values("event_time").groupby(EMP_ID).tail(1)
-            )
+            last_term_updates = term_updates.sort_values("event_time").groupby(EMP_ID).tail(1)
             term_update_map = last_term_updates.set_index(EMP_ID)["event_time"]
             current_snapshot.loc[term_update_map.index, EMP_TERM_DATE] = term_update_map
             # Update active status
@@ -445,21 +475,21 @@ def update(
 
         # Recompute tenure and tenure_band for all employees
         as_of = pd.Timestamp(f"{snapshot_year}-12-31")
-        hire_dates = pd.to_datetime(current_snapshot[EMP_HIRE_DATE], errors='coerce')
+        hire_dates = pd.to_datetime(current_snapshot[EMP_HIRE_DATE], errors="coerce")
         tenure_years = (as_of - hire_dates).dt.days / 365.25
         current_snapshot[EMP_TENURE] = tenure_years.round(3)
-        current_snapshot[EMP_TENURE_BAND] = current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+        current_snapshot[EMP_TENURE_BAND] = (
+            current_snapshot[EMP_TENURE].map(_assign_tenure_band).astype(pd.StringDtype())
+        )
 
     # Ensure EMP_ID is a column for output/export
     current_snapshot[EMP_ID] = current_snapshot.index.astype(str)
     # Select final columns in desired order and enforce final dtypes
     output_cols = SNAPSHOT_COLS + [EMP_TENURE]
-    output_dtypes = {**SNAPSHOT_DTYPES, EMP_TENURE: 'float64'}
+    output_dtypes = {**SNAPSHOT_DTYPES, EMP_TENURE: "float64"}
     current_snapshot = current_snapshot[output_cols]  # Select and order columns
     current_snapshot = current_snapshot.astype(output_dtypes)  # Enforce dtypes
     current_snapshot.index.name = EMP_ID  # Ensure index name is set
 
     logger.info(f"Snapshot updated. Shape: {current_snapshot.shape}")
     return current_snapshot
-
-

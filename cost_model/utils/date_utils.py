@@ -2,11 +2,12 @@
 
 """Date utility functions for the retirement plan simulation."""
 
-import pandas as pd  # type: ignore[import-untyped]
-import numpy as np  # Added for np.random.Generator
-from dateutil.relativedelta import relativedelta
-from typing import Union, List  # Added List for type hinting
 import calendar  # Added for checking valid days in month
+from typing import List, Union  # Added List for type hinting
+
+import numpy as np  # Added for np.random.Generator
+import pandas as pd  # type: ignore[import-untyped]
+from dateutil.relativedelta import relativedelta
 
 
 def calculate_age(
@@ -28,12 +29,11 @@ def calculate_age(
     if pd.isna(birth_date):  # Also pd.isnull(birth_date) is common
         return 0
     # Ensure scalar birth_date is also coerced to datetime
-    return relativedelta(
-        current_date, pd.to_datetime(birth_date, errors="coerce")
-    ).years
+    return relativedelta(current_date, pd.to_datetime(birth_date, errors="coerce")).years
 
 
 # NOTE: Standard column for tenure is EMP_TENURE from cost_model.utils.columns
+
 
 def calculate_tenure(
     hire_date: Union[pd.Series, pd.Timestamp, None], current_date: pd.Timestamp

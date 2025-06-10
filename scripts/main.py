@@ -4,10 +4,10 @@ Thin wrapper to run the two-phase pipeline:
  1. HR snapshots
  2. Plan rules application
 """
+import argparse
+import os
 import subprocess
 import sys
-import os
-import argparse
 
 
 def main():

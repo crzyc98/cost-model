@@ -4,17 +4,17 @@ Engine for simulating employee promotions and associated merit raises during wor
 QuickStart: see docs/cost_model/engines/promotion.md
 """
 
-import pandas as pd
 import json
 from typing import List
+
+import pandas as pd
+
 from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, create_event
-from cost_model.state.schema import EMP_ID, EMP_GROSS_COMP
+from cost_model.state.schema import EMP_GROSS_COMP, EMP_ID
+
 
 def promote(
-    snapshot: pd.DataFrame,
-    rules: dict,
-    promo_time: pd.Timestamp,
-    raise_time: pd.Timestamp = None
+    snapshot: pd.DataFrame, rules: dict, promo_time: pd.Timestamp, raise_time: pd.Timestamp = None
 ) -> List[pd.DataFrame]:
     """
     Vectorized promotion and merit-raise event emission.
@@ -36,7 +36,7 @@ def promote(
     # Create promotion events
     promotions = []
     raises = []
-    
+
     for _, row in promotees.iterrows():
         # Create promotion event
         promo_event = create_event(
@@ -44,10 +44,10 @@ def promote(
             employee_id=row[EMP_ID],
             event_type=EVT_PROMOTION,
             value_json=json.dumps({"new_role": "Promoted"}),
-            meta="Promotion based on eligibility"
+            meta="Promotion based on eligibility",
         )
         promotions.append(promo_event)
-        
+
         # Create raise event
         raise_amount = row[EMP_GROSS_COMP] * merit_pct
         raise_event = create_event(
@@ -55,11 +55,17 @@ def promote(
             employee_id=row[EMP_ID],
             event_type=EVT_RAISE,
             value_num=raise_amount,
-            meta="Merit raise concurrent with promotion"
+            meta="Merit raise concurrent with promotion",
         )
         raises.append(raise_event)
-    
+
     # Convert to DataFrames with proper schema
-    promotions_df = pd.DataFrame(promotions, columns=EVENT_COLS) if promotions else pd.DataFrame(columns=EVENT_COLS)
-    raises_df = pd.DataFrame(raises, columns=EVENT_COLS) if raises else pd.DataFrame(columns=EVENT_COLS)
+    promotions_df = (
+        pd.DataFrame(promotions, columns=EVENT_COLS)
+        if promotions
+        else pd.DataFrame(columns=EVENT_COLS)
+    )
+    raises_df = (
+        pd.DataFrame(raises, columns=EVENT_COLS) if raises else pd.DataFrame(columns=EVENT_COLS)
+    )
     return [promotions_df, raises_df]

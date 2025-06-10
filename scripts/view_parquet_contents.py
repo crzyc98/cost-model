@@ -1,13 +1,14 @@
-import pandas as pd
 import sys
+
+import pandas as pd
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python view_parquet_contents.py <path_to_parquet_file>")
         sys.exit(1)
-    
+
     parquet_file_path = sys.argv[1]
-    
+
     try:
         df = pd.read_parquet(parquet_file_path)
         print(f"Contents of {parquet_file_path}:")

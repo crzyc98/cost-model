@@ -6,38 +6,38 @@ and provides utilities for event classification and validation.
 """
 
 from enum import Enum
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Optional, Set
 
 
 class EventTypes(str, Enum):
     """Enumeration of all event types in the system."""
-    
+
     # Core employment events
     HIRE = "hire"
     TERMINATION = "termination"
     NEW_HIRE_TERMINATION = "new_hire_termination"
-    
+
     # Compensation events
     COMPENSATION = "compensation"
     COLA = "cola"
     RAISE = "raise"
     PROMOTION = "promotion"
-    
+
     # Plan participation events
     CONTRIBUTION = "contribution"
     ENROLLMENT = "enrollment"
     DEFERRAL_CHANGE = "deferral_change"
-    
+
     # Administrative events
     DATA_CORRECTION = "data_correction"
     REHIRE = "rehire"
     STATUS_CHANGE = "status_change"
-    
+
     # Plan rule events
     AUTO_ENROLLMENT = "auto_enrollment"
     AUTO_INCREASE = "auto_increase"
     ELIGIBILITY_CHANGE = "eligibility_change"
-    
+
     # System events
     SIMULATION_START = "simulation_start"
     SIMULATION_END = "simulation_end"
@@ -46,7 +46,7 @@ class EventTypes(str, Enum):
 
 class EventStatus(str, Enum):
     """Status of events in the system."""
-    
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -57,7 +57,7 @@ class EventStatus(str, Enum):
 
 class EventCategories:
     """Categories of events for processing and validation."""
-    
+
     # Events that affect employment status
     EMPLOYMENT_EVENTS: Set[str] = {
         EventTypes.HIRE,
@@ -66,7 +66,7 @@ class EventCategories:
         EventTypes.REHIRE,
         EventTypes.STATUS_CHANGE,
     }
-    
+
     # Events that affect compensation
     COMPENSATION_EVENTS: Set[str] = {
         EventTypes.COMPENSATION,
@@ -74,7 +74,7 @@ class EventCategories:
         EventTypes.RAISE,
         EventTypes.PROMOTION,
     }
-    
+
     # Events that affect plan participation
     PLAN_EVENTS: Set[str] = {
         EventTypes.CONTRIBUTION,
@@ -84,19 +84,19 @@ class EventCategories:
         EventTypes.AUTO_INCREASE,
         EventTypes.ELIGIBILITY_CHANGE,
     }
-    
+
     # Events that create new employees
     EMPLOYEE_CREATION_EVENTS: Set[str] = {
         EventTypes.HIRE,
         EventTypes.REHIRE,
     }
-    
+
     # Events that remove employees
     EMPLOYEE_REMOVAL_EVENTS: Set[str] = {
         EventTypes.TERMINATION,
         EventTypes.NEW_HIRE_TERMINATION,
     }
-    
+
     # Events that modify existing employee data
     EMPLOYEE_MODIFICATION_EVENTS: Set[str] = {
         EventTypes.COMPENSATION,
@@ -111,14 +111,14 @@ class EventCategories:
         EventTypes.ELIGIBILITY_CHANGE,
         EventTypes.DATA_CORRECTION,
     }
-    
+
     # System/administrative events
     SYSTEM_EVENTS: Set[str] = {
         EventTypes.SIMULATION_START,
         EventTypes.SIMULATION_END,
         EventTypes.YEAR_END_PROCESSING,
     }
-    
+
     # Events that require special validation
     HIGH_PRIORITY_EVENTS: Set[str] = {
         EventTypes.HIRE,
@@ -130,23 +130,20 @@ class EventCategories:
 
 class EventProcessingOrder:
     """Defines the order in which events should be processed."""
-    
+
     # Processing order within a single day/time period
     PROCESSING_ORDER: List[str] = [
         # System events first
         EventTypes.SIMULATION_START,
-        
         # Employment status changes
         EventTypes.HIRE,
         EventTypes.REHIRE,
         EventTypes.STATUS_CHANGE,
-        
         # Compensation changes
         EventTypes.PROMOTION,  # Promotion before other comp changes
         EventTypes.COMPENSATION,
         EventTypes.COLA,
         EventTypes.RAISE,
-        
         # Plan participation changes
         EventTypes.ENROLLMENT,
         EventTypes.AUTO_ENROLLMENT,
@@ -154,26 +151,23 @@ class EventProcessingOrder:
         EventTypes.AUTO_INCREASE,
         EventTypes.CONTRIBUTION,
         EventTypes.ELIGIBILITY_CHANGE,
-        
         # Terminations last (except new hire terminations)
         EventTypes.NEW_HIRE_TERMINATION,
         EventTypes.TERMINATION,
-        
         # Administrative/correction events
         EventTypes.DATA_CORRECTION,
-        
         # System events last
         EventTypes.YEAR_END_PROCESSING,
         EventTypes.SIMULATION_END,
     ]
-    
+
     @classmethod
     def get_processing_priority(cls, event_type: str) -> int:
         """Get the processing priority for an event type.
-        
+
         Args:
             event_type: The event type to get priority for
-            
+
         Returns:
             Priority number (lower = higher priority)
         """
@@ -186,7 +180,7 @@ class EventProcessingOrder:
 
 class EventValidationRules:
     """Validation rules for different event types."""
-    
+
     # Required fields for each event type
     REQUIRED_FIELDS: Dict[str, List[str]] = {
         EventTypes.HIRE: [
@@ -224,7 +218,7 @@ class EventValidationRules:
             "event_date",
         ],
     }
-    
+
     # Optional fields for each event type
     OPTIONAL_FIELDS: Dict[str, List[str]] = {
         EventTypes.HIRE: [
@@ -239,26 +233,26 @@ class EventValidationRules:
             "job_level",
         ],
     }
-    
+
     @classmethod
     def get_required_fields(cls, event_type: str) -> List[str]:
         """Get required fields for an event type.
-        
+
         Args:
             event_type: The event type
-            
+
         Returns:
             List of required field names
         """
         return cls.REQUIRED_FIELDS.get(event_type, ["employee_id", "event_date"])
-    
+
     @classmethod
     def get_optional_fields(cls, event_type: str) -> List[str]:
         """Get optional fields for an event type.
-        
+
         Args:
             event_type: The event type
-            
+
         Returns:
             List of optional field names
         """
@@ -292,10 +286,10 @@ def removes_employee(event_type: str) -> bool:
 
 def get_event_category(event_type: str) -> Optional[str]:
     """Get the primary category for an event type.
-    
+
     Args:
         event_type: The event type to categorize
-        
+
     Returns:
         Category name or None if not found
     """
@@ -313,10 +307,10 @@ def get_event_category(event_type: str) -> Optional[str]:
 
 def validate_event_type(event_type: str) -> bool:
     """Validate that an event type is recognized.
-    
+
     Args:
         event_type: The event type to validate
-        
+
     Returns:
         True if valid, False otherwise
     """

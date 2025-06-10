@@ -4,11 +4,13 @@ Auto-increase module for generating automatic contribution rate increase events.
 QuickStart: see docs/cost_model/plan_rules/auto_increase.md
 """
 
-import pandas as pd
-from cost_model.config.plan_rules import AutoIncreaseConfig
-from cost_model.utils.columns import EMP_ID, EMP_DEFERRAL_RATE
-from typing import List
 import uuid
+from typing import List
+
+import pandas as pd
+
+from cost_model.config.plan_rules import AutoIncreaseConfig
+from cost_model.utils.columns import EMP_DEFERRAL_RATE, EMP_ID
 
 
 def run(
@@ -27,24 +29,23 @@ def run(
     EVT_OPT_OUT = "EVT_OPT_OUT"
     EVT_AUTO_INCREASE = "EVT_AUTO_INCREASE"
 
-    EVENT_COLS = [
-        "event_id", "event_time", EMP_ID, "event_type",
-        "value_num", "value_json", "meta"
-    ]
+    EVENT_COLS = ["event_id", "event_time", EMP_ID, "event_type", "value_num", "value_json", "meta"]
 
     current_snapshot = snapshot.copy()
     if EMP_ID in current_snapshot.columns and current_snapshot.index.name != EMP_ID:
         current_snapshot = current_snapshot.set_index(EMP_ID)
     elif current_snapshot.index.name != EMP_ID:
         if EMP_ID not in current_snapshot.columns:
-             raise ValueError(f"{EMP_ID} column not found in snapshot and not set as index for auto_increase.")
+            raise ValueError(
+                f"{EMP_ID} column not found in snapshot and not set as index for auto_increase."
+            )
 
     if not {EMP_ID, "event_type", "event_time"}.issubset(events.columns):
         return []
-        
+
     event_dates = events["event_time"].dt.date
     as_of_date = as_of.date()
-    
+
     enrolled_ids = set(
         events.loc[
             (events["event_type"].isin([EVT_ENROLL, EVT_AUTO_ENROLL]))
@@ -60,8 +61,7 @@ def run(
     )
     already_increased_ids = set(
         events.loc[
-            (events["event_type"] == EVT_AUTO_INCREASE)
-            & (event_dates == as_of_date),
+            (events["event_type"] == EVT_AUTO_INCREASE) & (event_dates == as_of_date),
             EMP_ID,
         ].astype(str)
     )
@@ -71,15 +71,15 @@ def run(
     for emp in candidates:
         if emp not in current_snapshot.index:
             continue
-        
+
         if EMP_DEFERRAL_RATE not in current_snapshot.columns:
-            continue 
-            
+            continue
+
         old_rate = float(current_snapshot.loc[emp, EMP_DEFERRAL_RATE])
         new_rate = min(old_rate + cfg.increase_pct, cfg.cap)
         if new_rate <= old_rate:
             continue
-        
+
         event_data = {
             "event_id": str(uuid.uuid4()),
             "event_time": as_of,
@@ -93,6 +93,6 @@ def run(
 
     if not out_events:
         return []
-        
+
     df_out = pd.DataFrame(out_events, columns=EVENT_COLS)
     return [df_out]

@@ -14,12 +14,14 @@ QuickStart: see docs/cost_model/state/schema.md
 """
 from __future__ import annotations
 
-import pandas as pd
 from typing import List
+
+import pandas as pd
+
+from .age import AGE_BAND_CATEGORICAL_DTYPE
 
 # Import age & tenure-related constants
 from .tenure import TENURE_BAND_CATEGORICAL_DTYPE
-from .age import AGE_BAND_CATEGORICAL_DTYPE
 
 # Core identifier and simulation constants
 EMP_ID = "employee_id"
@@ -29,16 +31,16 @@ SIMULATION_YEAR = "simulation_year"
 # Event type constants (re-export from event_log so there is a single source)
 # -----------------------------------------------------------------------------
 try:
-    from .event_log import (
-        EVT_HIRE,
-        EVT_TERM,
-        EVT_COMP,
+    from .event_log import (  # type: ignore
         EVT_COLA,
+        EVT_COMP,
+        EVT_CONTRIB,
+        EVT_HIRE,
+        EVT_NEW_HIRE_TERM,
         EVT_PROMOTION,
         EVT_RAISE,
-        EVT_CONTRIB,
-        EVT_NEW_HIRE_TERM,
-    )  # type: ignore
+        EVT_TERM,
+    )
 except ImportError:  # pragma: no cover
     EVT_HIRE = "EVT_HIRE"
     EVT_TERM = "EVT_TERM"
@@ -166,26 +168,28 @@ RAW_TO_STD_COLS = {
     "eligibility_entry_date": ELIGIBILITY_ENTRY_DATE,
 }
 
+
 def to_nullable_bool(series: pd.Series) -> pd.Series:
     """
     Convert a boolean-like Series into pandas’ nullable BooleanDtype.
     """
     return series.astype("boolean")
 
+
 # -----------------------------------------------------------------------------
 # Event type constants (re-export from event_log so there is a single source)
 # -----------------------------------------------------------------------------
 try:
-    from .event_log import (
-        EVT_HIRE,
-        EVT_TERM,
-        EVT_COMP,
+    from .event_log import (  # type: ignore
         EVT_COLA,
+        EVT_COMP,
+        EVT_CONTRIB,
+        EVT_HIRE,
+        EVT_NEW_HIRE_TERM,
         EVT_PROMOTION,
         EVT_RAISE,
-        EVT_CONTRIB,
-        EVT_NEW_HIRE_TERM,
-    )  # type: ignore
+        EVT_TERM,
+    )
 except ImportError:  # pragma: no cover
     EVT_HIRE = "EVT_HIRE"
     EVT_TERM = "EVT_TERM"
@@ -195,7 +199,6 @@ except ImportError:  # pragma: no cover
     EVT_RAISE = "EVT_RAISE"
     EVT_CONTRIB = "EVT_CONTRIB"
     EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM"
-
 
 
 EVENT_COLS: List[str] = [
@@ -286,7 +289,7 @@ SNAPSHOT_DTYPES: dict[str, object] = {
         categories=["Active", "Terminated", "Inactive"],
         ordered=False,
     ),
-    SIMULATION_YEAR: 'int64',  # Use standard int64 for simulation year
+    SIMULATION_YEAR: "int64",  # Use standard int64 for simulation year
     # Contribution column types
     EMP_CONTR: pd.Float64Dtype(),  # Employee contribution amount
     EMPLOYER_CORE: pd.Float64Dtype(),  # Employer core contribution amount

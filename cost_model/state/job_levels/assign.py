@@ -1,16 +1,19 @@
-from functools import lru_cache
-from typing import Dict, Optional, List, Union
-import pandas as pd
 import logging
+from functools import lru_cache
+from typing import Dict, List, Optional, Union
+
+import pandas as pd
 
 from cost_model.state.schema import (
-    EMP_LEVEL, 
-    EMP_GROSS_COMP, 
+    EMP_GROSS_COMP,
+    EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_TENURE,
-    EMP_TENURE_BAND
+    EMP_TENURE_BAND,
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
 )
-from cost_model.state.schema import SNAPSHOT_COLS, SNAPSHOT_DTYPES
+
 from . import state
 from .init import get_level_by_id, init_job_levels
 from .models import JobLevel
@@ -19,8 +22,9 @@ init_job_levels(reset_warnings=True)
 
 logger = logging.getLogger(__name__)
 
+
 @lru_cache(maxsize=128)
-def get_level_by_compensation(compensation: float) -> Optional['JobLevel']:
+def get_level_by_compensation(compensation: float) -> Optional["JobLevel"]:
     """Get job level based on compensation."""
     if compensation < 0:
         raise ValueError("Compensation must be non-negative")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import pandas as pd
 import sys
+
+import pandas as pd
 
 
 def main(path):

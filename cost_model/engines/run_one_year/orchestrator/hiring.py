@@ -8,18 +8,35 @@ hire event generation, and snapshot updates with new employees.
 import json
 import logging
 from typing import List, Optional, Tuple
+
 import pandas as pd
 
 from cost_model.engines import hire
-from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP, EMP_LEVEL,
-    EMP_ACTIVE, EMP_TENURE_BAND, EMP_DEFERRAL_RATE, EMP_TENURE,
-    EMP_LEVEL_SOURCE, EMP_EXITED, SIMULATION_YEAR, EVENT_COLS
-)
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
+from cost_model.state.schema import (
+    EMP_ACTIVE,
+    EMP_BIRTH_DATE,
+    EMP_DEFERRAL_RATE,
+    EMP_EXITED,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_LEVEL,
+    EMP_LEVEL_SOURCE,
+    EMP_TENURE,
+    EMP_TENURE_BAND,
+    EVENT_COLS,
+    SIMULATION_YEAR,
+)
 from cost_model.utils.tenure_utils import standardize_tenure_band
-from ..utils import compute_headcount_targets, manage_headcount_to_exact_target, estimate_expected_experienced_exits, estimate_experienced_exit_rate_from_hazards
-from .base import YearContext, safe_get_meta, filter_valid_employee_ids
+
+from ..utils import (
+    compute_headcount_targets,
+    estimate_expected_experienced_exits,
+    estimate_experienced_exit_rate_from_hazards,
+    manage_headcount_to_exact_target,
+)
+from .base import YearContext, filter_valid_employee_ids, safe_get_meta
 
 
 class HiringOrchestrator:
@@ -49,7 +66,7 @@ class HiringOrchestrator:
         snapshot: pd.DataFrame,
         year_context: YearContext,
         terminated_events: pd.DataFrame = None,
-        start_count: Optional[int] = None
+        start_count: Optional[int] = None,
     ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
         """
         Generate hiring events and update the snapshot with new employees.
@@ -67,8 +84,8 @@ class HiringOrchestrator:
         self.logger.info("[STEP] Computing headcount targets and generating hires")
 
         # Calculate headcount targets using exact targeting
-        start_count_calc, survivor_count, target_eoy, gross_hires, forced_terminations = self._compute_targets(
-            snapshot, year_context, start_count
+        start_count_calc, survivor_count, target_eoy, gross_hires, forced_terminations = (
+            self._compute_targets(snapshot, year_context, start_count)
         )
 
         self.logger.info(
@@ -102,7 +119,9 @@ class HiringOrchestrator:
             snapshot, hire_events, comp_events, year_context
         )
 
-        self.logger.info(f"[HIRING] Generated {len(hire_events)} hires with {len(comp_events)} comp events")
+        self.logger.info(
+            f"[HIRING] Generated {len(hire_events)} hires with {len(comp_events)} comp events"
+        )
 
         return [hire_events, comp_events], updated_snapshot
 
@@ -119,10 +138,7 @@ class HiringOrchestrator:
         return self._last_forced_terminations
 
     def _compute_targets(
-        self,
-        snapshot: pd.DataFrame,
-        year_context: YearContext,
-        start_count: Optional[int] = None
+        self, snapshot: pd.DataFrame, year_context: YearContext, start_count: Optional[int] = None
     ) -> Tuple[int, int, int, int, int]:
         """
         Compute hiring targets using exact headcount targeting logic.
@@ -136,13 +152,15 @@ class HiringOrchestrator:
             Tuple of (start_count, survivor_count, target_eoy, gross_hires, forced_terminations)
         """
         # Get parameters from global_params with robust fallback logic
-        target_growth = getattr(year_context.global_params, 'target_growth', 0.0)
+        target_growth = getattr(year_context.global_params, "target_growth", 0.0)
 
         # Try multiple locations for new_hire_termination_rate (matching hazard.py logic)
         nh_term_rate = 0.25  # Default fallback
-        if hasattr(year_context.global_params, 'attrition') and hasattr(year_context.global_params.attrition, 'new_hire_termination_rate'):
+        if hasattr(year_context.global_params, "attrition") and hasattr(
+            year_context.global_params.attrition, "new_hire_termination_rate"
+        ):
             nh_term_rate = year_context.global_params.attrition.new_hire_termination_rate
-        elif hasattr(year_context.global_params, 'new_hire_termination_rate'):
+        elif hasattr(year_context.global_params, "new_hire_termination_rate"):
             nh_term_rate = year_context.global_params.new_hire_termination_rate
         else:
             self.logger.warning(
@@ -151,7 +169,9 @@ class HiringOrchestrator:
             )
 
         # Calculate counts
-        survivor_count = snapshot[EMP_ACTIVE].sum() if EMP_ACTIVE in snapshot.columns else len(snapshot)
+        survivor_count = (
+            snapshot[EMP_ACTIVE].sum() if EMP_ACTIVE in snapshot.columns else len(snapshot)
+        )
 
         # Validate start_count
         if start_count is None:
@@ -168,11 +188,11 @@ class HiringOrchestrator:
         try:
             # Reconstruct the original experienced workforce by working backwards
             # We need to estimate from the original start-of-year composition, not current survivors
-            
+
             # Method 1: Use the current survivors to estimate original composition
             # This is imperfect but better than using post-termination data
             current_experienced = snapshot[snapshot[EMP_HIRE_DATE] < year_context.as_of].copy()
-            
+
             if num_markov_exits > 0:
                 # Scale up current experienced employees to estimate original count
                 # This assumes terminations were proportionally distributed
@@ -180,21 +200,24 @@ class HiringOrchestrator:
                 estimated_original_experienced = round(len(current_experienced) * scale_factor)
             else:
                 estimated_original_experienced = len(current_experienced)
-            
+
             # Estimate expected experienced exit rate from hazard table
             if not current_experienced.empty:
                 expected_exit_rate = estimate_experienced_exit_rate_from_hazards(
-                    hazard_slice=year_context.hazard_slice,
-                    logger=self.logger
+                    hazard_slice=year_context.hazard_slice, logger=self.logger
                 )
             else:
                 expected_exit_rate = 0.15  # Fallback rate
-                
+
             # Calculate what TOTAL expected experienced exits should be
-            total_expected_experienced_exits = round(estimated_original_experienced * expected_exit_rate)
-            
+            total_expected_experienced_exits = round(
+                estimated_original_experienced * expected_exit_rate
+            )
+
             # Additional exits beyond what already occurred
-            expected_additional_experienced_exits = max(0, total_expected_experienced_exits - num_markov_exits)
+            expected_additional_experienced_exits = max(
+                0, total_expected_experienced_exits - num_markov_exits
+            )
 
             self.logger.info(
                 f"[HIRING FIX ENHANCED] Original est. experienced: {estimated_original_experienced}, "
@@ -214,14 +237,16 @@ class HiringOrchestrator:
             target_growth_rate=target_growth,
             num_markov_exits_existing=num_markov_exits,
             new_hire_termination_rate=nh_term_rate,
-            expected_additional_experienced_exits=expected_additional_experienced_exits
+            expected_additional_experienced_exits=expected_additional_experienced_exits,
         )
 
         # Calculate target EOY for logging
         target_eoy = round(start_count * (1 + target_growth))
 
         # Ensure expected_additional_exits is defined for logging
-        additional_exits_for_log = expected_additional_exits if 'expected_additional_exits' in locals() else 0
+        additional_exits_for_log = (
+            expected_additional_exits if "expected_additional_exits" in locals() else 0
+        )
 
         self.logger.info(
             f"[EXACT TARGETING ENHANCED] SOY: {start_count}, Current survivors: {survivor_count}, "
@@ -236,7 +261,7 @@ class HiringOrchestrator:
         snapshot: pd.DataFrame,
         gross_hires: int,
         year_context: YearContext,
-        terminated_events: pd.DataFrame = None
+        terminated_events: pd.DataFrame = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Generate hire and compensation events using the hire engine.
@@ -273,7 +298,7 @@ class HiringOrchestrator:
             rng=year_context.year_rng,
             census_template_path=year_context.census_template_path,
             global_params=year_context.global_params,
-            terminated_events=term_events_param
+            terminated_events=term_events_param,
         )
 
         # Extract events from result
@@ -313,7 +338,9 @@ class HiringOrchestrator:
                 try:
                     events[col] = events[col].astype(dtype)
                 except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Could not convert {event_type} events column {col} to {dtype}: {e}")
+                    self.logger.warning(
+                        f"Could not convert {event_type} events column {col} to {dtype}: {e}"
+                    )
 
         return events
 
@@ -322,7 +349,7 @@ class HiringOrchestrator:
         snapshot: pd.DataFrame,
         hire_events: pd.DataFrame,
         comp_events: pd.DataFrame,
-        year_context: YearContext
+        year_context: YearContext,
     ) -> pd.DataFrame:
         """
         Update the snapshot with new hire records.
@@ -344,7 +371,7 @@ class HiringOrchestrator:
         if not comp_events.empty:
             for _, row in comp_events.iterrows():
                 emp_id = row.get(EMP_ID)
-                comp_value = row.get('value_num')
+                comp_value = row.get("value_num")
                 if emp_id and pd.notna(comp_value):
                     compensation_map[emp_id] = comp_value
 
@@ -372,25 +399,25 @@ class HiringOrchestrator:
         # Create new hire records
         new_hires_data = {
             EMP_ID: employee_ids,
-            EMP_HIRE_DATE: pd.to_datetime(hire_events['event_time']),
-            EMP_BIRTH_DATE: pd.to_datetime('1990-01-01'),  # Default
+            EMP_HIRE_DATE: pd.to_datetime(hire_events["event_time"]),
+            EMP_BIRTH_DATE: pd.to_datetime("1990-01-01"),  # Default
             # EMP_ROLE removed as part of schema refactoring
             EMP_GROSS_COMP: compensation_values,
-            'employee_termination_date': pd.NaT,
+            "employee_termination_date": pd.NaT,
             EMP_ACTIVE: True,
             EMP_DEFERRAL_RATE: 0.0,
-            EMP_TENURE_BAND: '<1',  # New hires
+            EMP_TENURE_BAND: "<1",  # New hires
             EMP_TENURE: 0.0,
-            EMP_LEVEL: pd.to_numeric(extracted_levels, errors='coerce').fillna(1).astype('Int64'),
-            EMP_LEVEL_SOURCE: 'new_hire',
+            EMP_LEVEL: pd.to_numeric(extracted_levels, errors="coerce").fillna(1).astype("Int64"),
+            EMP_LEVEL_SOURCE: "new_hire",
             EMP_EXITED: False,
-            SIMULATION_YEAR: year_context.year
+            SIMULATION_YEAR: year_context.year,
         }
 
         # Try to get birth date from meta if available (role removed as part of schema refactoring)
-        if 'meta' in hire_events.columns:
-            new_hires_data[EMP_BIRTH_DATE] = hire_events['meta'].apply(
-                lambda x: pd.to_datetime(safe_get_meta(x, 'birth_date', '1990-01-01'))
+        if "meta" in hire_events.columns:
+            new_hires_data[EMP_BIRTH_DATE] = hire_events["meta"].apply(
+                lambda x: pd.to_datetime(safe_get_meta(x, "birth_date", "1990-01-01"))
             )
             # Role extraction removed as part of schema refactoring
 
@@ -409,31 +436,33 @@ class HiringOrchestrator:
 
         # Ensure no duplicate employee IDs
         if combined_snapshot.index.duplicated().any():
-            self.logger.warning("Found duplicate employee IDs after adding hires, removing duplicates")
-            combined_snapshot = combined_snapshot[~combined_snapshot.index.duplicated(keep='first')]
+            self.logger.warning(
+                "Found duplicate employee IDs after adding hires, removing duplicates"
+            )
+            combined_snapshot = combined_snapshot[~combined_snapshot.index.duplicated(keep="first")]
 
         return combined_snapshot
 
     def _extract_compensation_from_hire_event(self, hire_row: pd.Series) -> Optional[float]:
         """Extract compensation from a hire event row."""
         # Try value_num first
-        if 'value_num' in hire_row and pd.notna(hire_row['value_num']):
-            return float(hire_row['value_num'])
+        if "value_num" in hire_row and pd.notna(hire_row["value_num"]):
+            return float(hire_row["value_num"])
 
         # Try value_json
-        if 'value_json' in hire_row and pd.notna(hire_row['value_json']):
+        if "value_json" in hire_row and pd.notna(hire_row["value_json"]):
             try:
-                value_data = json.loads(hire_row['value_json'])
+                value_data = json.loads(hire_row["value_json"])
                 if isinstance(value_data, dict):
-                    return value_data.get('compensation') or value_data.get('salary')
+                    return value_data.get("compensation") or value_data.get("salary")
                 elif isinstance(value_data, (int, float)):
                     return float(value_data)
             except (json.JSONDecodeError, TypeError):
                 pass
 
         # Try meta
-        if 'meta' in hire_row:
-            comp = safe_get_meta(hire_row['meta'], 'compensation')
+        if "meta" in hire_row:
+            comp = safe_get_meta(hire_row["meta"], "compensation")
             if comp is not None:
                 return float(comp)
 
@@ -442,19 +471,19 @@ class HiringOrchestrator:
     def _extract_level_from_hire_event(self, hire_row: pd.Series) -> Optional[int]:
         """Extract job level from a hire event row."""
         # Try value_json first
-        if 'value_json' in hire_row and pd.notna(hire_row['value_json']):
+        if "value_json" in hire_row and pd.notna(hire_row["value_json"]):
             try:
-                value_data = json.loads(hire_row['value_json'])
+                value_data = json.loads(hire_row["value_json"])
                 if isinstance(value_data, dict):
-                    level = value_data.get('level') or value_data.get('job_level')
+                    level = value_data.get("level") or value_data.get("job_level")
                     if level is not None:
                         return int(level)
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
         # Try meta
-        if 'meta' in hire_row:
-            level = safe_get_meta(hire_row['meta'], 'level')
+        if "meta" in hire_row:
+            level = safe_get_meta(hire_row["meta"], "level")
             if level is not None:
                 try:
                     return int(level)

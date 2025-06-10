@@ -2,14 +2,15 @@
 Constants and static mappings used throughout the projection runner.
 """
 
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from cost_model.state.schema import (
     EMP_ID,
-    SIMULATION_YEAR,
     EVENT_TYPE,
+    EVT_CONTRIB,
     EVT_HIRE,
     EVT_TERM,
-    EVT_CONTRIB,
+    SIMULATION_YEAR,
 )
 
 # Event priority mapping

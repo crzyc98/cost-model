@@ -13,7 +13,7 @@ reusable components following the Extract Method and Extract Class patterns.
 The refactored system follows these design principles:
 
 1. **Single Responsibility Principle**: Each class has a focused responsibility
-2. **Dependency Injection**: Components accept configuration for flexibility  
+2. **Dependency Injection**: Components accept configuration for flexibility
 3. **Type Safety**: Comprehensive type hints prevent runtime errors
 4. **Performance Monitoring**: Built-in timing and memory tracking
 5. **Structured Logging**: Detailed, contextual logging throughout
@@ -52,7 +52,7 @@ from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
 
 yearly_snapshot = build_enhanced_yearly_snapshot(
     start_of_year_snapshot=soy_snapshot,
-    end_of_year_snapshot=eoy_snapshot, 
+    end_of_year_snapshot=eoy_snapshot,
     year_events=events_df,
     simulation_year=2025
 )
@@ -94,7 +94,7 @@ Custom exception hierarchy provides detailed error context:
 
 - **SnapshotError**: Base exception class
 - **CensusDataError**: Census data loading/validation issues
-- **ValidationError**: Data validation failures  
+- **ValidationError**: Data validation failures
 - **SnapshotBuildError**: Snapshot construction errors
 - **ConfigurationError**: Configuration-related problems
 
@@ -104,38 +104,39 @@ Each exception includes rich context for debugging:
 - Data shape and additional diagnostic information
 """
 
-from typing import Optional
-import pandas as pd
 from datetime import datetime
+from typing import Optional
 
-from .builder import create_initial_snapshot, build_enhanced_yearly_snapshot
-from .event_processor import EventProcessor
+import pandas as pd
+
+from .builder import build_enhanced_yearly_snapshot, create_initial_snapshot
 from .consolidator import consolidate_snapshots_to_parquet
-from .types import SimulationYear, FilePath
+from .event_processor import EventProcessor
+from .types import FilePath, SimulationYear
 
 # Create a default event processor instance for backward compatibility
 _default_event_processor = EventProcessor()
 
+
 def update_snapshot_with_events(
-    prev_snapshot: pd.DataFrame, 
-    events: pd.DataFrame, 
-    target_date: datetime
+    prev_snapshot: pd.DataFrame, events: pd.DataFrame, target_date: datetime
 ) -> pd.DataFrame:
     """Backward compatibility wrapper for update_snapshot_with_events.
-    
+
     Args:
         prev_snapshot: Previous snapshot DataFrame
         events: Events DataFrame to apply
         target_date: Target date for snapshot update
-        
+
     Returns:
         Updated snapshot DataFrame
     """
     return _default_event_processor.update_snapshot_with_events(prev_snapshot, events, target_date)
 
+
 __all__ = [
-    'create_initial_snapshot',
-    'build_enhanced_yearly_snapshot', 
-    'update_snapshot_with_events',
-    'consolidate_snapshots_to_parquet'
+    "create_initial_snapshot",
+    "build_enhanced_yearly_snapshot",
+    "update_snapshot_with_events",
+    "consolidate_snapshots_to_parquet",
 ]

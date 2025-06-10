@@ -3,29 +3,37 @@
 Eligibility Events Engine:Emits milestone eligibility events for employees who cross a configured milestone between prev_as_of and as_of.
 QuickStart: see docs/cost_model/plan_rules/eligibility_events.md
 """
-import uuid
 import json
+import uuid
 from datetime import timedelta
 from typing import List
+
 import pandas as pd
+
 from cost_model.config.plan_rules import EligibilityEventsConfig
-from cost_model.utils.columns import EMP_ID, EMP_HIRE_DATE
+from cost_model.utils.columns import EMP_HIRE_DATE, EMP_ID
 
 # canonical event schema
-EVENT_COLS = ["event_id","event_time",EMP_ID,"event_type","value_num","value_json","meta"]
+EVENT_COLS = ["event_id", "event_time", EMP_ID, "event_type", "value_num", "value_json", "meta"]
 EVENT_DTYPES = {
-    "event_id":"string","event_time":"datetime64[ns]",EMP_ID:"string",
-    "event_type":"string","value_num":"float64","value_json":"string","meta":"string"
+    "event_id": "string",
+    "event_time": "datetime64[ns]",
+    EMP_ID: "string",
+    "event_type": "string",
+    "value_num": "float64",
+    "value_json": "string",
+    "meta": "string",
 }
 
 from typing import Optional
+
 
 def run(
     snapshot: pd.DataFrame,
     events: pd.DataFrame,
     as_of: pd.Timestamp,
     prev_as_of: Optional[pd.Timestamp],
-    cfg: EligibilityEventsConfig
+    cfg: EligibilityEventsConfig,
 ) -> list:
     """
     Emit milestone eligibility events for employees who cross a configured milestone between prev_as_of and as_of.
@@ -36,7 +44,11 @@ def run(
         return []
     # 2. Default prev_as_of to before everyone if None
     if prev_as_of is None:
-        prev = snapshot[EMP_HIRE_DATE].min() if EMP_HIRE_DATE in snapshot.columns else pd.Timestamp("1900-01-01")
+        prev = (
+            snapshot[EMP_HIRE_DATE].min()
+            if EMP_HIRE_DATE in snapshot.columns
+            else pd.Timestamp("1900-01-01")
+        )
     else:
         prev = prev_as_of
     # 3. Ensure index
@@ -48,7 +60,7 @@ def run(
         # For safety, let's assume if EMP_ID is not a column, it must be the index.
         # If it's truly missing, subsequent operations will fail, which is desired behavior.
         if EMP_ID not in snapshot.columns and EMP_ID != snapshot.index.name:
-             raise ValueError(f"{EMP_ID} column not found in snapshot and not set as index.")
+            raise ValueError(f"{EMP_ID} column not found in snapshot and not set as index.")
 
     # Check if EMP_HIRE_DATE exists
     if EMP_HIRE_DATE not in snapshot.columns:
@@ -58,14 +70,14 @@ def run(
 
     # 4. Compute service months at both dates
     def svc_months(dt):
-        return (
-            (dt.year - snapshot[EMP_HIRE_DATE].dt.year) * 12 +
-            (dt.month - snapshot[EMP_HIRE_DATE].dt.month)
+        return (dt.year - snapshot[EMP_HIRE_DATE].dt.year) * 12 + (
+            dt.month - snapshot[EMP_HIRE_DATE].dt.month
         )
+
     svc_prev = svc_months(prev)
     svc_now = svc_months(as_of)
     rows = []
-    for emp in snapshot.index: # Assumes index is EMP_ID
+    for emp in snapshot.index:  # Assumes index is EMP_ID
         pv = svc_prev.loc[emp]
         nv = svc_now.loc[emp]
         # print(f"[MILESTONE DEBUG] emp={emp}, svc_prev={pv}, svc_now={nv}")
@@ -76,17 +88,19 @@ def run(
                 et = cfg.event_type_map.get(m)
                 if not et:
                     continue
-                rows.append({
-                    "event_id": str(uuid.uuid4()),
-                    "event_time": as_of,
-                    EMP_ID: emp,
-                    "event_type": et,
-                    "value_num": None,
-                    "value_json": json.dumps({"milestone_months": m}),
-                    "meta": None,
-                })
+                rows.append(
+                    {
+                        "event_id": str(uuid.uuid4()),
+                        "event_time": as_of,
+                        EMP_ID: emp,
+                        "event_type": et,
+                        "value_num": None,
+                        "value_json": json.dumps({"milestone_months": m}),
+                        "meta": None,
+                    }
+                )
             # else:
-                # print("not fired")
+            # print("not fired")
     if not rows:
         return []
     df = pd.DataFrame(rows, columns=EVENT_COLS).astype(EVENT_DTYPES)

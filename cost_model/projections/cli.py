@@ -3,24 +3,30 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
-from typing import Optional, Dict, Any, Tuple, List
-
-import pandas as pd
-import numpy as np
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+# Import logging configuration
+from logging_config import (
+    DEBUG_LOGGER,
+    ERROR_LOGGER,
+    PERFORMANCE_LOGGER,
+    PROJECTION_LOGGER,
+    setup_logging,
+)
 
 from cost_model.config.loaders import load_config_to_namespace
-from .snapshot import create_initial_snapshot
-from .event_log import create_initial_event_log
 from cost_model.engines.run_one_year.orchestrator import run_one_year
 from cost_model.plan_rules import load_plan_rules
 from cost_model.projections.hazard import build_hazard_table, load_and_expand_hazard_table
-from .reporting import save_detailed_results, plot_projection_results
-from .snapshot import consolidate_snapshots_to_parquet
 
-# Import logging configuration
-from logging_config import setup_logging, PROJECTION_LOGGER, PERFORMANCE_LOGGER, ERROR_LOGGER, DEBUG_LOGGER
+from .event_log import create_initial_event_log
+from .reporting import plot_projection_results, save_detailed_results
+from .snapshot import consolidate_snapshots_to_parquet, create_initial_snapshot
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -28,47 +34,38 @@ logger = logging.getLogger(__name__)
 # Directory for log files
 LOG_DIR = Path("output_dev/projection_logs")
 
+
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run multi-year cost model projections.")
 
     # Required arguments
     parser.add_argument(
-        "--config",
-        type=str,
-        required=True,
-        help="Path to the YAML configuration file."
+        "--config", type=str, required=True, help="Path to the YAML configuration file."
     )
     parser.add_argument(
-        "--census",
-        type=str,
-        required=True,
-        help="Path to the Parquet census data file."
+        "--census", type=str, required=True, help="Path to the Parquet census data file."
     )
 
     # Optional arguments
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging"
-    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--log-dir",
         type=str,
         default=str(LOG_DIR),
-        help=f"Directory to store log files (default: {LOG_DIR})"
+        help=f"Directory to store log files (default: {LOG_DIR})",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="Directory to save output files. Overrides config if provided."
+        help="Directory to save output files. Overrides config if provided.",
     )
     parser.add_argument(
         "--scenario-name",
         type=str,
         default="projection_cli",
-        help="Name for the scenario, used in output file naming."
+        help="Name for the scenario, used in output file naming.",
     )
 
     return parser.parse_args()
@@ -130,7 +127,9 @@ def main():
         config_ns = load_config_to_namespace(args.config)
 
         # Set log level from config if specified
-        log_level_str = getattr(getattr(config_ns, 'global_parameters', {}), 'log_level', 'INFO').upper()
+        log_level_str = getattr(
+            getattr(config_ns, "global_parameters", {}), "log_level", "INFO"
+        ).upper()
         numeric_level = getattr(logging, log_level_str, logging.INFO)
         logging.getLogger().setLevel(numeric_level)
         logger.info(f"Logging level set to: {log_level_str}")
@@ -138,7 +137,7 @@ def main():
         # Determine output directory
         if args.output_dir:
             output_path = Path(args.output_dir)
-        elif hasattr(config_ns.global_parameters, 'output_directory'):
+        elif hasattr(config_ns.global_parameters, "output_directory"):
             output_path = Path(config_ns.global_parameters.output_directory)
         else:
             output_path = Path(f"output_dev/{args.scenario_name}_results")
@@ -183,7 +182,9 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
     start_year = config_ns.global_parameters.start_year
 
     # 2. Create Initial Snapshot
-    logger.info(f"Creating initial snapshot from census: {args.census} for start year: {start_year}")
+    logger.info(
+        f"Creating initial snapshot from census: {args.census} for start year: {start_year}"
+    )
     initial_snapshot = create_initial_snapshot(start_year, args.census)
 
     # 3. Create Initial Event Log
@@ -192,50 +193,68 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
 
     # 4. Prepare arguments for run_one_year
     global_params = config_ns.global_parameters
-    plan_rules = load_plan_rules(config_ns) if hasattr(config_ns, 'plan_rules') or hasattr(config_ns, 'plan_rules_path') else {}
+    plan_rules = (
+        load_plan_rules(config_ns)
+        if hasattr(config_ns, "plan_rules") or hasattr(config_ns, "plan_rules_path")
+        else {}
+    )
     projection_years = list(range(start_year, start_year + global_params.projection_years))
 
     # First, load and expand the hazard table from the parquet file
     logger.info("Loading hazard table from parquet file and expanding role='*' entries")
-    expanded_hazard_table = load_and_expand_hazard_table('data/hazard_table.parquet')
+    expanded_hazard_table = load_and_expand_hazard_table("data/hazard_table.parquet")
 
     # Check if we successfully loaded and expanded the hazard table
     if expanded_hazard_table.empty:
-        logger.warning("Could not load or expand hazard table from parquet. Falling back to build_hazard_table.")
+        logger.warning(
+            "Could not load or expand hazard table from parquet. Falling back to build_hazard_table."
+        )
         logger.info(f"Building hazard table for years {projection_years}")
         hazard_table = build_hazard_table(
             years=projection_years,
             initial_snapshot=initial_snapshot,
             global_params=global_params,
-            plan_rules_config=plan_rules
+            plan_rules_config=plan_rules,
         )
     else:
         # Filter the expanded hazard table to only include the projection years
-        if 'simulation_year' in expanded_hazard_table.columns:
-            expanded_hazard_table = expanded_hazard_table[expanded_hazard_table['simulation_year'].isin(projection_years)]
+        if "simulation_year" in expanded_hazard_table.columns:
+            expanded_hazard_table = expanded_hazard_table[
+                expanded_hazard_table["simulation_year"].isin(projection_years)
+            ]
 
         # Ensure the hazard table has all required columns
         from cost_model.state.schema import (
-            SIMULATION_YEAR, EMP_LEVEL, EMP_TENURE_BAND, TERM_RATE, MERIT_RAISE_PCT,
-            NEW_HIRE_TERMINATION_RATE, COLA_PCT, CFG
+            CFG,
+            COLA_PCT,
+            EMP_LEVEL,
+            EMP_TENURE_BAND,
+            MERIT_RAISE_PCT,
+            NEW_HIRE_TERMINATION_RATE,
+            SIMULATION_YEAR,
+            TERM_RATE,
         )
 
         # Map column names if needed
         column_mapping = {
-            'simulation_year': SIMULATION_YEAR,
-            'employee_level': EMP_LEVEL,
-            'tenure_band': EMP_TENURE_BAND,
-            'term_rate': TERM_RATE,
-            'merit_raise_pct': MERIT_RAISE_PCT,
-            'new_hire_termination_rate': NEW_HIRE_TERMINATION_RATE,  # CRITICAL FIX: Use correct constant
-            'cola_pct': COLA_PCT,
+            "simulation_year": SIMULATION_YEAR,
+            "employee_level": EMP_LEVEL,
+            "tenure_band": EMP_TENURE_BAND,
+            "term_rate": TERM_RATE,
+            "merit_raise_pct": MERIT_RAISE_PCT,
+            "new_hire_termination_rate": NEW_HIRE_TERMINATION_RATE,  # CRITICAL FIX: Use correct constant
+            "cola_pct": COLA_PCT,
             # Add new granular compensation columns
-            'promotion_raise_pct': 'promotion_raise_pct',
-            'promotion_rate': 'promotion_rate',
+            "promotion_raise_pct": "promotion_raise_pct",
+            "promotion_rate": "promotion_rate",
         }
 
         for src, dst in column_mapping.items():
-            if src in expanded_hazard_table.columns and dst not in expanded_hazard_table.columns and src != dst:
+            if (
+                src in expanded_hazard_table.columns
+                and dst not in expanded_hazard_table.columns
+                and src != dst
+            ):
                 expanded_hazard_table[dst] = expanded_hazard_table[src]
 
         # Add missing columns with default values
@@ -244,19 +263,24 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
 
         # Log some statistics about the expanded hazard table
         logger.info(f"Expanded hazard table has {len(expanded_hazard_table)} rows")
-        if EMP_LEVEL in expanded_hazard_table.columns and EMP_TENURE_BAND in expanded_hazard_table.columns:
+        if (
+            EMP_LEVEL in expanded_hazard_table.columns
+            and EMP_TENURE_BAND in expanded_hazard_table.columns
+        ):
             unique_combos = expanded_hazard_table[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates()
-            logger.info(f"Expanded hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations")
+            logger.info(
+                f"Expanded hazard table has {len(unique_combos)} unique (employee_level, tenure_band) combinations"
+            )
 
         # Use the expanded hazard table
         hazard_table = expanded_hazard_table
 
     # Initialize random number generator
-    seed = getattr(global_params, 'random_seed', 42)
+    seed = getattr(global_params, "random_seed", 42)
     rng = np.random.default_rng(seed)
     logger.debug(f"Initialized RNG with seed: {seed}")
 
-    census_template_path = getattr(global_params, 'census_template_path', None)
+    census_template_path = getattr(global_params, "census_template_path", None)
     if census_template_path:
         logger.info(f"Using census template: {census_template_path}")
 
@@ -277,6 +301,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
 
         # Time the projection
         import time
+
         start_time = time.time()
 
         try:
@@ -294,7 +319,9 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                 rng=rng,
                 census_template_path=census_template_path,
                 rng_seed_offset=year,  # Add year-specific seed offset
-                deterministic_term=getattr(global_params, 'deterministic_termination', True)  # Enable deterministic terminations
+                deterministic_term=getattr(
+                    global_params, "deterministic_termination", True
+                ),  # Enable deterministic terminations
             )
 
             # Log performance metrics
@@ -311,24 +338,26 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
 
             # Get events for this year from the cumulative event log
-            year_events = cumulative_event_log[
-                cumulative_event_log['simulation_year'] == year
-            ] if 'simulation_year' in cumulative_event_log.columns else cumulative_event_log
+            year_events = (
+                cumulative_event_log[cumulative_event_log["simulation_year"] == year]
+                if "simulation_year" in cumulative_event_log.columns
+                else cumulative_event_log
+            )
 
             # Build the enhanced yearly snapshot that includes all employees active during the year
             enhanced_yearly_snapshot = build_enhanced_yearly_snapshot(
                 start_of_year_snapshot=start_of_year_snapshot,
                 end_of_year_snapshot=eoy_snapshot,
                 year_events=year_events,
-                simulation_year=year
+                simulation_year=year,
             )
 
             # Generate employment status summary using the enhanced snapshot (contains terminated employees)
             employment_summary = make_yearly_status(
-                current_snapshot,        # Start of year snapshot
+                current_snapshot,  # Start of year snapshot
                 enhanced_yearly_snapshot,  # Enhanced snapshot with terminated employees
                 cumulative_event_log,
-                year
+                year,
             )
 
             # Log employment summary
@@ -364,10 +393,14 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
         # Combine all yearly snapshots for summary calculation
         if yearly_eoy_snapshots:
             all_results_df = pd.concat(yearly_eoy_snapshots.values(), ignore_index=True)
-            logger.info(f"Combined {len(yearly_eoy_snapshots)} yearly snapshots for summary calculation")
+            logger.info(
+                f"Combined {len(yearly_eoy_snapshots)} yearly snapshots for summary calculation"
+            )
 
             # Calculate corrected summary metrics
-            summary_results_df = calculate_summary_metrics(all_results_df, config_ns.__dict__ if config_ns else {})
+            summary_results_df = calculate_summary_metrics(
+                all_results_df, config_ns.__dict__ if config_ns else {}
+            )
             logger.info("Summary metrics calculated successfully using corrected function")
         else:
             logger.warning("No yearly snapshots available for summary calculation")
@@ -391,7 +424,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             summary_statistics=summary_results_df,
             employment_status_summary_df=employment_status_summary_df,
             yearly_snapshots=yearly_eoy_snapshots,
-            config_to_save=config_ns
+            config_to_save=config_ns,
         )
         logger.info(f"Detailed results for '{args.scenario_name}' saved to {output_path}")
 
@@ -407,7 +440,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             try:
                 consolidate_snapshots_to_parquet(
                     snapshots_dir=yearly_snapshots_dir,
-                    output_path=output_path / "consolidated_snapshots.parquet"
+                    output_path=output_path / "consolidated_snapshots.parquet",
                 )
                 logger.info("Consolidated snapshots created successfully")
             except Exception as e:
@@ -416,7 +449,9 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             logger.info("No yearly snapshots found to consolidate")
 
         logger.info("Generating and saving plots...")
-        plot_projection_results(summary_results_df, output_path) # Assuming plot_projection_results takes summary_df
+        plot_projection_results(
+            summary_results_df, output_path
+        )  # Assuming plot_projection_results takes summary_df
 
         logger.info(f"Projection run for scenario '{args.scenario_name}' completed successfully.")
         logger.info(f"All outputs saved in: {output_path}")
@@ -430,22 +465,26 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
             warnings_logger.error(
                 "DataFrame error in save_detailed_results: %s\n"
                 "This is likely due to duplicate column names in summary_to_save after merging employment status summary. "
-                "Check for column name conflicts in summary and employment_status DataFrames.", e
+                "Check for column name conflicts in summary and employment_status DataFrames.",
+                e,
             )
         elif "must specify a string key" in error_str and "Dict" in error_str:
             warnings_logger.error(
                 "Dict serialization error in save_detailed_results: %s\n"
-                "This may be due to non-string keys in dictionary columns being saved to parquet.", e
+                "This may be due to non-string keys in dictionary columns being saved to parquet.",
+                e,
             )
         elif "promotion matrix" in error_str.lower() or "markov" in error_str.lower():
             warnings_logger.error("Promotion matrix load/validation failed: %s", e)
         else:
             warnings_logger.error(
                 "Error during results saving: %s\n"
-                "Check DataFrame operations in save_detailed_results for potential issues.", e,
-                exc_info=True
+                "Check DataFrame operations in save_detailed_results for potential issues.",
+                e,
+                exc_info=True,
             )
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

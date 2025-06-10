@@ -3,22 +3,21 @@
 scripts/run_projection.py
 Run retirement plan projection simulations for multiple scenarios.
 """
-import sys
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 import pandas as pd
 from data_processing import load_and_clean_census
-from cost_model import project_census, load_scenarios
+
+from cost_model import load_scenarios, project_census
 
 # Configure logging globally
 logger = logging.getLogger(__name__)
 
 
-def aggregate_scenario_results(
-    yearly_data: dict, scenario_config: dict
-) -> pd.DataFrame:
+def aggregate_scenario_results(yearly_data: dict, scenario_config: dict) -> pd.DataFrame:
     """
     Summarize key metrics per year for a scenario.
     """
@@ -56,12 +55,8 @@ def combine_raw(name: str, data: dict, out_dir: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run projection for multiple scenarios"
-    )
-    parser.add_argument(
-        "--config", type=Path, required=True, help="YAML scenarios config"
-    )
+    parser = argparse.ArgumentParser(description="Run projection for multiple scenarios")
+    parser.add_argument("--config", type=Path, required=True, help="YAML scenarios config")
     parser.add_argument("--census", type=Path, required=True, help="Input census CSV")
     parser.add_argument(
         "--output-dir", type=Path, default=Path("output"), help="Base output directory"

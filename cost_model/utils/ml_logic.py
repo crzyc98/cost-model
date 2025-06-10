@@ -2,20 +2,18 @@
 
 import logging
 from pathlib import Path
-from typing import List, Tuple, Optional, Sequence, Dict
+from typing import Dict, List, Optional, Sequence, Tuple
 
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, classification_report
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 import lightgbm as lgb
-
+import numpy as np
+import pandas as pd
+from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from utils.columns import EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_SSN, EMP_TERM_DATE, GROSS_COMP
 from utils.data_processing import load_and_clean_census
 from utils.date_utils import calculate_age, calculate_tenure
-from utils.columns import EMP_SSN, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE
-from utils.columns import GROSS_COMP
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +61,7 @@ def build_training_data(
 
         if prev_df is not None:
             # who survived into this period?
-            active_prev = prev_df[EMP_TERM_DATE].isna() | (
-                prev_df[EMP_TERM_DATE] > prev_date
-            )
+            active_prev = prev_df[EMP_TERM_DATE].isna() | (prev_df[EMP_TERM_DATE] > prev_date)
             active_ssns = set(prev_df.loc[active_prev, EMP_SSN])
 
             # who terminated in the window (prev_date, period_end]?
@@ -83,9 +79,7 @@ def build_training_data(
 
             # drop any rows missing feature columns
             before = len(period_data)
-            period_data.dropna(
-                subset=[c for c in feature_names if c != EMP_SSN], inplace=True
-            )
+            period_data.dropna(subset=[c for c in feature_names if c != EMP_SSN], inplace=True)
             dropped = before - len(period_data)
             if dropped:
                 logger.debug(
@@ -107,9 +101,7 @@ def build_training_data(
     X = training[feature_names].copy()
     y = training["y"].copy().astype(int)
 
-    logger.info(
-        "Training data shape: %s, turnover rate: %.2f%%", X.shape, y.mean() * 100
-    )
+    logger.info("Training data shape: %s, turnover rate: %.2f%%", X.shape, y.mean() * 100)
     return X, y
 
 
@@ -144,9 +136,7 @@ def train_turnover_model(
     auc = roc_auc_score(y_val, preds)
     logger.info("Validation AUC: %.4f", auc)
 
-    logger.debug(
-        "Classification report:\n%s", classification_report(y_val, model.predict(X_val))
-    )
+    logger.debug("Classification report:\n%s", classification_report(y_val, model.predict(X_val)))
     return model
 
 
@@ -163,6 +153,7 @@ def prepare_features_for_prediction(
         feats["age_start"] = calculate_age(df[EMP_BIRTH_DATE], reference_date)
 
     from cost_model.state.schema import EMP_TENURE
+
     if "tenure_start" in feature_names:
         if EMP_TENURE in df.columns:
             feats["tenure_start"] = df[EMP_TENURE]
@@ -178,9 +169,7 @@ def prepare_features_for_prediction(
     for col in result:
         if result[col].isna().any():
             med = result[col].median()
-            logger.debug(
-                "Imputing %d NaNs in %s with %.2f", result[col].isna().sum(), col, med
-            )
+            logger.debug("Imputing %d NaNs in %s with %.2f", result[col].isna().sum(), col, med)
             result[col].fillna(med, inplace=True)
 
     return result

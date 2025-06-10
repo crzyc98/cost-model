@@ -2,26 +2,28 @@
 utils/data_processing.py - Functions for loading and cleaning census data.
 """
 
-import pandas as pd
-import os
 import logging
-import numpy as np
+import os
 from datetime import datetime
-from cost_model.utils.columns import (
-    RAW_TO_STD_COLS,
-    DATE_COLS,
-    EMP_SSN,
-    EMP_GROSS_COMP,
-    STATUS_COL,
-    EMP_HIRE_DATE,
-    EMP_TERM_DATE,
-)
 
-# Avoid enum name collision: alias status_enums EmploymentStatus
-from cost_model.utils.status_enums import EmploymentStatus as PhaseStatus
+import numpy as np
+import pandas as pd
+
+from cost_model.utils.columns import (
+    DATE_COLS,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_SSN,
+    EMP_TERM_DATE,
+    RAW_TO_STD_COLS,
+    STATUS_COL,
+)
 
 # Use explicit constants for active vs inactive states
 from cost_model.utils.constants import ACTIVE_STATUS, INACTIVE_STATUS
+
+# Avoid enum name collision: alias status_enums EmploymentStatus
+from cost_model.utils.status_enums import EmploymentStatus as PhaseStatus
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +83,7 @@ def load_and_clean_census(filepath, expected_cols):
             df[col] = pd.to_numeric(df[col], errors="coerce")
             after = df[col].isna().sum()
             if after > before:
-                logger.warning(
-                    "Coercion created %d new NaNs in %s", after - before, col
-                )
+                logger.warning("Coercion created %d new NaNs in %s", after - before, col)
 
     # Convert SSN to string
     if EMP_SSN in df.columns:
@@ -93,11 +93,7 @@ def load_and_clean_census(filepath, expected_cols):
     df["plan_year_end_date"] = _infer_plan_year_end(filepath)
 
     # Drop any unmapped raw columns
-    keep = (
-        set(RAW_TO_STD_COLS.values())
-        | set(expected_cols["required"])
-        | {"plan_year_end_date"}
-    )
+    keep = set(RAW_TO_STD_COLS.values()) | set(expected_cols["required"]) | {"plan_year_end_date"}
     df = df.loc[:, df.columns.intersection(keep)]
     return df
 

@@ -12,4 +12,4 @@ print("Using run_one_year package implementation with modular orchestrator")
 
 from .orchestrator import run_one_year
 
-__all__ = ['run_one_year']
+__all__ = ["run_one_year"]

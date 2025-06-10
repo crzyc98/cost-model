@@ -5,21 +5,22 @@ This module provides detailed documentation, examples, and usage patterns
 for the refactored snapshot processing system.
 """
 
-from typing import Dict, Any, List
-import pandas as pd
 from datetime import datetime
+from typing import Any, Dict, List
 
-from .types import EmployeeId, SimulationYear, CompensationAmount
-from .models import SnapshotConfig, ValidationResult, SnapshotMetrics
+import pandas as pd
+
+from .models import SnapshotConfig, SnapshotMetrics, ValidationResult
+from .types import CompensationAmount, EmployeeId, SimulationYear
 
 
 class SnapshotSystemDocumentation:
     """Documentation and examples for the snapshot processing system."""
-    
+
     @staticmethod
     def get_system_overview() -> Dict[str, Any]:
         """Get a comprehensive overview of the snapshot system.
-        
+
         Returns:
             Dictionary containing system overview information.
         """
@@ -29,38 +30,38 @@ class SnapshotSystemDocumentation:
                 "pattern": "Extract Method and Extract Class refactoring",
                 "components": [
                     "CensusLoader - Data loading and preprocessing",
-                    "SnapshotTransformer - Data transformations", 
+                    "SnapshotTransformer - Data transformations",
                     "SnapshotValidator - Data validation",
                     "YearlySnapshotProcessor - Complex yearly processing",
                     "ContributionsProcessor - Plan rule calculations",
-                    "StatusProcessor - Employee status determination"
+                    "StatusProcessor - Employee status determination",
                 ],
                 "design_principles": [
                     "Single Responsibility Principle",
                     "Dependency Injection",
                     "Type Safety with comprehensive type hints",
                     "Performance monitoring and structured logging",
-                    "Comprehensive error handling"
-                ]
+                    "Comprehensive error handling",
+                ],
             },
             "benefits": [
                 "Improved maintainability through modular design",
-                "Enhanced testability with focused components", 
+                "Enhanced testability with focused components",
                 "Better performance monitoring and debugging",
                 "Type safety prevents runtime errors",
-                "Comprehensive logging aids troubleshooting"
-            ]
+                "Comprehensive logging aids troubleshooting",
+            ],
         }
-    
+
     @staticmethod
     def get_usage_examples() -> Dict[str, str]:
         """Get code examples for common usage patterns.
-        
+
         Returns:
             Dictionary containing code examples.
         """
         return {
-            "basic_initial_snapshot": '''
+            "basic_initial_snapshot": """
 # Basic initial snapshot creation
 from cost_model.projections.snapshot import create_initial_snapshot
 
@@ -71,9 +72,8 @@ snapshot = create_initial_snapshot(
 )
 
 print(f"Created snapshot with {len(snapshot)} employees")
-            ''',
-            
-            "yearly_snapshot_creation": '''
+            """,
+            "yearly_snapshot_creation": """
 # Enhanced yearly snapshot with all employees
 from cost_model.projections.snapshot import build_enhanced_yearly_snapshot
 
@@ -86,9 +86,8 @@ yearly_snapshot = build_enhanced_yearly_snapshot(
 
 # The yearly snapshot includes all employees active during the year,
 # including those who were hired and terminated within the year
-            ''',
-            
-            "custom_configuration": '''
+            """,
+            "custom_configuration": """
 # Custom configuration for specific needs
 from cost_model.projections.snapshot.models import SnapshotConfig
 
@@ -106,9 +105,8 @@ from cost_model.projections.snapshot.validators import SnapshotValidator
 
 loader = CensusLoader(config)
 validator = SnapshotValidator(config)
-            ''',
-            
-            "performance_monitoring": '''
+            """,
+            "performance_monitoring": """
 # Performance monitoring example
 from cost_model.projections.snapshot.logging_utils import (
     PerformanceMonitor, get_snapshot_logger
@@ -129,9 +127,8 @@ final_metrics = monitor.finish_monitoring(
     total_processed=10000,
     success_rate=0.95
 )
-            ''',
-            
-            "validation_patterns": '''
+            """,
+            "validation_patterns": """
 # Data validation examples
 from cost_model.projections.snapshot.validators import SnapshotValidator
 from cost_model.projections.snapshot.models import SnapshotConfig
@@ -150,50 +147,50 @@ data_validation = validator.validate_census_data(df)
 if data_validation.warnings:
     for warning in data_validation.warnings:
         print(f"Data warning: {warning}")
-            '''
+            """,
         }
-    
+
     @staticmethod
     def get_type_definitions_guide() -> Dict[str, Any]:
         """Get guide for type definitions and their usage.
-        
+
         Returns:
             Dictionary containing type definitions guide.
         """
         return {
             "core_types": {
                 "EmployeeId": "str - Unique identifier for employees",
-                "SimulationYear": "int - Year in simulation timeline", 
+                "SimulationYear": "int - Year in simulation timeline",
                 "CompensationAmount": "float - Monetary compensation values",
                 "TenureYears": "float - Years of service",
                 "AgeYears": "float - Employee age in years",
-                "FilePath": "Union[str, Path] - File system paths"
+                "FilePath": "Union[str, Path] - File system paths",
             },
             "data_structures": {
                 "SnapshotRow": "TypedDict defining structure of employee snapshot row",
                 "EmployeeEvent": "TypedDict for event-driven employee changes",
                 "ValidationResult": "TypedDict for validation operation results",
-                "PerformanceMetrics": "TypedDict for performance monitoring data"
+                "PerformanceMetrics": "TypedDict for performance monitoring data",
             },
             "protocols": {
                 "SnapshotProcessor": "Protocol for snapshot processing components",
                 "DataValidator": "Protocol for data validation components",
                 "DataTransformer": "Protocol for data transformation components",
-                "EventProcessor": "Protocol for event processing components"
+                "EventProcessor": "Protocol for event processing components",
             },
             "usage_tips": [
                 "Use type hints for all function parameters and return values",
                 "Leverage TypedDict for structured data with known schemas",
                 "Use Protocol for defining interfaces without inheritance",
                 "Prefer specific types (SimulationYear) over generic (int)",
-                "Use Union types for parameters that accept multiple types"
-            ]
+                "Use Union types for parameters that accept multiple types",
+            ],
         }
-    
+
     @staticmethod
     def get_error_handling_guide() -> Dict[str, Any]:
         """Get comprehensive error handling documentation.
-        
+
         Returns:
             Dictionary containing error handling guide.
         """
@@ -203,7 +200,7 @@ if data_validation.warnings:
                 "CensusDataError": "Errors related to census data loading/validation",
                 "ValidationError": "Data validation failures",
                 "SnapshotBuildError": "Errors during snapshot construction",
-                "ConfigurationError": "Configuration-related issues"
+                "ConfigurationError": "Configuration-related issues",
             },
             "error_context": {
                 "purpose": "Provide detailed context for debugging",
@@ -213,22 +210,22 @@ if data_validation.warnings:
                     "simulation_year - Year being processed",
                     "processing_step - Specific step that failed",
                     "data_shape - Shape of data being processed",
-                    "additional_context - Any other relevant information"
-                ]
+                    "additional_context - Any other relevant information",
+                ],
             },
             "best_practices": [
                 "Always catch exceptions at appropriate boundaries",
                 "Log errors with full context before re-raising",
                 "Use specific exception types for different error categories",
                 "Include enough detail for effective debugging",
-                "Validate inputs early to provide clear error messages"
-            ]
+                "Validate inputs early to provide clear error messages",
+            ],
         }
-    
+
     @staticmethod
     def get_performance_optimization_guide() -> Dict[str, Any]:
         """Get performance optimization recommendations.
-        
+
         Returns:
             Dictionary containing performance guidance.
         """
@@ -238,50 +235,50 @@ if data_validation.warnings:
                 "Process data in chunks for large datasets",
                 "Explicitly delete unused DataFrames",
                 "Use memory_usage(deep=True) to monitor DataFrame memory",
-                "Consider using Parquet format for better compression"
+                "Consider using Parquet format for better compression",
             ],
             "processing_optimization": [
                 "Vectorize operations using pandas/numpy when possible",
                 "Use pandas groupby operations instead of loops",
                 "Minimize DataFrame copies by using inplace operations carefully",
                 "Cache expensive computations when appropriate",
-                "Use timing decorators to identify bottlenecks"
+                "Use timing decorators to identify bottlenecks",
             ],
             "monitoring_tools": [
                 "PerformanceMonitor class for detailed metrics",
-                "Timing decorators for function-level monitoring", 
+                "Timing decorators for function-level monitoring",
                 "Memory tracking with optional psutil integration",
                 "Structured logging for operation visibility",
-                "Progress tracking for long-running operations"
+                "Progress tracking for long-running operations",
             ],
             "scalability_considerations": [
                 "Design for streaming processing of large datasets",
                 "Use database-style operations for complex joins",
                 "Consider distributed processing for very large workloads",
                 "Implement checkpointing for long-running operations",
-                "Profile code regularly to identify regressions"
-            ]
+                "Profile code regularly to identify regressions",
+            ],
         }
-    
+
     @staticmethod
     def generate_complete_documentation() -> str:
         """Generate complete documentation as formatted string.
-        
+
         Returns:
             Comprehensive documentation as a formatted string.
         """
         doc = SnapshotSystemDocumentation()
-        
+
         sections = [
             ("System Overview", doc.get_system_overview()),
             ("Usage Examples", doc.get_usage_examples()),
             ("Type Definitions Guide", doc.get_type_definitions_guide()),
             ("Error Handling Guide", doc.get_error_handling_guide()),
-            ("Performance Optimization Guide", doc.get_performance_optimization_guide())
+            ("Performance Optimization Guide", doc.get_performance_optimization_guide()),
         ]
-        
+
         output = ["# Snapshot Processing System Documentation\n"]
-        
+
         for section_name, section_data in sections:
             output.append(f"## {section_name}\n")
             if isinstance(section_data, dict):
@@ -293,7 +290,7 @@ if data_validation.warnings:
                     elif isinstance(value, dict):
                         for subkey, subvalue in value.items():
                             output.append(f"**{subkey}**: {subvalue}")
-                    elif isinstance(value, str) and '\n' in value:
+                    elif isinstance(value, str) and "\n" in value:
                         output.append("```python")
                         output.append(value.strip())
                         output.append("```")
@@ -301,13 +298,13 @@ if data_validation.warnings:
                         output.append(str(value))
                     output.append("")
             output.append("")
-        
+
         return "\n".join(output)
 
 
 def create_sample_usage_notebook() -> str:
     """Create a sample Jupyter notebook showing system usage.
-    
+
     Returns:
         Jupyter notebook content as JSON string.
     """
@@ -319,8 +316,8 @@ def create_sample_usage_notebook() -> str:
                 "source": [
                     "# Snapshot Processing System Usage Examples\n",
                     "\n",
-                    "This notebook demonstrates the usage of the refactored snapshot processing system."
-                ]
+                    "This notebook demonstrates the usage of the refactored snapshot processing system.",
+                ],
             },
             {
                 "cell_type": "code",
@@ -329,40 +326,40 @@ def create_sample_usage_notebook() -> str:
                 "source": [
                     "# Import the main snapshot functions\n",
                     "from cost_model.projections.snapshot import (\n",
-                    "    create_initial_snapshot,\n", 
+                    "    create_initial_snapshot,\n",
                     "    build_enhanced_yearly_snapshot\n",
                     ")\n",
                     "from cost_model.projections.snapshot.models import SnapshotConfig\n",
                     "from cost_model.projections.snapshot.logging_utils import get_snapshot_logger\n",
                     "\n",
                     "# Configure logging\n",
-                    "logger = get_snapshot_logger(__name__)"
-                ]
+                    "logger = get_snapshot_logger(__name__)",
+                ],
             },
             {
-                "cell_type": "code", 
+                "cell_type": "code",
                 "execution_count": None,
                 "metadata": {},
                 "source": [
                     "# Example 1: Create initial snapshot\n",
-                    "print(\"Creating initial snapshot...\")\n",
+                    'print("Creating initial snapshot...")\n',
                     "\n",
                     "initial_snapshot = create_initial_snapshot(\n",
                     "    start_year=2025,\n",
-                    "    census_path=\"data/census_preprocessed.parquet\"\n",
+                    '    census_path="data/census_preprocessed.parquet"\n',
                     ")\n",
                     "\n",
-                    "print(f\"Initial snapshot created with {len(initial_snapshot)} employees\")\n",
-                    "print(f\"Columns: {list(initial_snapshot.columns)}\")"
-                ]
+                    'print(f"Initial snapshot created with {len(initial_snapshot)} employees")\n',
+                    'print(f"Columns: {list(initial_snapshot.columns)}")',
+                ],
             },
             {
                 "cell_type": "code",
-                "execution_count": None, 
+                "execution_count": None,
                 "metadata": {},
                 "source": [
                     "# Example 2: Yearly snapshot processing\n",
-                    "print(\"Processing yearly snapshot...\")\n",
+                    'print("Processing yearly snapshot...")\n',
                     "\n",
                     "# Simulate year events (normally from simulation engine)\n",
                     "import pandas as pd\n",
@@ -375,8 +372,8 @@ def create_sample_usage_notebook() -> str:
                     "    simulation_year=2025\n",
                     ")\n",
                     "\n",
-                    "print(f\"Yearly snapshot contains {len(yearly_snapshot)} employees\")"
-                ]
+                    'print(f"Yearly snapshot contains {len(yearly_snapshot)} employees")',
+                ],
             },
             {
                 "cell_type": "code",
@@ -392,27 +389,24 @@ def create_sample_usage_notebook() -> str:
                     "    start_year=2025,\n",
                     "    enable_validation=True,\n",
                     "    enable_timing=True,\n",
-                    "    log_level=\"INFO\"\n",
+                    '    log_level="INFO"\n',
                     ")\n",
                     "\n",
                     "# Use components directly\n",
                     "loader = CensusLoader(config)\n",
                     "validator = SnapshotValidator(config)\n",
                     "\n",
-                    "print(\"Custom components initialized successfully\")"
-                ]
-            }
+                    'print("Custom components initialized successfully")',
+                ],
+            },
         ],
         "metadata": {
-            "kernelspec": {
-                "display_name": "Python 3",
-                "language": "python", 
-                "name": "python3"
-            }
+            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}
         },
         "nbformat": 4,
-        "nbformat_minor": 4
+        "nbformat_minor": 4,
     }
-    
+
     import json
+
     return json.dumps(notebook_content, indent=2)

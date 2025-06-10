@@ -2,25 +2,28 @@
 rules/eligibility.py - Eligibility rule: age/service/hours + entry-date calc
 """
 
-import pandas as pd
-from typing import Optional, Any, Dict
 import logging
-from cost_model.utils.date_utils import calculate_age, calculate_tenure
-from cost_model.utils.constants import ACTIVE_STATUSES
+from typing import Any, Dict, Optional
+
+import pandas as pd
+
+from cost_model.rules.validators import EligibilityRule
 from cost_model.state.schema import (
+    ELIGIBILITY_ENTRY_DATE,
     EMP_BIRTH_DATE,
     EMP_HIRE_DATE,
-    ELIGIBILITY_ENTRY_DATE,
+    HOURS_WORKED,
     IS_ELIGIBLE,
     STATUS_COL,
-    HOURS_WORKED,
 )
-from cost_model.rules.validators import EligibilityRule
+from cost_model.utils.constants import ACTIVE_STATUSES
+from cost_model.utils.date_utils import calculate_age, calculate_tenure
 
 logger = logging.getLogger(__name__)
 
 
 from cost_model.state.schema import EMP_TENURE
+
 
 def apply(
     df: pd.DataFrame,
@@ -65,17 +68,13 @@ def apply(
     )
 
     # Calculate service tenure in months
-    df["tenure_months"] = (
-        calculate_tenure(df[EMP_HIRE_DATE], simulation_year_end_date) * 12
-    )
+    df["tenure_months"] = calculate_tenure(df[EMP_HIRE_DATE], simulation_year_end_date) * 12
 
     # Ensure existing entry-date
     if ELIGIBILITY_ENTRY_DATE not in df.columns:
         df[ELIGIBILITY_ENTRY_DATE] = pd.NaT
     else:
-        df[ELIGIBILITY_ENTRY_DATE] = pd.to_datetime(
-            df[ELIGIBILITY_ENTRY_DATE], errors="coerce"
-        )
+        df[ELIGIBILITY_ENTRY_DATE] = pd.to_datetime(df[ELIGIBILITY_ENTRY_DATE], errors="coerce")
 
     # Simplify entry-date: take max of service and age dates
     date_service = df[EMP_HIRE_DATE] + pd.DateOffset(months=min_service_months)
@@ -91,9 +90,7 @@ def apply(
     logger.debug("Allowed statuses (case-folded): %r", allowed)
 
     active_mask = df_status.isin(allowed)
-    logger.debug(
-        "active_mask.sum() = %d / %d", int(active_mask.sum()), len(active_mask)
-    )
+    logger.debug("active_mask.sum() = %d / %d", int(active_mask.sum()), len(active_mask))
 
     # Determine base eligibility (age/service/status)
     eligible_by_date = (df[ELIGIBILITY_ENTRY_DATE] <= simulation_year_end_date) & df[
@@ -175,9 +172,7 @@ def agent_is_eligible(
     return meets_age and meets_service and meets_status and meets_hours
 
 
-def is_eligible(
-    row: pd.Series, eligibility_config, simulation_year_end_date=None
-) -> bool:
+def is_eligible(row: pd.Series, eligibility_config, simulation_year_end_date=None) -> bool:
     """Row-wise eligibility wrapper."""
     if simulation_year_end_date is None:
         simulation_year_end_date = pd.Timestamp.today()

@@ -4,21 +4,18 @@ Emission of contribution increase events when an employee raises their deferral 
 beyond a configured threshold.
 QuickStart: see docs/cost_model/plan_rules/contribution_increase.md
 """
-import uuid
 import json
-from typing import List
+import uuid
 from datetime import datetime
+from typing import List
 
 import pandas as pd
 
 from cost_model.config.plan_rules import ContributionIncreaseConfig
-from cost_model.utils.columns import EMP_ID, EMP_DEFERRAL_RATE
+from cost_model.utils.columns import EMP_DEFERRAL_RATE, EMP_ID
 
 # canonical event schema
-EVENT_COLS = [
-    "event_id", "event_time", EMP_ID,
-    "event_type", "value_num", "value_json", "meta"
-]
+EVENT_COLS = ["event_id", "event_time", EMP_ID, "event_type", "value_num", "value_json", "meta"]
 EVENT_DTYPES = {
     "event_id": "string",
     "event_time": "datetime64[ns]",
@@ -35,11 +32,12 @@ DEFAULT_DEFERRAL_EVENT_TYPES = {"EVT_ENROLL", "EVT_AUTO_INCREASE"}
 
 from cost_model.utils.columns import EMP_TENURE
 
+
 def run(
     snapshot: pd.DataFrame,
     events: pd.DataFrame,
     as_of: pd.Timestamp,
-    cfg: ContributionIncreaseConfig
+    cfg: ContributionIncreaseConfig,
 ) -> List[pd.DataFrame]:
     """
     Identify employees whose current deferral rate has increased by at least
@@ -62,7 +60,9 @@ def run(
         A list containing a single DataFrame of increase events (or an empty list).
     """
     # 0) Check if config is present and enabled
-    if not cfg or not getattr(cfg, 'enabled', True): # Default to enabled if 'enabled' attr is missing
+    if not cfg or not getattr(
+        cfg, "enabled", True
+    ):  # Default to enabled if 'enabled' attr is missing
         # import logging # Add this import if logging is desired here
         # logger = logging.getLogger(__name__)
         # logger.debug("[ContributionIncrease] rule skipped, config missing or disabled.")
@@ -75,7 +75,9 @@ def run(
     elif current_snapshot.index.name != EMP_ID:
         # This implies EMP_ID is not a column and not the index name, which is an issue.
         if EMP_ID not in current_snapshot.columns:
-             raise ValueError(f"{EMP_ID} column not found in snapshot and not set as index for contribution_increase.")
+            raise ValueError(
+                f"{EMP_ID} column not found in snapshot and not set as index for contribution_increase."
+            )
 
     # Check for necessary columns
     if EMP_DEFERRAL_RATE not in current_snapshot.columns:
@@ -87,23 +89,23 @@ def run(
 
     rows = []
     # Determine which event types count as prior deferral settings
-    prior_types = getattr(cfg, 'prior_event_types', DEFAULT_DEFERRAL_EVENT_TYPES)
-    
+    prior_types = getattr(cfg, "prior_event_types", DEFAULT_DEFERRAL_EVENT_TYPES)
+
     # Prepare event dates once
-    event_dates_col = events['event_time'].dt.date
+    event_dates_col = events["event_time"].dt.date
     as_of_date_val = as_of.date()
 
     # Iterate over each employee's current rate
-    for emp, row_data in current_snapshot.iterrows(): # emp is EMP_ID from index
+    for emp, row_data in current_snapshot.iterrows():  # emp is EMP_ID from index
         new_rate = row_data.get(EMP_DEFERRAL_RATE)
         if new_rate is None or pd.isna(new_rate):
             continue
-            
+
         # Filter prior deferral events for this employee up to as_of
         mask = (
-            events['event_type'].isin(prior_types) &
-            (events[EMP_ID].astype(str) == str(emp)) &
-            (event_dates_col <= as_of_date_val)
+            events["event_type"].isin(prior_types)
+            & (events[EMP_ID].astype(str) == str(emp))
+            & (event_dates_col <= as_of_date_val)
         )
         prior = events.loc[mask]
 
@@ -111,22 +113,24 @@ def run(
         if prior.empty:
             old_rate = 0.0
         else:
-            last = prior.sort_values('event_time').iloc[-1]
-            old_rate = last.get('value_num') or 0.0
+            last = prior.sort_values("event_time").iloc[-1]
+            old_rate = last.get("value_num") or 0.0
 
         # Compute delta and compare to threshold
         delta = new_rate - old_rate
         if delta >= cfg.min_increase_pct:
-            payload = {'old_rate': old_rate, 'new_rate': new_rate, 'delta': delta}
-            rows.append({
-                'event_id': str(uuid.uuid4()),
-                'event_time': as_of,
-                EMP_ID: emp,
-                'event_type': cfg.event_type,
-                'value_num': None, # Or new_rate, depending on convention for this event_type
-                'value_json': json.dumps(payload),
-                'meta': None,
-            })
+            payload = {"old_rate": old_rate, "new_rate": new_rate, "delta": delta}
+            rows.append(
+                {
+                    "event_id": str(uuid.uuid4()),
+                    "event_time": as_of,
+                    EMP_ID: emp,
+                    "event_type": cfg.event_type,
+                    "value_num": None,  # Or new_rate, depending on convention for this event_type
+                    "value_json": json.dumps(payload),
+                    "meta": None,
+                }
+            )
 
     # Return empty list if no rows, else a single DataFrame
     if not rows:

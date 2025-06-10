@@ -1,0 +1,57 @@
+[flake8]
+# Maximum line length to match black's default
+max-line-length = 88
+
+# Ignore specific error codes that conflict with black or are not critical
+extend-ignore = 
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (let black handle this, but allow some flexibility for docs)
+    E501
+
+# Exclude directories that shouldn't be linted
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    .mypy_cache,
+    build,
+    dist,
+    *.egg-info,
+    .tox,
+    .pytest_cache
+
+# Select the error codes we want to check for
+# Focus on the most important issues: unused imports, undefined names, etc.
+select = 
+    # F4xx: Import errors
+    F401,  # imported but unused
+    F402,  # import module from line N shadowed by loop variable
+    F403,  # 'from module import *' used; unable to detect undefined names
+    F404,  # future import(s) name after other statements
+    F405,  # name may be undefined, or defined from star imports
+    # F8xx: Name errors  
+    F811,  # redefinition of unused name
+    F821,  # undefined name
+    F822,  # undefined name in __all__
+    F823,  # local variable referenced before assignment
+    F831,  # duplicate argument name
+    F841,  # local variable is assigned to but never used
+    # E9xx: Syntax errors
+    E901,  # SyntaxError or IndentationError
+    E902,  # IOError
+    # W6xx: Warnings
+    W601,  # .has_key() is deprecated, use 'in'
+    W602,  # deprecated form of raising exception
+    W603,  # '<>' is deprecated, use '!='
+    W604,  # backticks are deprecated, use 'repr()'
+
+# Per-file ignores for specific cases
+per-file-ignores =
+    # Allow unused imports in __init__.py files (often used for re-exports)
+    __init__.py:F401,F403
+    # Allow longer lines in configuration files with long descriptions
+    cost_model/config/models.py:E501
+    cost_model/config/loaders.py:E501

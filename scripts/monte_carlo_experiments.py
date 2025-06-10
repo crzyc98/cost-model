@@ -3,13 +3,14 @@
 Monte Carlo simulation experiments for the retirement plan ABM.
 """
 import argparse
-import sys
-import yaml
-import subprocess
 import logging
+import subprocess
+import sys
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
+import yaml
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -30,9 +31,9 @@ def sample_config(base_cfg, rng):
         loc=base_cfg.get("annual_compensation_increase_rate", 0.03),
         scale=base_cfg.get("salary_growth_std", 0.03 * 0.02),
     )
-    lower, upper = sal - 2 * base_cfg.get(
+    lower, upper = sal - 2 * base_cfg.get("salary_growth_std", 0.0), sal + 2 * base_cfg.get(
         "salary_growth_std", 0.0
-    ), sal + 2 * base_cfg.get("salary_growth_std", 0.0)
+    )
     cfg["annual_compensation_increase_rate"] = float(
         np.clip(sal, lower, upper, out=np.empty_like(sal))
     )
@@ -44,9 +45,7 @@ def main():
     p.add_argument("--config", required=True)
     p.add_argument("--census", required=True)
     p.add_argument("--runs", type=int, default=100)
-    p.add_argument(
-        "--seed", type=int, default=None, help="RNG seed for reproducibility"
-    )
+    p.add_argument("--seed", type=int, default=None, help="RNG seed for reproducibility")
     p.add_argument("--output_dir", default="output/monte_carlo")
     args = p.parse_args()
 
@@ -97,9 +96,7 @@ def main():
                 "final_total_active": final_total,
                 "growth": growth,
                 "plan_cost": (
-                    df.get("PlanCost", pd.Series()).iloc[-1]
-                    if "PlanCost" in df
-                    else None
+                    df.get("PlanCost", pd.Series()).iloc[-1] if "PlanCost" in df else None
                 ),
                 "avg_deferral_pct": (
                     df.get("AvgDeferralPct", pd.Series()).iloc[-1]

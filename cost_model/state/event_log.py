@@ -5,16 +5,17 @@ This demonstrates how to create, load, filter, and save event logs, which form t
 """
 
 import json
+import uuid
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
 import pandas as pd
 import pyarrow as pa  # Recommended for explicit Parquet schema handling
 import pyarrow.parquet as pq
-import uuid
-from pathlib import Path
-from typing import Dict, Optional, Any, Union
+from logging_config import get_diagnostic_logger, get_logger
 
 # Import schema constants directly - these are required
 from cost_model.state.schema import EMP_ID, SIMULATION_YEAR
-from logging_config import get_logger, get_diagnostic_logger
 
 logger = get_logger(__name__)
 diag_logger = get_diagnostic_logger(__name__)
@@ -22,14 +23,14 @@ diag_logger = get_diagnostic_logger(__name__)
 # --- Event Schema Definition ---
 
 # Define standard event types as constants
-EVT_HIRE      = "EVT_HIRE"
-EVT_TERM      = "EVT_TERM"
-EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM" # New Hire Termination event
-EVT_COMP      = "EVT_COMP"
-EVT_CONTRIB   = "EVT_CONTRIB"  # Contribution event type for plan rules/engines
-EVT_COLA      = "EVT_COLA"      # cost-of-living adjustment
-EVT_PROMOTION = "EVT_PROMOTION" # title or grade change
-EVT_RAISE     = "EVT_RAISE"     # ad-hoc merit increase
+EVT_HIRE = "EVT_HIRE"
+EVT_TERM = "EVT_TERM"
+EVT_NEW_HIRE_TERM = "EVT_NEW_HIRE_TERM"  # New Hire Termination event
+EVT_COMP = "EVT_COMP"
+EVT_CONTRIB = "EVT_CONTRIB"  # Contribution event type for plan rules/engines
+EVT_COLA = "EVT_COLA"  # cost-of-living adjustment
+EVT_PROMOTION = "EVT_PROMOTION"  # title or grade change
+EVT_RAISE = "EVT_RAISE"  # ad-hoc merit increase
 # Add future retirement event types here, e.g.:
 # EVT_ELIG_ACHIEVED = 'elig_achieved'
 # EVT_ENROLL_AUTO = 'enroll_auto'
@@ -139,18 +140,14 @@ def append_events(log: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFrame:
             f"New events DataFrame is missing required columns: {missing_cols}. Cannot append."
         )
         # Depending on desired behavior, could raise error or return original log
-        raise ValueError(
-            f"New events DataFrame is missing required columns: {missing_cols}"
-        )
+        raise ValueError(f"New events DataFrame is missing required columns: {missing_cols}")
 
     # Ensure dtypes of new_events match the standard schema before concat
     try:
         new_events = new_events[EVENT_COLS].astype(EVENT_PANDAS_DTYPES)
     except Exception as e:
         logger.error(f"Error conforming new events to schema: {e}", exc_info=True)
-        raise TypeError(
-            f"Could not conform new events DataFrame to required schema/dtypes: {e}"
-        )
+        raise TypeError(f"Could not conform new events DataFrame to required schema/dtypes: {e}")
 
     # Check for event_id collisions (optional but recommended)
     if not log.empty and "event_id" in log.columns and "event_id" in new_events.columns:
@@ -161,9 +158,7 @@ def append_events(log: pd.DataFrame, new_events: pd.DataFrame) -> pd.DataFrame:
                 f"Detected {len(colliding_ids)} duplicate event_ids being appended: {colliding_ids[:5]}..."
             )
             # Decide handling: raise error, filter duplicates, allow duplicates?
-            raise ValueError(
-                f"Duplicate event_ids detected during append: {colliding_ids[:5]}..."
-            )
+            raise ValueError(f"Duplicate event_ids detected during append: {colliding_ids[:5]}...")
 
     diag_logger.debug(f"Appending {len(new_events)} new events to log.")
     # Using copy=True is safer default, False might be slightly faster but shares underlying data
@@ -191,9 +186,7 @@ def save_log(log: pd.DataFrame, path: Path) -> None:
         log_to_save = log[EVENT_COLS].astype(EVENT_PANDAS_DTYPES)
 
         # Convert to Arrow Table using the explicit schema before writing
-        table = pa.Table.from_pandas(
-            log_to_save, schema=EVENT_SCHEMA, preserve_index=False
-        )
+        table = pa.Table.from_pandas(log_to_save, schema=EVENT_SCHEMA, preserve_index=False)
 
         diag_logger.debug(f"Saving {len(log_to_save)} events to: {path}")
         pq.write_table(
@@ -224,7 +217,7 @@ def create_event(
     """
     Helper to create a single event dictionary with a new UUID.
     Ensures variant strategy (only one value_* is non-null).
-    
+
     Args:
         event_time: Timestamp when the event occurred
         employee_id: String identifier for the employee (must not be None, empty, or NA)
@@ -232,10 +225,10 @@ def create_event(
         value_num: Optional numeric value for the event
         value_json: Optional JSON-serializable value for the event
         meta: Optional metadata for the event
-        
+
     Returns:
         A dictionary representing the event with all required fields
-        
+
     Raises:
         ValueError: If employee_id is None, empty string, NA, or otherwise invalid
     """
@@ -246,7 +239,7 @@ def create_event(
             error_msg = f"Invalid employee_id: cannot be NA or None. Event type: {event_type}, Time: {event_time}"
             logger.error(error_msg)
             raise ValueError(error_msg)
-            
+
         # Convert to string and check if it's empty or just whitespace
         try:
             emp_id_str = str(employee_id).strip()
@@ -263,7 +256,7 @@ def create_event(
         error_msg = f"Unexpected error validating event data: {str(e)}"
         logger.error(error_msg, exc_info=True)
         raise ValueError(error_msg) from e
-            
+
     # Validate event_type is not empty
     if not event_type or not isinstance(event_type, str):
         error_msg = f"Event type must be a non-empty string, got {event_type}"
@@ -275,7 +268,7 @@ def create_event(
         error_msg = f"Only one of value_num or value_json can be provided. Event type: {event_type}, Employee ID: {employee_id}"
         logger.error(error_msg)
         raise ValueError(error_msg)
-        
+
     # Convert value_json to string if it's a dictionary
     if isinstance(value_json, dict):
         try:
@@ -283,7 +276,7 @@ def create_event(
         except (TypeError, ValueError) as e:
             logger.warning(f"Could not serialize value_json to JSON: {e}")
             value_json = str(value_json)
-    
+
     # Convert meta to string if it's a dictionary
     if isinstance(meta, dict):
         try:
@@ -291,10 +284,10 @@ def create_event(
         except (TypeError, ValueError) as e:
             logger.warning(f"Could not serialize meta to JSON: {e}")
             meta = str(meta)
-    
+
     # Convert meta to string if it's not None
     meta_str = str(meta) if meta is not None else None
-    
+
     # Ensure only one value field is populated
     if value_num is not None and value_json is not None:
         logger.warning(
@@ -302,7 +295,7 @@ def create_event(
             f"event_type={event_type}. Using value_num."
         )
         value_json = None
-    
+
     # Generate event with simulation year if event_time is valid
     event = {
         "event_id": str(uuid.uuid4()),
@@ -313,11 +306,11 @@ def create_event(
         "value_json": value_json,
         "meta": meta,
     }
-    
+
     # Add simulation year if event_time is valid
     if not pd.isna(event_time):
         event[SIMULATION_YEAR] = int(event_time.year)
-    
+
     return event
 
 

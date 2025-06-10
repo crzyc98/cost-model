@@ -5,13 +5,15 @@ QuickStart: see docs/cost_model/dynamics/sampling/salary.md
 """
 
 from __future__ import annotations
-import pandas as pd
-import numpy as np
-from numpy.random import Generator, default_rng
+
 import logging
 
+import numpy as np
+import pandas as pd
+from numpy.random import Generator, default_rng
+
 logger = logging.getLogger(__name__)
-from typing import Protocol, runtime_checkable, Optional, Dict
+from typing import Dict, Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -66,7 +68,7 @@ class DefaultSalarySampler:
             mean = dist.get("mean", 0.0)
             std = dist.get("std", 0.0)
             # Ensure mask is a Series and can be summed
-            mask_count = mask.sum() if hasattr(mask, 'sum') else (1 if mask else 0)
+            mask_count = mask.sum() if hasattr(mask, "sum") else (1 if mask else 0)
             if mask_count > 0:
                 bumps = rng.normal(loc=mean, scale=std, size=mask_count)
                 bumped.loc[mask] = (comp[mask] * (1 + bumps)).round(2)
@@ -82,10 +84,16 @@ class DefaultSalarySampler:
         data = prev.dropna().to_numpy()
         logger.info(f"[SALARY.SAMPLE] Compensation pool stats (N={len(data)}):")
         logger.info(f"[SALARY.SAMPLE]   Min: ${np.min(data):,.0f}, Max: ${np.max(data):,.0f}")
-        logger.info(f"[SALARY.SAMPLE]   Mean: ${np.mean(data):,.0f}, Median: ${np.median(data):,.0f}")
-        logger.info(f"[SALARY.SAMPLE]   25th: ${np.percentile(data, 25):,.0f}, 75th: ${np.percentile(data, 75):,.0f}")
+        logger.info(
+            f"[SALARY.SAMPLE]   Mean: ${np.mean(data):,.0f}, Median: ${np.median(data):,.0f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   25th: ${np.percentile(data, 25):,.0f}, 75th: ${np.percentile(data, 75):,.0f}"
+        )
         if size <= 0 or data.size == 0:
-            logger.warning(f"[SALARY.SAMPLE] No compensations to sample from (size={size}, pool_size={len(data)})")
+            logger.warning(
+                f"[SALARY.SAMPLE] No compensations to sample from (size={size}, pool_size={len(data)})"
+            )
             return pd.Series([], dtype=prev.dtype, index=[])
         draws = rng.choice(data, size=size, replace=True)
         min_bound = max(40000, np.percentile(data, 10))
@@ -93,14 +101,23 @@ class DefaultSalarySampler:
         clamped_draws = np.clip(draws, min_bound, max_bound)
         logger.info(f"[SALARY.SAMPLE] Sampled {size} compensations:")
         logger.info(f"[SALARY.SAMPLE]   Raw Min: ${np.min(draws):,.0f}, Max: ${np.max(draws):,.0f}")
-        logger.info(f"[SALARY.SAMPLE]   Clamped Min: ${np.min(clamped_draws):,.0f}, Max: ${np.max(clamped_draws):,.0f}")
-        logger.info(f"[SALARY.SAMPLE]   Sampled Mean: ${np.mean(clamped_draws):,.0f}, Median: ${np.median(clamped_draws):,.0f}")
-        logger.info(f"[SALARY.SAMPLE]   Clamping bounds: Min=${min_bound:,.0f}, Max=${max_bound:,.0f}")
+        logger.info(
+            f"[SALARY.SAMPLE]   Clamped Min: ${np.min(clamped_draws):,.0f}, Max: ${np.max(clamped_draws):,.0f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Sampled Mean: ${np.mean(clamped_draws):,.0f}, Median: ${np.median(clamped_draws):,.0f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Clamping bounds: Min=${min_bound:,.0f}, Max=${max_bound:,.0f}"
+        )
         return pd.Series(clamped_draws, index=range(size), dtype=draws.dtype)
 
     def sample_new_hires(
-        self, size: int, params: Dict[str, float], ages: Optional[np.ndarray] = None,
-        rng: Optional[Generator] = None
+        self,
+        size: int,
+        params: Dict[str, float],
+        ages: Optional[np.ndarray] = None,
+        rng: Optional[Generator] = None,
     ) -> pd.Series:
         """
         Generate realistic new hire salaries based on configuration parameters and ages.
@@ -117,18 +134,18 @@ class DefaultSalarySampler:
             return pd.Series([], dtype=float, index=[])
         # Handle params whether it's a dict or SimpleNamespace
         if isinstance(params, dict):
-            base_salary = params.get('comp_base_salary', 100000)
-            min_salary = params.get('comp_min_salary', 40000)
-            max_salary = params.get('comp_max_salary', 450000)
-            age_factor = params.get('comp_age_factor', 0.05)
-            std_dev_factor = params.get('comp_stochastic_std_dev', 0.08)
+            base_salary = params.get("comp_base_salary", 100000)
+            min_salary = params.get("comp_min_salary", 40000)
+            max_salary = params.get("comp_max_salary", 450000)
+            age_factor = params.get("comp_age_factor", 0.05)
+            std_dev_factor = params.get("comp_stochastic_std_dev", 0.08)
         else:
             # Assume SimpleNamespace or similar with attribute access
-            base_salary = getattr(params, 'comp_base_salary', 100000)
-            min_salary = getattr(params, 'comp_min_salary', 40000)
-            max_salary = getattr(params, 'comp_max_salary', 450000)
-            age_factor = getattr(params, 'comp_age_factor', 0.05)
-            std_dev_factor = getattr(params, 'comp_stochastic_std_dev', 0.08)
+            base_salary = getattr(params, "comp_base_salary", 100000)
+            min_salary = getattr(params, "comp_min_salary", 40000)
+            max_salary = getattr(params, "comp_max_salary", 450000)
+            age_factor = getattr(params, "comp_age_factor", 0.05)
+            std_dev_factor = getattr(params, "comp_stochastic_std_dev", 0.08)
         std_dev = base_salary * std_dev_factor
         base_salaries = rng.normal(loc=base_salary, scale=std_dev, size=size)
         if ages is not None and len(ages) == size:
@@ -140,10 +157,22 @@ class DefaultSalarySampler:
         clamped_salaries = np.clip(salaries, min_salary, max_salary)
         clamped_salaries = np.round(clamped_salaries, 2)
         logger.info(f"[SALARY.SAMPLE] Generated {size} new hire salaries:")
-        logger.info(f"[SALARY.SAMPLE]   Raw Min: ${np.min(salaries):,.2f}, Max: ${np.max(salaries):,.2f}")
-        logger.info(f"[SALARY.SAMPLE]   Clamped Min: ${np.min(clamped_salaries):,.2f}, Max: ${np.max(clamped_salaries):,.2f}")
-        logger.info(f"[SALARY.SAMPLE]   Sampled Mean: ${np.mean(clamped_salaries):,.2f}, Median: ${np.median(clamped_salaries):,.2f}")
-        logger.info(f"[SALARY.SAMPLE]   Parameters: Base=${base_salary:,.2f}, StdDev=${std_dev:,.2f}")
-        logger.info(f"[SALARY.SAMPLE]   Age factor: ${age_factor*base_salary:,.2f} per year from reference")
-        logger.info(f"[SALARY.SAMPLE]   Clamping bounds: Min=${min_salary:,.2f}, Max=${max_salary:,.2f}")
+        logger.info(
+            f"[SALARY.SAMPLE]   Raw Min: ${np.min(salaries):,.2f}, Max: ${np.max(salaries):,.2f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Clamped Min: ${np.min(clamped_salaries):,.2f}, Max: ${np.max(clamped_salaries):,.2f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Sampled Mean: ${np.mean(clamped_salaries):,.2f}, Median: ${np.median(clamped_salaries):,.2f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Parameters: Base=${base_salary:,.2f}, StdDev=${std_dev:,.2f}"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Age factor: ${age_factor*base_salary:,.2f} per year from reference"
+        )
+        logger.info(
+            f"[SALARY.SAMPLE]   Clamping bounds: Min=${min_salary:,.2f}, Max=${max_salary:,.2f}"
+        )
         return pd.Series(clamped_salaries, index=range(size), dtype=float)

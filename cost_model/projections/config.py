@@ -4,11 +4,12 @@ Configuration loading and conversion utilities.
 QuickStart: see docs/cost_model/projections/config.md
 """
 
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Union
+
 # YAML loading + namespace conversion
 import yaml
-from types import SimpleNamespace
-from pathlib import Path
-from typing import Any, Union
 
 
 def dict_to_simplenamespace(d: Any) -> Any:
@@ -29,7 +30,7 @@ def load_config_to_namespace(config_path: Union[Path, str]) -> SimpleNamespace:
     if not config_path.is_file():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config_dict = yaml.safe_load(f)
-    
+
     return dict_to_simplenamespace(config_dict)

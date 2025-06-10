@@ -3,16 +3,26 @@
 Functions to calculate summary metrics from simulation results.
 """
 
-import pandas as pd
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
+
 import numpy as np
+import pandas as pd
 
 # Import canonical column names from schema
 from cost_model.state.schema import (
-    SUMMARY_YEAR, EMP_ID, EMP_GROSS_COMP, EMP_STATUS_EOY, EMP_BIRTH_DATE, EMP_DEFERRAL_RATE,
-    EMP_CONTR, EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB, SIMULATION_YEAR, ACTIVE_STATUS,
-    EMP_PLAN_YEAR_COMP
+    ACTIVE_STATUS,
+    EMP_BIRTH_DATE,
+    EMP_CONTR,
+    EMP_DEFERRAL_RATE,
+    EMP_GROSS_COMP,
+    EMP_ID,
+    EMP_PLAN_YEAR_COMP,
+    EMP_STATUS_EOY,
+    EMPLOYER_CORE_CONTRIB,
+    EMPLOYER_MATCH_CONTRIB,
+    SIMULATION_YEAR,
+    SUMMARY_YEAR,
 )
 
 # Define status constants for employee_status_eoy
@@ -39,9 +49,7 @@ def calculate_summary_metrics(
         A DataFrame containing summary metrics, indexed by year.
     """
     if all_results_df is None or all_results_df.empty:
-        logger.warning(
-            "Input DataFrame for summary metrics is empty. Returning empty results."
-        )
+        logger.warning("Input DataFrame for summary metrics is empty. Returning empty results.")
         return pd.DataFrame()
 
     logger.info(
@@ -51,27 +59,41 @@ def calculate_summary_metrics(
     # Log available columns for debugging
     logger.info(f"Available columns in all_results_df: {sorted(all_results_df.columns.tolist())}")
     logger.info(f"DataFrame shape: {all_results_df.shape}")
-    logger.info(f"Simulation years: {sorted(all_results_df[SIMULATION_YEAR].unique()) if SIMULATION_YEAR in all_results_df.columns else 'SIMULATION_YEAR column missing'}")
+    logger.info(
+        f"Simulation years: {sorted(all_results_df[SIMULATION_YEAR].unique()) if SIMULATION_YEAR in all_results_df.columns else 'SIMULATION_YEAR column missing'}"
+    )
 
     # Enhanced debugging for key columns
-    key_columns_to_check = [EMP_STATUS_EOY, EMP_GROSS_COMP, EMP_CONTR, EMPLOYER_CORE_CONTRIB, EMPLOYER_MATCH_CONTRIB]
+    key_columns_to_check = [
+        EMP_STATUS_EOY,
+        EMP_GROSS_COMP,
+        EMP_CONTR,
+        EMPLOYER_CORE_CONTRIB,
+        EMPLOYER_MATCH_CONTRIB,
+    ]
     for col in key_columns_to_check:
         if col in all_results_df.columns:
-            logger.info(f"Column '{col}' found - sample values: {all_results_df[col].head().tolist()}")
-            logger.info(f"Column '{col}' - unique values: {all_results_df[col].unique()[:10]}")  # First 10 unique values
+            logger.info(
+                f"Column '{col}' found - sample values: {all_results_df[col].head().tolist()}"
+            )
+            logger.info(
+                f"Column '{col}' - unique values: {all_results_df[col].unique()[:10]}"
+            )  # First 10 unique values
             logger.info(f"Column '{col}' - null count: {all_results_df[col].isnull().sum()}")
             if col == EMP_STATUS_EOY:
-                logger.info(f"Column '{col}' - value counts: {all_results_df[col].value_counts().to_dict()}")
+                logger.info(
+                    f"Column '{col}' - value counts: {all_results_df[col].value_counts().to_dict()}"
+                )
         else:
             logger.warning(f"Column '{col}' NOT FOUND in all_results_df")
 
     # Check for alternative column names that might exist
     alternative_names = {
-        'employee_status_eoy': EMP_STATUS_EOY,
-        'employee_gross_compensation': EMP_GROSS_COMP,
-        'employee_contribution': EMP_CONTR,
-        'employer_core_contribution': EMPLOYER_CORE_CONTRIB,
-        'employer_match_contribution': EMPLOYER_MATCH_CONTRIB
+        "employee_status_eoy": EMP_STATUS_EOY,
+        "employee_gross_compensation": EMP_GROSS_COMP,
+        "employee_contribution": EMP_CONTR,
+        "employer_core_contribution": EMPLOYER_CORE_CONTRIB,
+        "employer_match_contribution": EMPLOYER_MATCH_CONTRIB,
     }
 
     for alt_name, canonical_name in alternative_names.items():
@@ -127,9 +149,15 @@ def calculate_summary_metrics(
 
         if found_col:
             # Log original values before conversion
-            logger.info(f"Column '{found_col}' - original sample values: {all_results_df[found_col].head().tolist()}")
-            logger.info(f"Column '{found_col}' - original data type: {all_results_df[found_col].dtype}")
-            logger.info(f"Column '{found_col}' - null count before conversion: {all_results_df[found_col].isnull().sum()}")
+            logger.info(
+                f"Column '{found_col}' - original sample values: {all_results_df[found_col].head().tolist()}"
+            )
+            logger.info(
+                f"Column '{found_col}' - original data type: {all_results_df[found_col].dtype}"
+            )
+            logger.info(
+                f"Column '{found_col}' - null count before conversion: {all_results_df[found_col].isnull().sum()}"
+            )
 
             # Convert to numeric
             original_values = all_results_df[found_col].copy()
@@ -140,14 +168,20 @@ def calculate_summary_metrics(
             # Log conversion results
             converted_nulls = pd.to_numeric(original_values, errors="coerce").isnull().sum()
             if converted_nulls > 0:
-                logger.warning(f"Column '{found_col}' - {converted_nulls} values converted to NaN during numeric conversion")
+                logger.warning(
+                    f"Column '{found_col}' - {converted_nulls} values converted to NaN during numeric conversion"
+                )
                 # Show some examples of problematic values
                 problematic_mask = pd.to_numeric(original_values, errors="coerce").isnull()
                 if problematic_mask.any():
                     problematic_values = original_values[problematic_mask].unique()[:5]
-                    logger.warning(f"Column '{found_col}' - sample problematic values: {problematic_values.tolist()}")
+                    logger.warning(
+                        f"Column '{found_col}' - sample problematic values: {problematic_values.tolist()}"
+                    )
 
-            logger.info(f"Column '{found_col}' - final sample values: {all_results_df[found_col].head().tolist()}")
+            logger.info(
+                f"Column '{found_col}' - final sample values: {all_results_df[found_col].head().tolist()}"
+            )
             logger.info(f"Column '{found_col}' - final sum: {all_results_df[found_col].sum()}")
             logger.info(f"Column '{found_col}' - final mean: {all_results_df[found_col].mean()}")
 
@@ -163,8 +197,7 @@ def calculate_summary_metrics(
     # Calculate age if birth date is available
     if birth_date_col and birth_date_col in all_results_df.columns:
         all_results_df["age"] = (
-            all_results_df[SIMULATION_YEAR]
-            - all_results_df[birth_date_col].dt.year
+            all_results_df[SIMULATION_YEAR] - all_results_df[birth_date_col].dt.year
         )
     else:
         logger.warning("Age calculation skipped due to missing birth date.")
@@ -177,8 +210,7 @@ def calculate_summary_metrics(
 
     # Row-level ER and total compensation
     all_results_df["total_er_contribution"] = (
-        all_results_df[EMPLOYER_MATCH_CONTRIB]
-        + all_results_df[EMPLOYER_CORE_CONTRIB]
+        all_results_df[EMPLOYER_MATCH_CONTRIB] + all_results_df[EMPLOYER_CORE_CONTRIB]
     )
     all_results_df["total_compensation"] = (
         all_results_df[EMP_GROSS_COMP]
@@ -203,9 +235,11 @@ def calculate_summary_metrics(
                 all_results_df[terminated_mask]
                 .groupby(SIMULATION_YEAR)
                 .size()
-                .reset_index(name='total_terminations')
+                .reset_index(name="total_terminations")
             )
-            logger.info(f"Calculated terminations by year: {terminations_by_year.to_dict('records')}")
+            logger.info(
+                f"Calculated terminations by year: {terminations_by_year.to_dict('records')}"
+            )
         else:
             logger.warning("No terminated employees found in the data")
     else:
@@ -250,7 +284,9 @@ def calculate_summary_metrics(
         year = row[SIMULATION_YEAR]
         logger.info(f"  Year {year}:")
         logger.info(f"    - active_headcount: {row['active_headcount']}")
-        logger.info(f"    - total_employee_gross_compensation: {row['total_employee_gross_compensation']}")
+        logger.info(
+            f"    - total_employee_gross_compensation: {row['total_employee_gross_compensation']}"
+        )
         logger.info(f"    - total_plan_year_compensation: {row['total_plan_year_compensation']}")
         logger.info(f"    - avg_compensation: {row['avg_compensation']}")
         logger.info(f"    - avg_plan_year_compensation: {row['avg_plan_year_compensation']}")
@@ -259,14 +295,15 @@ def calculate_summary_metrics(
     # Add terminations data
     if terminations_by_year is not None and not terminations_by_year.empty:
         summary_metrics = pd.merge(
-            summary_metrics, terminations_by_year,
-            on=SIMULATION_YEAR, how="left"
+            summary_metrics, terminations_by_year, on=SIMULATION_YEAR, how="left"
         )
     else:
-        summary_metrics['total_terminations'] = 0
+        summary_metrics["total_terminations"] = 0
 
     # Fill any NaN values in total_terminations with 0
-    summary_metrics['total_terminations'] = summary_metrics['total_terminations'].fillna(0).astype(int)
+    summary_metrics["total_terminations"] = (
+        summary_metrics["total_terminations"].fillna(0).astype(int)
+    )
 
     # Calculate participation rate
     summary_metrics["participation_rate"] = np.where(
@@ -279,9 +316,7 @@ def calculate_summary_metrics(
     participants_df = all_results_df[all_results_df["is_participant"]]
     if not participants_df.empty:
         avg_deferral_rate = (
-            participants_df.groupby(SIMULATION_YEAR)[EMP_DEFERRAL_RATE]
-            .mean()
-            .reset_index()
+            participants_df.groupby(SIMULATION_YEAR)[EMP_DEFERRAL_RATE].mean().reset_index()
         )
         avg_deferral_rate = avg_deferral_rate.rename(
             columns={EMP_DEFERRAL_RATE: "avg_deferral_rate_participants"}
@@ -295,7 +330,9 @@ def calculate_summary_metrics(
         summary_metrics["avg_deferral_rate_participants"] = 0
 
     # Log summary before final processing
-    logger.info(f"Summary metrics calculated for years: {sorted(summary_metrics[SIMULATION_YEAR].unique())}")
+    logger.info(
+        f"Summary metrics calculated for years: {sorted(summary_metrics[SIMULATION_YEAR].unique())}"
+    )
     logger.debug(f"Summary metrics columns: {summary_metrics.columns.tolist()}")
     logger.debug(f"Sample summary data:\n{summary_metrics.head().to_string()}")
 
@@ -334,15 +371,17 @@ def calculate_summary_metrics(
     logger.info("Final summary metrics:")
     for _, row in summary_metrics.iterrows():
         year = row[SUMMARY_YEAR]
-        active_hc = row.get('active_headcount', 'N/A')
-        total_terms = row.get('total_terminations', 'N/A')
-        avg_comp = row.get('avg_compensation', 'N/A')
-        avg_plan_comp = row.get('avg_plan_year_compensation', 'N/A')
-        total_comp = row.get('total_compensation', 'N/A')
-        total_plan_comp = row.get('total_plan_year_compensation', 'N/A')
-        logger.info(f"  Year {year}: active_headcount={active_hc}, total_terminations={total_terms}, "
-                   f"avg_compensation={avg_comp}, avg_plan_year_compensation={avg_plan_comp}, "
-                   f"total_compensation={total_comp}, total_plan_year_compensation={total_plan_comp}")
+        active_hc = row.get("active_headcount", "N/A")
+        total_terms = row.get("total_terminations", "N/A")
+        avg_comp = row.get("avg_compensation", "N/A")
+        avg_plan_comp = row.get("avg_plan_year_compensation", "N/A")
+        total_comp = row.get("total_compensation", "N/A")
+        total_plan_comp = row.get("total_plan_year_compensation", "N/A")
+        logger.info(
+            f"  Year {year}: active_headcount={active_hc}, total_terminations={total_terms}, "
+            f"avg_compensation={avg_comp}, avg_plan_year_compensation={avg_plan_comp}, "
+            f"total_compensation={total_comp}, total_plan_year_compensation={total_plan_comp}"
+        )
 
     # Set index to simulation_year for consistency with existing code
     summary_metrics.set_index(SIMULATION_YEAR, inplace=True)

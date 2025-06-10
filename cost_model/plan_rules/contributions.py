@@ -4,13 +4,14 @@ Contributions module for generating contribution events based on plan rules.
 QuickStart: see docs/cost_model/plan_rules/contributions.md
 """
 
-import pandas as pd
 import json
 import uuid
-from typing import List, Dict
+from typing import Dict, List
+
+import pandas as pd
 from pydantic import BaseModel  # Keep Pydantic if models used
 
-from cost_model.utils.columns import EMP_ID, EMP_GROSS_COMP, EMP_DEFERRAL_RATE
+from cost_model.utils.columns import EMP_DEFERRAL_RATE, EMP_GROSS_COMP, EMP_ID
 
 # Import the actual config models you need
 # Adjust path based on your structure
@@ -33,10 +34,10 @@ except ImportError:
 # Import constants and schema info from event_log
 try:
     from ..state.event_log import (
-        EVT_CONTRIB,
-        EVT_ENROLL,
         EVENT_COLS,
         EVENT_PANDAS_DTYPES,
+        EVT_CONTRIB,
+        EVT_ENROLL,
     )
 except ImportError:
     EVT_CONTRIB = "EVT_CONTRIB"
@@ -120,7 +121,7 @@ def run(
     # Convert timestamps to date objects for more robust comparison
     event_dates = events.event_time.dt.date
     as_of_date = as_of.date()
-    
+
     try:
         enrolled = events.loc[
             (events.event_type == EVT_ENROLL) & (event_dates <= as_of_date),
@@ -165,9 +166,7 @@ def run(
     processed_count = 0
     for emp_id in candidate_ids:
         if emp_id not in snapshot.index:
-            logger.warning(
-                f"Enrolled employee '{emp_id}' not found in snapshot index. Skipping."
-            )
+            logger.warning(f"Enrolled employee '{emp_id}' not found in snapshot index. Skipping.")
             continue
 
         try:
@@ -201,9 +200,7 @@ def run(
 
             # Deferral percentage relevant for *this specific tier*
             # (i.e., deferral between previous tier's cap and this tier's cap)
-            effective_deferral_this_tier = max(
-                0, min(rate, tier_cap_pct) - processed_deferral_pct
-            )
+            effective_deferral_this_tier = max(0, min(rate, tier_cap_pct) - processed_deferral_pct)
 
             if effective_deferral_this_tier <= 0:
                 continue  # No deferral % falls into this tier
@@ -229,9 +226,7 @@ def run(
                 EMP_ID: emp_id,
                 "event_type": EVT_CONTRIB,
                 "value_num": None,
-                "value_json": json.dumps(
-                    contrib_payload
-                ),  # Serialize dict to JSON string
+                "value_json": json.dumps(contrib_payload),  # Serialize dict to JSON string
                 "meta": None,
             }
         )

@@ -3,8 +3,10 @@ Utility functions for run_one_year package.
 
 Contains debugging, logging, and other helper functions.
 """
+
 import logging
-from typing import Dict, Optional, Any, List, Union
+from typing import Any, Dict, List, Optional, Union
+
 import pandas as pd
 
 
@@ -31,7 +33,10 @@ def dbg(year: int, label: str, df: pd.DataFrame) -> None:
 
 import math
 
-def compute_headcount_targets(start_count: int, survivor_count: int, target_growth: float, nh_term_rate: float):
+
+def compute_headcount_targets(
+    start_count: int, survivor_count: int, target_growth: float, nh_term_rate: float
+):
     """
     Compute headcount targets for the year given growth and new-hire termination rates.
 
@@ -54,7 +59,7 @@ def manage_headcount_to_exact_target(
     target_growth_rate: float,
     num_markov_exits_existing: int,
     new_hire_termination_rate: float,
-    expected_additional_experienced_exits: int = 0
+    expected_additional_experienced_exits: int = 0,
 ) -> tuple[int, int]:
     """
     Calculate exact headcount targeting for workforce simulation.
@@ -82,7 +87,9 @@ def manage_headcount_to_exact_target(
     """
     # Validate inputs
     if new_hire_termination_rate >= 1.0:
-        raise ValueError(f"new_hire_termination_rate must be < 1.0, got {new_hire_termination_rate}")
+        raise ValueError(
+            f"new_hire_termination_rate must be < 1.0, got {new_hire_termination_rate}"
+        )
 
     # Step 1: Calculate target EOY actives
     target_eoy_actives = round(soy_actives * (1 + target_growth_rate))
@@ -93,7 +100,9 @@ def manage_headcount_to_exact_target(
     # Step 2.5: Account for expected additional experienced exits
     # This is the key fix - we need to account for ALL expected experienced attrition,
     # not just those who have already left
-    total_expected_experienced_exits = num_markov_exits_existing + expected_additional_experienced_exits
+    total_expected_experienced_exits = (
+        num_markov_exits_existing + expected_additional_experienced_exits
+    )
     final_expected_survivors = soy_actives - total_expected_experienced_exits
 
     # Step 3: Calculate net actives needed from new hires (or excess survivors)
@@ -121,9 +130,7 @@ def manage_headcount_to_exact_target(
 
 
 def estimate_expected_experienced_exits(
-    experienced_employees: pd.DataFrame,
-    hazard_slice: pd.DataFrame,
-    logger: logging.Logger = None
+    experienced_employees: pd.DataFrame, hazard_slice: pd.DataFrame, logger: logging.Logger = None
 ) -> int:
     """
     Estimate the number of experienced employees expected to terminate during the year.
@@ -150,7 +157,10 @@ def estimate_expected_experienced_exits(
     from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
 
     # Ensure we have the required columns
-    if EMP_LEVEL not in experienced_employees.columns or EMP_TENURE_BAND not in experienced_employees.columns:
+    if (
+        EMP_LEVEL not in experienced_employees.columns
+        or EMP_TENURE_BAND not in experienced_employees.columns
+    ):
         logger.warning(
             f"Missing required columns for exit estimation. "
             f"Have: {experienced_employees.columns.tolist()}, "
@@ -168,13 +178,12 @@ def estimate_expected_experienced_exits(
     for (level, tenure_band), group in experienced_employees.groupby([EMP_LEVEL, EMP_TENURE_BAND]):
         # Find matching hazard rate
         hazard_match = hazard_slice[
-            (hazard_slice[EMP_LEVEL] == level) &
-            (hazard_slice[EMP_TENURE_BAND] == tenure_band)
+            (hazard_slice[EMP_LEVEL] == level) & (hazard_slice[EMP_TENURE_BAND] == tenure_band)
         ]
 
         if not hazard_match.empty:
             # Use the termination rate from hazard table
-            term_rate = hazard_match['term_rate'].iloc[0]
+            term_rate = hazard_match["term_rate"].iloc[0]
             group_size = len(group)
             expected_exits_for_group = round(group_size * term_rate)
             total_estimated_exits += expected_exits_for_group
@@ -204,55 +213,53 @@ def estimate_expected_experienced_exits(
 
 
 def estimate_experienced_exit_rate_from_hazards(
-    hazard_slice: pd.DataFrame,
-    logger: logging.Logger = None
+    hazard_slice: pd.DataFrame, logger: logging.Logger = None
 ) -> float:
     """
     Estimate the overall expected experienced employee exit rate from hazard table data.
-    
+
     This provides a fallback method to estimate attrition when we can't analyze
     the full workforce composition.
-    
+
     Args:
         hazard_slice: Hazard table slice for the current year
         logger: Optional logger for debugging
-        
+
     Returns:
         Estimated annual experienced employee exit rate (e.g., 0.15 for 15%)
     """
     if logger is None:
         logger = logging.getLogger(__name__)
-        
+
     try:
         # Import required columns
         from cost_model.state.schema import EMP_LEVEL, EMP_TENURE_BAND
-        
-        if hazard_slice.empty or 'term_rate' not in hazard_slice.columns:
+
+        if hazard_slice.empty or "term_rate" not in hazard_slice.columns:
             logger.warning("Empty hazard slice or missing term_rate column, using fallback rate")
             return 0.15
-            
+
         # Calculate weighted average termination rate across levels and tenure bands
         # This is a simplified approach - in reality we'd want workforce composition weights
-        
+
         # Filter to experienced employee combinations (exclude very short tenure)
         experienced_hazards = hazard_slice[
-            (hazard_slice[EMP_TENURE_BAND] != '<1') | 
-            (hazard_slice[EMP_TENURE_BAND].isna())
+            (hazard_slice[EMP_TENURE_BAND] != "<1") | (hazard_slice[EMP_TENURE_BAND].isna())
         ].copy()
-        
+
         if experienced_hazards.empty:
             # If no experienced employee hazards, use all data
             experienced_hazards = hazard_slice.copy()
-            
+
         # Calculate simple average (could be improved with workforce composition weights)
-        avg_rate = experienced_hazards['term_rate'].mean()
-        
+        avg_rate = experienced_hazards["term_rate"].mean()
+
         # Cap at reasonable bounds
         avg_rate = max(0.05, min(0.30, avg_rate))  # Between 5% and 30%
-        
+
         logger.debug(f"Estimated experienced exit rate from hazards: {avg_rate:.1%}")
         return avg_rate
-        
+
     except Exception as e:
         logger.warning(f"Error estimating exit rate from hazards: {e}")
         return 0.15  # Conservative fallback
@@ -305,9 +312,13 @@ def test_manage_headcount_to_exact_target():
     expected_gross = round(13 / 0.75)  # 17
 
     print(f"SOY: {soy_actives}, Target: {expected_target}, Survivors: {expected_survivors}")
-    print(f"Net needed: {expected_net_needed}, Gross hires: {gross_hires}, Forced terms: {forced_terms}")
+    print(
+        f"Net needed: {expected_net_needed}, Gross hires: {gross_hires}, Forced terms: {forced_terms}"
+    )
 
-    assert gross_hires == expected_gross, f"Expected {expected_gross} gross hires, got {gross_hires}"
+    assert (
+        gross_hires == expected_gross
+    ), f"Expected {expected_gross} gross hires, got {gross_hires}"
     assert forced_terms == 0, f"Expected 0 forced terminations, got {forced_terms}"
 
     # Test Case 2: Excess survivors - need forced terminations
@@ -333,10 +344,14 @@ def test_manage_headcount_to_exact_target():
     expected_forced_terms = 2  # Need to terminate 2 excess
 
     print(f"SOY: {soy_actives}, Target: {expected_target}, Survivors: {expected_survivors}")
-    print(f"Excess survivors: {expected_excess}, Gross hires: {gross_hires}, Forced terms: {forced_terms}")
+    print(
+        f"Excess survivors: {expected_excess}, Gross hires: {gross_hires}, Forced terms: {forced_terms}"
+    )
 
     assert gross_hires == 0, f"Expected 0 gross hires, got {gross_hires}"
-    assert forced_terms == expected_forced_terms, f"Expected {expected_forced_terms} forced terms, got {forced_terms}"
+    assert (
+        forced_terms == expected_forced_terms
+    ), f"Expected {expected_forced_terms} forced terms, got {forced_terms}"
 
     # Test Case 3: Perfect match - no action needed
     print("\n--- Test Case 3: Perfect match scenario ---")
@@ -381,7 +396,9 @@ def test_manage_headcount_to_exact_target():
 
     print(f"Zero attrition - Net needed: {expected_net}, Gross hires: {gross_hires}")
 
-    assert gross_hires == expected_gross, f"Expected {expected_gross} gross hires, got {gross_hires}"
+    assert (
+        gross_hires == expected_gross
+    ), f"Expected {expected_gross} gross hires, got {gross_hires}"
     assert forced_terms == 0, f"Expected 0 forced terms, got {forced_terms}"
 
     # Test Case 5: Error case - invalid termination rate
@@ -404,7 +421,7 @@ def diagnose_headcount_discrepancy(
     new_hire_terms: int,
     experienced_terms: int,
     target_growth_rate: float,
-    configured_nh_term_rate: float
+    configured_nh_term_rate: float,
 ):
     """
     Diagnose discrepancies between expected and actual headcount changes.
@@ -452,8 +469,12 @@ def diagnose_headcount_discrepancy(
 
     print(f"Expected gross hires for target: {expected_gross_for_target}")
     print(f"Expected terminations for target: {expected_terms_for_target}")
-    print(f"Actual gross hires: {new_hires} (difference: {new_hires - expected_gross_for_target:+d})")
-    print(f"Actual terminations: {new_hire_terms} (difference: {new_hire_terms - expected_terms_for_target:+d})")
+    print(
+        f"Actual gross hires: {new_hires} (difference: {new_hires - expected_gross_for_target:+d})"
+    )
+    print(
+        f"Actual terminations: {new_hire_terms} (difference: {new_hire_terms - expected_terms_for_target:+d})"
+    )
 
     if discrepancy != 0:
         print(f"\n⚠️  There's a {discrepancy}-employee discrepancy that suggests:")
@@ -470,7 +491,7 @@ if __name__ == "__main__":
     test_manage_headcount_to_exact_target()
 
     # Diagnose the actual vs expected discrepancy
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     diagnose_headcount_discrepancy(
         start_count=100,
         end_count=124,
@@ -478,5 +499,5 @@ if __name__ == "__main__":
         new_hire_terms=5,
         experienced_terms=18,
         target_growth_rate=0.03,
-        configured_nh_term_rate=0.25
+        configured_nh_term_rate=0.25,
     )

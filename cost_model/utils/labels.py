@@ -3,9 +3,10 @@
 Utility functions for creating categorical labels based on simulation state.
 """
 
-import pandas as pd
-import numpy as np
 import logging
+
+import numpy as np
+import pandas as pd
 
 # Attempt to import column constants, provide fallbacks
 from cost_model.state.schema import EMP_HIRE_DATE, EMP_TERM_DATE
@@ -26,9 +27,7 @@ def label_employment_status(df: pd.DataFrame, sim_year: int) -> pd.DataFrame:
         The input DataFrame with an added 'employment_status' column.
     """
     if df.empty:
-        logger.debug(
-            f"Skipping employment status labeling for empty DataFrame in year {sim_year}."
-        )
+        logger.debug(f"Skipping employment status labeling for empty DataFrame in year {sim_year}.")
         df["employment_status"] = pd.NA  # Add column even if empty
         return df
 

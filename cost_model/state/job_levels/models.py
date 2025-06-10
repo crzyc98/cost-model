@@ -1,19 +1,22 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Literal, Dict, Any, Union
+from typing import Any, Dict, List, Literal, Optional, Union
+
 import pandas as pd
 
 from cost_model.state.schema import (
-    EMP_LEVEL,
     EMP_GROSS_COMP,
+    EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_TENURE,
-    EMP_TENURE_BAND
+    EMP_TENURE_BAND,
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
 )
-from cost_model.state.schema import SNAPSHOT_COLS, SNAPSHOT_DTYPES
 
 
 class ConfigError(Exception):
     """Exception raised for errors in the job level configuration."""
+
     pass
 
 
@@ -37,6 +40,7 @@ class JobLevel:
         source: Method of assignment (band, title, ml)
         job_families: List of job families associated with this level
     """
+
     level_id: int
     name: str
     description: str
@@ -55,11 +59,13 @@ class JobLevel:
     def __post_init__(self):
         """Calculate midpoint if not provided and validate compensation bands."""
         if self.mid_compensation is None:
-            object.__setattr__(self, "mid_compensation", (self.min_compensation + self.max_compensation) / 2)
+            object.__setattr__(
+                self, "mid_compensation", (self.min_compensation + self.max_compensation) / 2
+            )
         # Assert no overlap in bands (run once at startup)
-        assert self.min_compensation <= self.max_compensation, (
-            f"Level {self.level_id} ({self.name}): min_compensation > max_compensation!"
-        )
+        assert (
+            self.min_compensation <= self.max_compensation
+        ), f"Level {self.level_id} ({self.name}): min_compensation > max_compensation!"
 
     def is_in_range(self, compensation: float) -> bool:
         """Check if a compensation value is within this level's range."""

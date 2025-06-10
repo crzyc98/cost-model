@@ -11,11 +11,11 @@ This script orchestrates the simulation process by:
 4. Handling logging and script exit codes.
 """
 
-import sys
 import argparse
 import logging
 import pathlib
 import subprocess
+import sys
 
 # Add project root to the Python path
 # Assumes the script is in <project_root>/scripts/
@@ -26,6 +26,7 @@ sys.path.insert(0, str(project_root))
 try:
     from cost_model.config.loaders import ConfigLoadError
     from cost_model.config.models import MainConfig
+
     # from cost_model.simulation import run_simulation  # Assuming the core logic is here
 except ImportError as e:
     print(f"Error importing cost_model components: {e}", file=sys.stderr)
@@ -114,12 +115,13 @@ def main():
         logger.info(f"Loading configuration from: {config_path}")
         # CRITICAL FIX: Use load_config_to_namespace to properly flatten attrition section
         from cost_model.config.loaders import load_config_to_namespace
+
         namespace_config = load_config_to_namespace(config_path)
 
         # Convert namespace to dict for Pydantic model validation
         # Need to recursively convert SimpleNamespace objects to dicts
         def namespace_to_dict(obj):
-            if hasattr(obj, '__dict__'):
+            if hasattr(obj, "__dict__"):
                 return {k: namespace_to_dict(v) for k, v in obj.__dict__.items()}
             elif isinstance(obj, list):
                 return [namespace_to_dict(item) for item in obj]
@@ -155,9 +157,7 @@ def main():
             save_detailed_snapshots=not args.no_snapshots,
             save_summary_metrics=not args.no_summary,
         )
-        logger.info(
-            f"Simulation for scenario '{args.scenario}' completed successfully."
-        )
+        logger.info(f"Simulation for scenario '{args.scenario}' completed successfully.")
         logger.info(f"Results saved in a subdirectory under: {output_dir_base}")
 
         # Run employment status summary script to provide additional insights

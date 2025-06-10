@@ -6,10 +6,11 @@ This script shows how to use the manage_headcount_to_exact_target function
 with configuration values from YAML files to achieve precise workforce growth.
 """
 
-import sys
 import os
-import yaml
+import sys
 from pathlib import Path
+
+import yaml
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -20,7 +21,7 @@ from cost_model.engines.run_one_year.utils import manage_headcount_to_exact_targ
 
 def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
 
@@ -35,9 +36,9 @@ def demo_exact_headcount_targeting():
     config = load_config(config_path)
 
     # Extract relevant parameters
-    global_params = config['global_parameters']
-    target_growth = global_params['target_growth']
-    new_hire_term_rate = global_params['attrition']['new_hire_termination_rate']
+    global_params = config["global_parameters"]
+    target_growth = global_params["target_growth"]
+    new_hire_term_rate = global_params["attrition"]["new_hire_termination_rate"]
 
     print(f"Configuration loaded from: {config_path}")
     print(f"Target growth rate: {target_growth:.1%}")
@@ -53,7 +54,7 @@ def demo_exact_headcount_targeting():
         soy_actives=soy_actives,
         target_growth_rate=target_growth,
         num_markov_exits_existing=markov_exits,
-        new_hire_termination_rate=new_hire_term_rate
+        new_hire_termination_rate=new_hire_term_rate,
     )
 
     target_eoy = round(soy_actives * (1 + target_growth))
@@ -84,7 +85,7 @@ def demo_exact_headcount_targeting():
         soy_actives=soy_actives,
         target_growth_rate=downsizing_growth,
         num_markov_exits_existing=markov_exits,
-        new_hire_termination_rate=new_hire_term_rate
+        new_hire_termination_rate=new_hire_term_rate,
     )
 
     target_eoy = round(soy_actives * (1 + downsizing_growth))
@@ -112,7 +113,7 @@ def demo_exact_headcount_targeting():
         soy_actives=soy_actives,
         target_growth_rate=high_growth,
         num_markov_exits_existing=markov_exits,
-        new_hire_termination_rate=new_hire_term_rate
+        new_hire_termination_rate=new_hire_term_rate,
     )
 
     target_eoy = round(soy_actives * (1 + high_growth))

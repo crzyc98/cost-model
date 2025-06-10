@@ -3,9 +3,10 @@
 A quick one-year smoke run against a tiny, fabricated census to ensure Phase I & II plumbing is intact.
 """
 import logging
-import pandas as pd
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pandas as pd
 
 # make imports work
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

@@ -4,20 +4,22 @@ Functions related to generating new hires during workforce simulations.
 QuickStart: see docs/cost_model/dynamics/hiring.md
 """
 
-import pandas as pd
+import logging
+from typing import Any, Dict, Optional, Sequence, Union  # Added Union
+
 import numpy as np
-from typing import Sequence, Optional, Dict, Any, Union  # Added Union
+import pandas as pd
+from scipy.stats import truncnorm
+
+from cost_model.utils.columns import (
+    EMP_BIRTH_DATE,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_TERM_DATE,
+)
 
 # from cost_model.utils.date_utils import calculate_age, calculate_tenure # Not directly used
 from cost_model.utils.id_generation import _generate_sequential_ids
-import logging
-from scipy.stats import truncnorm
-from cost_model.utils.columns import (
-    EMP_HIRE_DATE,
-    EMP_BIRTH_DATE,
-    EMP_GROSS_COMP,
-    EMP_TERM_DATE,
-)
 
 # If CompensationParams is a defined type, you might import it for type hinting, e.g.:
 # from ..config.models import CompensationParams # Hypothetical
@@ -39,12 +41,10 @@ def _generate_hire_dates(num: int, year: int, rng: np.random.Generator) -> pd.Se
 
 
 def _calculate_compensation_simple(
-    ages: np.ndarray,
-    comp_params: Dict[str, Any],
-    min_age_cfg: int,
-    rng: np.random.Generator
+    ages: np.ndarray, comp_params: Dict[str, Any], min_age_cfg: int, rng: np.random.Generator
 ) -> np.ndarray:
     """Calculate compensation based on age without role-based logic."""
+
     def get_param_value(params: Dict[str, Any], key: str, default: float) -> float:
         return float(params.get(key, default))
 
@@ -139,7 +139,9 @@ def _calculate_birth_dates(
             birth_dates.append(birth_date)
 
     # Create Series with explicit datetime64[ns] dtype
-    birth_dates_series = pd.Series(birth_dates, index=hire_dates.index, name=EMP_BIRTH_DATE, dtype='datetime64[ns]')
+    birth_dates_series = pd.Series(
+        birth_dates, index=hire_dates.index, name=EMP_BIRTH_DATE, dtype="datetime64[ns]"
+    )
 
     # Debug logging
     if not pd.api.types.is_datetime64_any_dtype(birth_dates_series):
@@ -171,9 +173,7 @@ def generate_new_hires(
     ]
 
     if num_hires <= 0:
-        logger.info(
-            "generate_new_hires called with num_hires=0. Returning empty DataFrame."
-        )
+        logger.info("generate_new_hires called with num_hires=0. Returning empty DataFrame.")
         return pd.DataFrame(columns=core_hr_cols_definition)
 
     logger.debug(f"Generating {num_hires} new hires for year {hire_year}.")
@@ -181,9 +181,7 @@ def generate_new_hires(
     if rng is None:
         rng = np.random.default_rng()
 
-    def get_config_val(
-        cfg: Union[Dict[str, Any], object], key: str, default: Any
-    ) -> Any:
+    def get_config_val(cfg: Union[Dict[str, Any], object], key: str, default: Any) -> Any:
         if isinstance(cfg, dict):
             return cfg.get(key, default)
         return getattr(cfg, key, default)
@@ -198,35 +196,33 @@ def generate_new_hires(
     # --- Definition of default_comp_params_as_dict ---
     # This is the dictionary that will be passed as default to _calculate_compensation
     default_comp_params_as_dict = {
-        "comp_base_salary": get_config_val(
-            scenario_config, "comp_base_salary", 50000.0
-        ),
+        "comp_base_salary": get_config_val(scenario_config, "comp_base_salary", 50000.0),
         "comp_age_factor": get_config_val(scenario_config, "comp_age_factor", 0.01),
-        "comp_stochastic_std_dev": get_config_val(
-            scenario_config, "comp_stochastic_std_dev", 0.0
-        ),
+        "comp_stochastic_std_dev": get_config_val(scenario_config, "comp_stochastic_std_dev", 0.0),
         "comp_min_salary": get_config_val(scenario_config, "comp_min_salary", 30000.0),
         # Add other default comp keys here if _calculate_compensation needs them via get_param_value
     }
     # --- End of definition ---
 
-    ids = _generate_sequential_ids(
-        existing_ids if existing_ids is not None else [], num_hires
-    )
+    ids = _generate_sequential_ids(existing_ids if existing_ids is not None else [], num_hires)
     hire_dates = _generate_hire_dates(num_hires, hire_year, rng)
     # Role assignment removed as part of schema refactoring
-    ages = _generate_ages(
-        num_hires, age_mean, age_std_dev, min_age_cfg, max_age_cfg, rng
-    )
+    ages = _generate_ages(num_hires, age_mean, age_std_dev, min_age_cfg, max_age_cfg, rng)
 
     # Debug logging for age distribution
-    logger.debug(f"[NEW-HIRE] Age distribution - avg={ages.mean():.1f}, min={ages.min()}, max={ages.max()}, std={ages.std():.1f}")
-    logger.debug(f"[NEW-HIRE] Age histogram: {pd.Series(ages).value_counts().sort_index().to_dict()}")
+    logger.debug(
+        f"[NEW-HIRE] Age distribution - avg={ages.mean():.1f}, min={ages.min()}, max={ages.max()}, std={ages.std():.1f}"
+    )
+    logger.debug(
+        f"[NEW-HIRE] Age histogram: {pd.Series(ages).value_counts().sort_index().to_dict()}"
+    )
 
     print("Generated Ages:", ages)
     # Defensive check: warn if all ages are identical (could cause identical birth dates)
     if len(set(ages)) == 1:
-        logger.warning(f"All generated ages are identical ({ages[0]}). This may cause identical birth dates. Check scenario_config or RNG usage.")
+        logger.warning(
+            f"All generated ages are identical ({ages[0]}). This may cause identical birth dates. Check scenario_config or RNG usage."
+        )
     birth_dates = _calculate_birth_dates(hire_dates, ages, rng)
     print("Calculated Birth Dates:", birth_dates.tolist())
 
@@ -242,8 +238,10 @@ def generate_new_hires(
     # Debug: Verify final birth date values
     unique_dates = birth_dates.unique()
     if len(unique_dates) < len(birth_dates):
-        logger.warning(f"Only {len(unique_dates)} unique birth dates among {len(birth_dates)} hires")
-    if (unique_dates == pd.Timestamp('1990-01-01')).any():
+        logger.warning(
+            f"Only {len(unique_dates)} unique birth dates among {len(birth_dates)} hires"
+        )
+    if (unique_dates == pd.Timestamp("1990-01-01")).any():
         logger.warning("Found default birth date 1990-01-01 in birth dates")
 
     # Ensure birth dates are explicitly included in the DataFrame
@@ -263,30 +261,22 @@ def generate_new_hires(
         genders_keys = list(gender_dist.keys())
         gender_probs = list(gender_dist.values())
         if not genders_keys:
-            logger.warning(
-                "Gender distribution dictionary is empty. Skipping gender assignment."
-            )
+            logger.warning("Gender distribution dictionary is empty. Skipping gender assignment.")
         else:
             total_gender_prob = sum(gender_probs)
             if not np.isclose(total_gender_prob, 1.0) and total_gender_prob > 0:
-                logger.warning(
-                    f"Gender distribution sums to {total_gender_prob:.4f}; normalizing."
-                )
+                logger.warning(f"Gender distribution sums to {total_gender_prob:.4f}; normalizing.")
                 gender_probs = [p / total_gender_prob for p in gender_probs]
             elif total_gender_prob <= 0:
                 logger.warning(
                     "Gender distribution invalid (sum <= 0). Skipping gender assignment."
                 )
             else:
-                nh_df_data["gender"] = rng.choice(
-                    genders_keys, size=num_hires, p=gender_probs
-                )
+                nh_df_data["gender"] = rng.choice(genders_keys, size=num_hires, p=gender_probs)
                 if "gender" not in current_column_order:
                     current_column_order.append("gender")
     else:
-        logger.debug(
-            "No valid gender distribution found in config. Skipping gender assignment."
-        )
+        logger.debug("No valid gender distribution found in config. Skipping gender assignment.")
 
     nh_df = pd.DataFrame(nh_df_data)
     for col in current_column_order:

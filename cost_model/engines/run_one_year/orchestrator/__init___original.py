@@ -10,26 +10,33 @@ signature and behavior as the original implementation.
 """
 import logging
 import uuid
-from typing import Dict, List, Optional, Tuple, Any
-import pandas as pd
+from typing import Any, Dict, List, Optional, Tuple
 
-from logging_config import get_logger, get_diagnostic_logger
+import pandas as pd
+from logging_config import get_diagnostic_logger, get_logger
 
 from cost_model.state.event_log import EVENT_COLS
 from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_STATUS_EOY,
-    ACTIVE_STATUS, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH, IS_ELIGIBLE,
-    EMP_ACTIVE
+    ACTIVE_STATUS,
+    EMP_ACTIVE,
+    EMP_BIRTH_DATE,
+    EMP_CONTR,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_STATUS_EOY,
+    EMPLOYER_CORE,
+    EMPLOYER_MATCH,
+    IS_ELIGIBLE,
 )
 
 # Import validation and utility functions
 from ..validation import ensure_snapshot_cols, validate_and_extract_hazard_slice
 
 # Import orchestrator components
-from .base import YearContext, filter_valid_employee_ids, ensure_simulation_year_column
+from .base import YearContext, ensure_simulation_year_column, filter_valid_employee_ids
 from .hiring import HiringOrchestrator
-from .termination import TerminationOrchestrator
 from .promotion import PromotionOrchestrator
+from .termination import TerminationOrchestrator
 from .validator import SnapshotValidator
 
 
@@ -92,64 +99,74 @@ def log_headcount_stage(df: pd.DataFrame, stage: str, year: int, logger: logging
     check_duplicates(df, stage, logger)
 
 
-def trace_snapshot_integrity(df: pd.DataFrame, stage: str, year: int, logger: logging.Logger, previous_ids=None) -> set:
+def trace_snapshot_integrity(
+    df: pd.DataFrame, stage: str, year: int, logger: logging.Logger, previous_ids=None
+) -> set:
     """
     Enhanced logging to trace snapshot integrity and identify where employees are lost.
-    
+
     Args:
         df: Current snapshot DataFrame
         stage: Stage name for logging
         year: Simulation year
         logger: Logger instance
         previous_ids: Set of employee IDs from previous stage
-        
+
     Returns:
         Set of current employee IDs for next comparison
     """
     if df.empty:
         logger.warning(f"[TRACE {year}] {stage}: SNAPSHOT IS EMPTY!")
         return set()
-    
+
     # Get current employee IDs
     if EMP_ID not in df.columns:
         logger.error(f"[TRACE {year}] {stage}: No {EMP_ID} column found!")
         return set()
-        
+
     current_ids = set(df[EMP_ID].dropna())
     total_rows = len(df)
     active_count = n_active(df)
-    
+
     # Log basic counts
-    logger.info(f"[TRACE {year}] {stage}: {total_rows} rows, {len(current_ids)} unique IDs, {active_count} active")
-    
+    logger.info(
+        f"[TRACE {year}] {stage}: {total_rows} rows, {len(current_ids)} unique IDs, {active_count} active"
+    )
+
     # Compare with previous stage if available
     if previous_ids is not None:
         lost_ids = previous_ids - current_ids
         gained_ids = current_ids - previous_ids
-        
+
         if lost_ids:
             # Only log as warning if this is an unexpected loss (not during termination or promotion stages)
             if "TERM" in stage.upper() or "FORCED" in stage.upper() or "PROMOTION" in stage.upper():
-                logger.info(f"[TRACE {year}] {stage}: EXPECTED LOSS of {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
+                logger.info(
+                    f"[TRACE {year}] {stage}: EXPECTED LOSS of {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}"
+                )
             else:
-                logger.warning(f"[TRACE {year}] {stage}: LOST {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}")
-            
+                logger.warning(
+                    f"[TRACE {year}] {stage}: LOST {len(lost_ids)} employee IDs: {sorted(list(lost_ids))[:10]}{'...' if len(lost_ids) > 10 else ''}"
+                )
+
         if gained_ids:
-            logger.info(f"[TRACE {year}] {stage}: GAINED {len(gained_ids)} employee IDs: {sorted(list(gained_ids))[:10]}{'...' if len(gained_ids) > 10 else ''}")
-            
+            logger.info(
+                f"[TRACE {year}] {stage}: GAINED {len(gained_ids)} employee IDs: {sorted(list(gained_ids))[:10]}{'...' if len(gained_ids) > 10 else ''}"
+            )
+
         net_change = len(current_ids) - len(previous_ids)
         logger.info(f"[TRACE {year}] {stage}: Net ID change: {net_change:+d}")
-        
+
     # Check for data quality issues
     na_ids = df[EMP_ID].isna().sum()
     if na_ids > 0:
         logger.warning(f"[TRACE {year}] {stage}: {na_ids} rows with NA employee IDs")
-        
+
     # Check for duplicate IDs
     duplicate_ids = df[EMP_ID].duplicated().sum()
     if duplicate_ids > 0:
         logger.warning(f"[TRACE {year}] {stage}: {duplicate_ids} duplicate employee IDs")
-        
+
     return current_ids
 
 
@@ -163,7 +180,7 @@ def run_one_year(
     rng: Any,
     census_template_path: Optional[str] = None,
     rng_seed_offset: int = 0,
-    deterministic_term: bool = False
+    deterministic_term: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Orchestrates simulation for a single year, following the new hiring/termination flow:
@@ -220,7 +237,7 @@ def run_one_year(
         rng=rng,
         rng_seed_offset=rng_seed_offset,
         census_template_path=census_template_path,
-        deterministic_term=deterministic_term
+        deterministic_term=deterministic_term,
     )
 
     # Track all events generated this year
@@ -228,7 +245,7 @@ def run_one_year(
 
     # DIAGNOSTIC: Log initial state
     log_headcount_stage(snapshot, "SOY_INITIAL", year, logger)
-    
+
     # TRACE: Start tracking employee IDs through the simulation
     current_ids = trace_snapshot_integrity(snapshot, "SOY_INITIAL", year, logger)
 
@@ -241,13 +258,17 @@ def run_one_year(
     all_events.extend(compensation_events)
 
     # Step 1b: Apply compensation events to snapshot
-    snapshot = _apply_compensation_events_to_snapshot(snapshot, compensation_events, year_context, logger)
+    snapshot = _apply_compensation_events_to_snapshot(
+        snapshot, compensation_events, year_context, logger
+    )
 
     # DIAGNOSTIC: Log after compensation
     log_headcount_stage(snapshot, "AFTER_COMPENSATION", year, logger)
-    
+
     # TRACE: Check if compensation events affected employee IDs
-    current_ids = trace_snapshot_integrity(snapshot, "AFTER_COMPENSATION", year, logger, current_ids)
+    current_ids = trace_snapshot_integrity(
+        snapshot, "AFTER_COMPENSATION", year, logger, current_ids
+    )
 
     # Step 2: Markov promotions/exits (experienced only) - Apply AFTER compensation so raises use updated values
     promotion_events, snapshot = promotion_orchestrator.get_events(snapshot, year_context)
@@ -256,7 +277,7 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after promotions/exits
     log_headcount_stage(snapshot, "AFTER_PROMOTIONS", year, logger)
-    
+
     # TRACE: Check if promotion events affected employee IDs
     current_ids = trace_snapshot_integrity(snapshot, "AFTER_PROMOTIONS", year, logger, current_ids)
 
@@ -269,9 +290,11 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after experienced terminations (this is the survivor count for exact targeting)
     log_headcount_stage(snapshot, "AFTER_EXPERIENCED_TERMS", year, logger)
-    
+
     # TRACE: Check if termination events affected employee IDs (expected to lose some)
-    current_ids = trace_snapshot_integrity(snapshot, "AFTER_EXPERIENCED_TERMS", year, logger, current_ids)
+    current_ids = trace_snapshot_integrity(
+        snapshot, "AFTER_EXPERIENCED_TERMS", year, logger, current_ids
+    )
 
     # Step 4: Hiring (with exact targeting)
     # For exact targeting, we need the count BEFORE any terminations/promotions occurred
@@ -283,16 +306,17 @@ def run_one_year(
         term_events_for_hiring = termination_events[0]
 
     hiring_events, snapshot = hiring_orchestrator.get_events(
-        snapshot, year_context,
+        snapshot,
+        year_context,
         terminated_events=term_events_for_hiring,
-        start_count=initial_start_count  # Use the count before any changes
+        start_count=initial_start_count,  # Use the count before any changes
     )
     all_events.extend(hiring_events)
     validator.validate(snapshot, "hiring", year_context)
 
     # DIAGNOSTIC: Log after hiring
     log_headcount_stage(snapshot, "AFTER_HIRING", year, logger)
-    
+
     # TRACE: Check if hiring events affected employee IDs (expected to gain some)
     current_ids = trace_snapshot_integrity(snapshot, "AFTER_HIRING", year, logger, current_ids)
 
@@ -311,9 +335,11 @@ def run_one_year(
 
         # DIAGNOSTIC: Log after forced terminations
         log_headcount_stage(snapshot, "AFTER_FORCED_TERMS", year, logger)
-        
+
         # TRACE: Check if forced terminations affected employee IDs
-        current_ids = trace_snapshot_integrity(snapshot, "AFTER_FORCED_TERMS", year, logger, current_ids)
+        current_ids = trace_snapshot_integrity(
+            snapshot, "AFTER_FORCED_TERMS", year, logger, current_ids
+        )
 
     # Step 5: New hire terminations
     nh_termination_events, snapshot = termination_orchestrator.get_new_hire_termination_events(
@@ -324,7 +350,7 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after new hire terminations
     log_headcount_stage(snapshot, "AFTER_NH_TERMS", year, logger)
-    
+
     # TRACE: Check if new hire terminations affected employee IDs
     current_ids = trace_snapshot_integrity(snapshot, "AFTER_NH_TERMS", year, logger, current_ids)
 
@@ -333,9 +359,11 @@ def run_one_year(
 
     # DIAGNOSTIC: Log after contribution calculations
     log_headcount_stage(snapshot, "AFTER_CONTRIBUTIONS", year, logger)
-    
+
     # TRACE: Check if contribution calculations affected employee IDs
-    current_ids = trace_snapshot_integrity(snapshot, "AFTER_CONTRIBUTIONS", year, logger, current_ids)
+    current_ids = trace_snapshot_integrity(
+        snapshot, "AFTER_CONTRIBUTIONS", year, logger, current_ids
+    )
 
     # Step 7: Final validation
     validator.validate_eoy(snapshot)
@@ -343,12 +371,12 @@ def run_one_year(
     # DIAGNOSTIC: Final EOY headcount check with exact targeting assertion
     final_active_count = n_active(snapshot)
     log_headcount_stage(snapshot, "FINAL_EOY", year, logger)
-    
+
     # TRACE: Final check of employee IDs
     final_ids = trace_snapshot_integrity(snapshot, "FINAL_EOY", year, logger, current_ids)
 
     # Calculate expected target for assertion
-    target_growth = getattr(year_context.global_params, 'target_growth', 0.03)
+    target_growth = getattr(year_context.global_params, "target_growth", 0.03)
     expected_target = round(initial_start_count * (1 + target_growth))
 
     # Hard assertion to catch headcount overruns
@@ -380,10 +408,7 @@ def run_one_year(
 
 
 def _prepare_inputs(
-    prev_snapshot: pd.DataFrame,
-    year: int,
-    logger: logging.Logger,
-    diag_logger: logging.Logger
+    prev_snapshot: pd.DataFrame, year: int, logger: logging.Logger, diag_logger: logging.Logger
 ) -> pd.DataFrame:
     """
     Prepare and validate input snapshot.
@@ -421,9 +446,7 @@ def _prepare_inputs(
 
 
 def _apply_contribution_calculations(
-    snapshot: pd.DataFrame,
-    year_context: YearContext,
-    logger: logging.Logger
+    snapshot: pd.DataFrame, year_context: YearContext, logger: logging.Logger
 ) -> pd.DataFrame:
     """
     Apply contribution calculations and eligibility to the final snapshot.
@@ -451,20 +474,24 @@ def _apply_contribution_calculations(
         from cost_model.rules.validators import ContributionsRule, MatchRule, NonElectiveRule
 
         # Get contribution rules from plan_rules
-        contrib_config = year_context.plan_rules.get('contributions', {})
-        match_config = year_context.plan_rules.get('match', {})
-        nec_config = year_context.plan_rules.get('non_elective', {})
+        contrib_config = year_context.plan_rules.get("contributions", {})
+        match_config = year_context.plan_rules.get("match", {})
+        nec_config = year_context.plan_rules.get("non_elective", {})
 
         # Convert SimpleNamespace to dict if needed
-        if hasattr(contrib_config, '__dict__'):
+        if hasattr(contrib_config, "__dict__"):
             contrib_config = contrib_config.__dict__
-        if hasattr(match_config, '__dict__'):
+        if hasattr(match_config, "__dict__"):
             match_config = match_config.__dict__
-        if hasattr(nec_config, '__dict__'):
+        if hasattr(nec_config, "__dict__"):
             nec_config = nec_config.__dict__
 
         # Create rule objects
-        contrib_rules = ContributionsRule(**contrib_config) if contrib_config else ContributionsRule(enabled=True)
+        contrib_rules = (
+            ContributionsRule(**contrib_config)
+            if contrib_config
+            else ContributionsRule(enabled=True)
+        )
 
         # Handle MatchRule with proper default tiers
         if match_config:
@@ -472,22 +499,22 @@ def _apply_contribution_calculations(
         else:
             # Create a default match rule with at least one tier to satisfy validation
             match_rules = MatchRule(
-                tiers=[{'match_rate': 0.0, 'cap_deferral_pct': 0.0}],
-                dollar_cap=None
+                tiers=[{"match_rate": 0.0, "cap_deferral_pct": 0.0}], dollar_cap=None
             )
 
         nec_rules = NonElectiveRule(**nec_config) if nec_config else NonElectiveRule(rate=0.0)
 
         # Get IRS limits from plan_rules and convert to Pydantic models
-        irs_limits_raw = year_context.plan_rules.get('irs_limits', {})
+        irs_limits_raw = year_context.plan_rules.get("irs_limits", {})
         irs_limits = {}
 
         logger.debug(f"Plan rules keys: {list(year_context.plan_rules.keys())}")
         logger.debug(f"Raw IRS limits type: {type(irs_limits_raw)}")
 
         if irs_limits_raw:
-            from cost_model.config.models import IRSYearLimits
             from types import SimpleNamespace
+
+            from cost_model.config.models import IRSYearLimits
 
             # Handle both dict and SimpleNamespace objects
             if isinstance(irs_limits_raw, dict):
@@ -495,7 +522,9 @@ def _apply_contribution_calculations(
             elif isinstance(irs_limits_raw, SimpleNamespace):
                 items = vars(irs_limits_raw).items()
             else:
-                logger.warning(f"Unexpected IRS limits type: {type(irs_limits_raw)}. Expected dict or SimpleNamespace.")
+                logger.warning(
+                    f"Unexpected IRS limits type: {type(irs_limits_raw)}. Expected dict or SimpleNamespace."
+                )
                 items = []
 
             for year, limits_obj in items:
@@ -508,24 +537,32 @@ def _apply_contribution_calculations(
                         limits_dict = vars(limits_obj)
                     elif isinstance(limits_obj, dict):
                         limits_dict = limits_obj
-                    elif hasattr(limits_obj, 'compensation_limit'):
+                    elif hasattr(limits_obj, "compensation_limit"):
                         # Already an IRSYearLimits object
                         irs_limits[year_int] = limits_obj
                         logger.debug(f"Using existing IRSYearLimits object for year {year_int}")
                         continue
                     else:
-                        logger.warning(f"Invalid IRS limits format for year {year}: {type(limits_obj)}. Skipping this year.")
+                        logger.warning(
+                            f"Invalid IRS limits format for year {year}: {type(limits_obj)}. Skipping this year."
+                        )
                         continue
 
                     # Convert dictionary to IRSYearLimits model
                     irs_limits[year_int] = IRSYearLimits(**limits_dict)
-                    logger.debug(f"Successfully converted IRS limits for year {year_int}: {limits_dict}")
+                    logger.debug(
+                        f"Successfully converted IRS limits for year {year_int}: {limits_dict}"
+                    )
 
                 except Exception as e:
-                    logger.warning(f"Failed to convert IRS limits for year {year}: {e}. Skipping this year.")
+                    logger.warning(
+                        f"Failed to convert IRS limits for year {year}: {e}. Skipping this year."
+                    )
 
         if not irs_limits:
-            logger.warning(f"IRS limits missing or could not be converted for {year_context.year}. Contribution calculations might fail.")
+            logger.warning(
+                f"IRS limits missing or could not be converted for {year_context.year}. Contribution calculations might fail."
+            )
 
         # Apply contributions
         snapshot_copy = apply_contributions(
@@ -536,7 +573,7 @@ def _apply_contribution_calculations(
             irs_limits=irs_limits,
             simulation_year=year_context.year,
             year_start=year_context.as_of,
-            year_end=year_context.end_of_year
+            year_end=year_context.end_of_year,
         )
 
         logger.info(f"Applied contribution calculations to {len(snapshot_copy)} employees")
@@ -553,8 +590,8 @@ def _apply_contribution_calculations(
         from cost_model.utils.date_utils import calculate_age
 
         # Get eligibility parameters
-        min_age = getattr(year_context.global_params, 'min_eligibility_age', 21)
-        min_service_months = getattr(year_context.global_params, 'min_service_months', 12)
+        min_age = getattr(year_context.global_params, "min_eligibility_age", 21)
+        min_service_months = getattr(year_context.global_params, "min_service_months", 12)
 
         # Initialize eligibility column
         if IS_ELIGIBLE not in snapshot_copy.columns:
@@ -576,9 +613,8 @@ def _apply_contribution_calculations(
                 age = calculate_age(birth_date, year_context.end_of_year)
 
                 # Calculate service in months
-                service_months = (
-                    (year_context.end_of_year.year - hire_date.year) * 12 +
-                    (year_context.end_of_year.month - hire_date.month)
+                service_months = (year_context.end_of_year.year - hire_date.year) * 12 + (
+                    year_context.end_of_year.month - hire_date.month
                 )
 
                 # Check eligibility criteria
@@ -586,7 +622,9 @@ def _apply_contribution_calculations(
                     snapshot_copy.loc[idx, IS_ELIGIBLE] = True
 
         eligible_count = snapshot_copy[IS_ELIGIBLE].sum()
-        logger.info(f"Determined eligibility for {len(snapshot_copy)} employees: {eligible_count} eligible")
+        logger.info(
+            f"Determined eligibility for {len(snapshot_copy)} employees: {eligible_count} eligible"
+        )
 
     except Exception as e:
         logger.warning(f"Error applying eligibility calculations: {e}")
@@ -600,7 +638,7 @@ def _apply_forced_terminations(
     snapshot: pd.DataFrame,
     num_forced_terminations: int,
     year_context: YearContext,
-    logger: logging.Logger
+    logger: logging.Logger,
 ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
     """
     Apply forced terminations to existing employees to meet exact headcount targets.
@@ -617,11 +655,14 @@ def _apply_forced_terminations(
     Returns:
         Tuple of (termination_events_list, updated_snapshot)
     """
-    from cost_model.state.event_log import create_event, EVT_TERM, EVENT_COLS
-    from cost_model.state.schema import EMP_ID, EMP_ACTIVE, EMP_HIRE_DATE
     import json
 
-    logger.info(f"[FORCED TERMS] Applying {num_forced_terminations} forced terminations for exact targeting")
+    from cost_model.state.event_log import EVENT_COLS, EVT_TERM, create_event
+    from cost_model.state.schema import EMP_ACTIVE, EMP_HIRE_DATE, EMP_ID
+
+    logger.info(
+        f"[FORCED TERMS] Applying {num_forced_terminations} forced terminations for exact targeting"
+    )
 
     # Filter to active employees who are NOT new hires (hired before this year)
     active_mask = snapshot[EMP_ACTIVE] == True
@@ -642,8 +683,7 @@ def _apply_forced_terminations(
 
     # Randomly select employees for forced termination
     selected_for_termination = eligible_for_forced_term.sample(
-        n=num_forced_terminations,
-        random_state=year_context.year_rng.integers(0, 2**31)
+        n=num_forced_terminations, random_state=year_context.year_rng.integers(0, 2**31)
     )
 
     # Create termination events
@@ -658,16 +698,22 @@ def _apply_forced_terminations(
             employee_id=emp_id,
             event_type=EVT_TERM,
             value_num=None,
-            value_json=json.dumps({
-                "reason": "forced_termination_exact_targeting",
-                "note": "Terminated to meet exact EOY headcount target"
-            }),
-            meta=f"Forced termination for exact targeting in {year_context.year}"
+            value_json=json.dumps(
+                {
+                    "reason": "forced_termination_exact_targeting",
+                    "note": "Terminated to meet exact EOY headcount target",
+                }
+            ),
+            meta=f"Forced termination for exact targeting in {year_context.year}",
         )
         term_events.append(term_event)
 
     # Create events DataFrame
-    term_events_df = pd.DataFrame(term_events, columns=EVENT_COLS) if term_events else pd.DataFrame(columns=EVENT_COLS)
+    term_events_df = (
+        pd.DataFrame(term_events, columns=EVENT_COLS)
+        if term_events
+        else pd.DataFrame(columns=EVENT_COLS)
+    )
 
     # Update snapshot to mark terminated employees as inactive (don't remove them)
     terminated_ids = set(selected_for_termination[EMP_ID])
@@ -676,7 +722,7 @@ def _apply_forced_terminations(
     # Mark terminated employees as inactive and set termination date
     terminated_mask = updated_snapshot[EMP_ID].isin(terminated_ids)
     updated_snapshot.loc[terminated_mask, EMP_ACTIVE] = False
-    updated_snapshot.loc[terminated_mask, 'employee_termination_date'] = term_date
+    updated_snapshot.loc[terminated_mask, "employee_termination_date"] = term_date
 
     # Count active employees before and after
     active_before = snapshot[EMP_ACTIVE].sum()
@@ -694,7 +740,7 @@ def _apply_compensation_events_to_snapshot(
     snapshot: pd.DataFrame,
     compensation_events: List[pd.DataFrame],
     year_context: YearContext,
-    logger: logging.Logger
+    logger: logging.Logger,
 ) -> pd.DataFrame:
     """
     Apply compensation events to update employee compensation in the snapshot.
@@ -725,31 +771,27 @@ def _apply_compensation_events_to_snapshot(
 
     # Apply events using the snapshot update mechanism
     from cost_model.state.snapshot_update import update
+
     updated_snapshot = update(
-        prev_snapshot=snapshot,
-        new_events=all_comp_events,
-        snapshot_year=year_context.year
+        prev_snapshot=snapshot, new_events=all_comp_events, snapshot_year=year_context.year
     )
 
     # Count how many employees had compensation updated
-    comp_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COMP']
-    cola_events = all_comp_events[all_comp_events['event_type'] == 'EVT_COLA']
+    comp_events = all_comp_events[all_comp_events["event_type"] == "EVT_COMP"]
+    cola_events = all_comp_events[all_comp_events["event_type"] == "EVT_COLA"]
 
     comp_count = len(comp_events) if not comp_events.empty else 0
     cola_count = len(cola_events) if not cola_events.empty else 0
 
-    logger.info(f"[COMP] Applied {comp_count} compensation updates and {cola_count} COLA updates to snapshot")
+    logger.info(
+        f"[COMP] Applied {comp_count} compensation updates and {cola_count} COLA updates to snapshot"
+    )
 
     return updated_snapshot
 
 
-
-
-
 def _generate_compensation_events(
-    snapshot: pd.DataFrame,
-    year_context: YearContext,
-    logger: logging.Logger
+    snapshot: pd.DataFrame, year_context: YearContext, logger: logging.Logger
 ) -> List[pd.DataFrame]:
     """
     Generate comprehensive compensation events (annual raises and COLA) for active employees.
@@ -766,6 +808,7 @@ def _generate_compensation_events(
     """
     logger.info("[STEP] Generating compensation events (annual raises and COLA)")
     import traceback
+
     all_events = []
 
     try:
@@ -779,7 +822,7 @@ def _generate_compensation_events(
                 snapshot=snapshot,
                 hazard_slice=year_context.hazard_slice,
                 as_of=year_context.as_of,
-                rng=year_context.year_rng
+                rng=year_context.year_rng,
             )
             all_events.extend(comp_events)
 
@@ -787,17 +830,21 @@ def _generate_compensation_events(
             total_comp_events = 0
             total_cola_events = 0
             for df in comp_events:
-                if not df.empty and 'event_type' in df.columns:
-                    comp_count = (df['event_type'] == 'EVT_COMP').sum()
-                    cola_count = (df['event_type'] == 'EVT_COLA').sum()
+                if not df.empty and "event_type" in df.columns:
+                    comp_count = (df["event_type"] == "EVT_COMP").sum()
+                    cola_count = (df["event_type"] == "EVT_COLA").sum()
                     total_comp_events += comp_count
                     total_cola_events += cola_count
 
-            logger.info(f"[COMP] Generated {total_comp_events} standard compensation events and {total_cola_events} COLA events")
+            logger.info(
+                f"[COMP] Generated {total_comp_events} standard compensation events and {total_cola_events} COLA events"
+            )
 
         except KeyError as e:
-            if 'cola_pct' in str(e):
-                logger.warning("[COMP] No COLA events generated: 'cola_pct' not found in hazard slice")
+            if "cola_pct" in str(e):
+                logger.warning(
+                    "[COMP] No COLA events generated: 'cola_pct' not found in hazard slice"
+                )
             else:
                 logger.error(f"[COMP] Error in compensation generation: {e}")
                 logger.error(f"[COMP] Hazard columns: {year_context.hazard_slice.columns.tolist()}")
@@ -814,8 +861,8 @@ def _generate_compensation_events(
     total_events = sum(len(df) for df in all_events if not df.empty)
     event_types = []
     for df in all_events:
-        if not df.empty and 'event_type' in df.columns:
-            event_types.extend(df['event_type'].unique())
+        if not df.empty and "event_type" in df.columns:
+            event_types.extend(df["event_type"].unique())
 
     logger.info(f"[COMP] Total compensation events for year {year_context.year}: {total_events}")
     logger.info(f"[COMP] Event types generated: {sorted(list(set(event_types)))}")
@@ -824,10 +871,7 @@ def _generate_compensation_events(
 
 
 def _consolidate_events(
-    all_events: List[pd.DataFrame],
-    event_log: pd.DataFrame,
-    year: int,
-    logger: logging.Logger
+    all_events: List[pd.DataFrame], event_log: pd.DataFrame, year: int, logger: logging.Logger
 ) -> pd.DataFrame:
     """
     Consolidate all events generated during the year into a single DataFrame.
@@ -859,7 +903,7 @@ def _consolidate_events(
 
     # Validate events before concatenation
     validated_events = []
-    required_cols = ['event_time', 'event_type', EMP_ID]
+    required_cols = ["event_time", "event_type", EMP_ID]
 
     for i, df in enumerate(non_empty_events):
         # Check for required columns
@@ -877,15 +921,17 @@ def _consolidate_events(
         for col in required_cols:
             if df[col].isna().any():
                 na_count = df[col].isna().sum()
-                logger.warning(f"DataFrame {i} has {na_count} NA values in required column '{col}'. Fixing.")
+                logger.warning(
+                    f"DataFrame {i} has {na_count} NA values in required column '{col}'. Fixing."
+                )
 
                 # For event_time, fill with year timestamp
-                if col == 'event_time' and na_count > 0:
+                if col == "event_time" and na_count > 0:
                     df = df.copy()
                     df.loc[:, col] = df[col].fillna(pd.Timestamp(f"{year}-01-01"))
 
                 # For event_type and employee_id, drop rows with NA values
-                if (col == 'event_type' or col == EMP_ID) and na_count > 0:
+                if (col == "event_type" or col == EMP_ID) and na_count > 0:
                     df = df.dropna(subset=[col])
 
         # Only add valid, non-empty DataFrames
@@ -904,22 +950,22 @@ def _consolidate_events(
         return pd.DataFrame(columns=EVENT_COLS)
 
     # Ensure event_id is unique and present
-    if 'event_id' in new_events.columns:
-        if new_events['event_id'].isna().any():
+    if "event_id" in new_events.columns:
+        if new_events["event_id"].isna().any():
             logger.warning("Generating missing event_ids for new events")
-            mask = new_events['event_id'].isna()
-            new_events.loc[mask, 'event_id'] = [str(uuid.uuid4()) for _ in range(mask.sum())]
+            mask = new_events["event_id"].isna()
+            new_events.loc[mask, "event_id"] = [str(uuid.uuid4()) for _ in range(mask.sum())]
     else:
         logger.warning("event_id column missing in new events, generating new event_ids")
-        new_events.loc[:, 'event_id'] = [str(uuid.uuid4()) for _ in range(len(new_events))]
+        new_events.loc[:, "event_id"] = [str(uuid.uuid4()) for _ in range(len(new_events))]
 
     # Ensure simulation_year is set
     new_events = ensure_simulation_year_column(new_events, year)
 
     # Sort events by timestamp
-    if 'event_time' in new_events.columns and not new_events.empty:
-        new_events.loc[:, 'event_time'] = pd.to_datetime(new_events['event_time'], errors='coerce')
-        new_events = new_events.sort_values('event_time', ignore_index=True)
+    if "event_time" in new_events.columns and not new_events.empty:
+        new_events.loc[:, "event_time"] = pd.to_datetime(new_events["event_time"], errors="coerce")
+        new_events = new_events.sort_values("event_time", ignore_index=True)
 
     # Combine with existing event log - filter empty DataFrames to avoid FutureWarning
     dfs_to_concat = [df for df in [event_log, new_events] if not df.empty]
@@ -935,4 +981,4 @@ def _consolidate_events(
 
 
 # Re-export the main function for backward compatibility
-__all__ = ['run_one_year']
+__all__ = ["run_one_year"]

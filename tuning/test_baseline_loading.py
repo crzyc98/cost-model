@@ -13,27 +13,28 @@ if str(project_root) not in sys.path:
 
 # Import the load_baseline_distributions function
 sys.path.append(str(Path(__file__).parent))
-from tune_configs import load_baseline_distributions, HAS_AGE_UTILS, HAS_PANDAS
+from tune_configs import HAS_AGE_UTILS, HAS_PANDAS, load_baseline_distributions
+
 
 def main():
     print("Testing baseline distribution loading...")
     print(f"HAS_PANDAS: {HAS_PANDAS}")
     print(f"HAS_AGE_UTILS: {HAS_AGE_UTILS}")
     print()
-    
+
     # Test the baseline loading function
     try:
         age_dist, tenure_dist = load_baseline_distributions()
-        
+
         print("=== RESULTS ===")
         print("Age distribution:")
         for band, pct in age_dist.items():
             print(f"  {band}: {pct:.3f}")
-        
+
         print("\nTenure distribution:")
         for band, pct in tenure_dist.items():
             print(f"  {band}: {pct:.3f}")
-            
+
         # Check if we're using actual census data or fallback
         if HAS_AGE_UTILS and HAS_PANDAS:
             census_path = project_root / "data/census_template.parquet"
@@ -43,11 +44,13 @@ def main():
                 print(f"\n⚠️  WARNING: Census file not found at {census_path}")
         else:
             print(f"\n⚠️  WARNING: Using fallback distribution due to missing dependencies")
-            
+
     except Exception as e:
         print(f"❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()

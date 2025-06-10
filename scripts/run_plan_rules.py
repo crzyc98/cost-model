@@ -15,43 +15,44 @@ except Exception as e:
     print(f"Error determining project root or modifying sys.path: {e}")
     sys.exit(1)
 
-import logging
 import argparse
+import logging
+
 import pandas as pd
 import yaml
 
 # --- Now perform imports from cost_model ---
 try:
+    from cost_model.config.validators import PlanRules, ValidationError
+    from cost_model.rules.engine import apply_rules_for_year
     from cost_model.utils.columns import (
-        EMP_SSN,
-        IS_PARTICIPATING,
-        IS_ELIGIBLE,
-        EMP_CONTR,
-        RAW_TO_STD_COLS,
-        EMP_DEFERRAL_RATE,
-        EMPLOYER_MATCH,
-        EMPLOYER_CORE,
-        EMP_PLAN_YEAR_COMP,
-        EMP_CAPPED_COMP,
-        SUM_HEADCOUNT,
-        SUM_ELIGIBLE,
-        SUM_PARTICIPATING,
-        RATE_PARTICIP_ELIG,
-        RATE_PARTICIP_TOTAL,
         AVG_DEFERRAL_PART,
         AVG_DEFERRAL_TOTAL,
+        EMP_CAPPED_COMP,
+        EMP_CONTR,
+        EMP_DEFERRAL_RATE,
+        EMP_PLAN_YEAR_COMP,
+        EMP_SSN,
+        EMPLOYER_CORE,
+        EMPLOYER_MATCH,
+        IS_ELIGIBLE,
+        IS_PARTICIPATING,
+        PCT_EMP_COST_CAP,
+        PCT_EMP_COST_PLAN,
+        RATE_PARTICIP_ELIG,
+        RATE_PARTICIP_TOTAL,
+        RAW_TO_STD_COLS,
+        SUM_CAP_COMP,
+        SUM_CONTRIB,
+        SUM_ELIGIBLE,
         SUM_EMP_CONTR,
-        SUM_EMP_MATCH,
         SUM_EMP_CORE,
         SUM_EMP_COST,
-        SUM_CONTRIB,
+        SUM_EMP_MATCH,
+        SUM_HEADCOUNT,
+        SUM_PARTICIPATING,
         SUM_PLAN_COMP,
-        SUM_CAP_COMP,
-        PCT_EMP_COST_PLAN,
-        PCT_EMP_COST_CAP,
     )
-    from cost_model.rules.engine import apply_rules_for_year
-    from cost_model.config.validators import PlanRules, ValidationError
 except ImportError as e:
     print(f"Error importing from cost_model: {e}. Ensure the necessary modules exist.")
     sys.exit(1)
@@ -128,9 +129,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
                     df[EMP_SSN].map(prev_eligibility).astype("boolean").fillna(False)
                 )
             else:
-                df["was_participating"] = (
-                    df[IS_PARTICIPATING] if IS_PARTICIPATING in df else False
-                )
+                df["was_participating"] = df[IS_PARTICIPATING] if IS_PARTICIPATING in df else False
                 df["was_eligible"] = df[IS_ELIGIBLE] if IS_ELIGIBLE in df else False
 
             logger.info(
@@ -154,9 +153,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
 
             # Save prior participation/eligibility for next year
             if EMP_SSN in out_df:
-                prev_participation = dict(
-                    zip(out_df[EMP_SSN], out_df[IS_PARTICIPATING])
-                )
+                prev_participation = dict(zip(out_df[EMP_SSN], out_df[IS_PARTICIPATING]))
                 prev_eligibility = dict(zip(out_df[EMP_SSN], out_df[IS_ELIGIBLE]))
                 prev_ids = set(out_df[EMP_SSN])
 
@@ -169,9 +166,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
             # Use out_df (after plan rules) for metrics, matching run_monte_carlo.py
             hc = len(out_df)
             elig = int(out_df[IS_ELIGIBLE].sum()) if IS_ELIGIBLE in out_df else 0
-            part = (
-                int(out_df[IS_PARTICIPATING].sum()) if IS_PARTICIPATING in out_df else 0
-            )
+            part = int(out_df[IS_PARTICIPATING].sum()) if IS_PARTICIPATING in out_df else 0
             p_rate_elig = part / elig if elig > 0 else 0.0
             p_rate_tot = part / hc if hc > 0 else 0.0
 
@@ -180,32 +175,18 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
                 if IS_PARTICIPATING in out_df and EMP_DEFERRAL_RATE in out_df
                 else 0.0
             )
-            avg_def_tot = (
-                out_df[EMP_DEFERRAL_RATE].mean() if EMP_DEFERRAL_RATE in out_df else 0.0
-            )
+            avg_def_tot = out_df[EMP_DEFERRAL_RATE].mean() if EMP_DEFERRAL_RATE in out_df else 0.0
 
-            sum_employee_contrib = (
-                out_df[EMP_CONTR].sum() if EMP_CONTR in out_df else 0.0
-            )
-            sum_employer_match = (
-                out_df[EMPLOYER_MATCH].sum() if EMPLOYER_MATCH in out_df else 0.0
-            )
-            sum_employer_core = (
-                out_df[EMPLOYER_CORE].sum() if EMPLOYER_CORE in out_df else 0.0
-            )
+            sum_employee_contrib = out_df[EMP_CONTR].sum() if EMP_CONTR in out_df else 0.0
+            sum_employer_match = out_df[EMPLOYER_MATCH].sum() if EMPLOYER_MATCH in out_df else 0.0
+            sum_employer_core = out_df[EMPLOYER_CORE].sum() if EMPLOYER_CORE in out_df else 0.0
             sum_employer_cost = sum_employer_match + sum_employer_core
 
-            sum_contributions = (
-                sum_employee_contrib + sum_employer_match + sum_employer_core
-            )
+            sum_contributions = sum_employee_contrib + sum_employer_match + sum_employer_core
             sum_plan_comp = (
-                out_df[EMP_PLAN_YEAR_COMP].sum()
-                if EMP_PLAN_YEAR_COMP in out_df
-                else 0.0
+                out_df[EMP_PLAN_YEAR_COMP].sum() if EMP_PLAN_YEAR_COMP in out_df else 0.0
             )
-            sum_cap_comp = (
-                out_df[EMP_CAPPED_COMP].sum() if EMP_CAPPED_COMP in out_df else 0.0
-            )
+            sum_cap_comp = out_df[EMP_CAPPED_COMP].sum() if EMP_CAPPED_COMP in out_df else 0.0
 
             summary = {
                 "scenario": name,
@@ -227,9 +208,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
                 PCT_EMP_COST_PLAN: (
                     sum_employer_cost / sum_plan_comp if sum_plan_comp > 0 else 0.0
                 ),
-                PCT_EMP_COST_CAP: (
-                    sum_employer_cost / sum_cap_comp if sum_cap_comp > 0 else 0.0
-                ),
+                PCT_EMP_COST_CAP: (sum_employer_cost / sum_cap_comp if sum_cap_comp > 0 else 0.0),
             }
             metrics.append(summary)
         # write metrics table
@@ -241,9 +220,7 @@ def main(config_path: str, snapshots_dir: str, output_dir: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Phase II: apply plan rules")
-    parser.add_argument(
-        "--config", required=True, dest="config_path", help="YAML config file path"
-    )
+    parser.add_argument("--config", required=True, dest="config_path", help="YAML config file path")
     parser.add_argument(
         "--snapshots-dir",
         "--snapshots",

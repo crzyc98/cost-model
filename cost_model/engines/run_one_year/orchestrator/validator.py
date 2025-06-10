@@ -7,12 +7,18 @@ at various stages of the simulation process.
 """
 import logging
 from typing import Optional
+
 import pandas as pd
 
 from cost_model.state.schema import (
-    EMP_ID, EMP_ACTIVE, EMP_TERM_DATE, EMP_HIRE_DATE,
-    EMP_GROSS_COMP, SIMULATION_YEAR
+    EMP_ACTIVE,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_TERM_DATE,
+    SIMULATION_YEAR,
 )
+
 from ..validation import validate_eoy_snapshot
 from .base import YearContext
 
@@ -43,7 +49,7 @@ class SnapshotValidator:
         snapshot: pd.DataFrame,
         step_name: str,
         year_context: Optional[YearContext] = None,
-        target_headcount: Optional[int] = None
+        target_headcount: Optional[int] = None,
     ) -> None:
         """
         Perform comprehensive validation of a workforce snapshot.
@@ -82,11 +88,7 @@ class SnapshotValidator:
 
         self.logger.info(f"[VALIDATION] Snapshot validation passed for {step_name}")
 
-    def validate_eoy(
-        self,
-        snapshot: pd.DataFrame,
-        target_headcount: Optional[int] = None
-    ) -> None:
+    def validate_eoy(self, snapshot: pd.DataFrame, target_headcount: Optional[int] = None) -> None:
         """
         Perform end-of-year specific validation using the existing validation module.
 
@@ -123,9 +125,7 @@ class SnapshotValidator:
         missing_columns = [col for col in required_columns if col not in snapshot.columns]
 
         if missing_columns:
-            raise ValueError(
-                f"Missing required columns after {step_name}: {missing_columns}"
-            )
+            raise ValueError(f"Missing required columns after {step_name}: {missing_columns}")
 
         self.logger.debug(f"[VALIDATION] Structure validation passed for {step_name}")
 
@@ -150,7 +150,9 @@ class SnapshotValidator:
             raise ValueError(f"Found {duplicate_count} duplicate EMP_IDs after {step_name}")
 
         # Check for invalid employee IDs
-        invalid_ids = snapshot[EMP_ID].isna() | (snapshot[EMP_ID] == '') | (snapshot[EMP_ID] == 'nan')
+        invalid_ids = (
+            snapshot[EMP_ID].isna() | (snapshot[EMP_ID] == "") | (snapshot[EMP_ID] == "nan")
+        )
         if invalid_ids.any():
             invalid_count = invalid_ids.sum()
             self.logger.error(f"Found {invalid_count} invalid EMP_IDs after {step_name}")
@@ -171,9 +173,7 @@ class SnapshotValidator:
         """
         # Check for employees marked as both active and terminated
         if EMP_TERM_DATE in snapshot.columns:
-            invalid_active = snapshot[
-                snapshot[EMP_ACTIVE] & ~pd.isna(snapshot[EMP_TERM_DATE])
-            ]
+            invalid_active = snapshot[snapshot[EMP_ACTIVE] & ~pd.isna(snapshot[EMP_TERM_DATE])]
             if not invalid_active.empty:
                 self.logger.error(
                     f"Found {len(invalid_active)} employees marked as both active and terminated after {step_name}"
@@ -189,11 +189,15 @@ class SnapshotValidator:
         if active_count == 0:
             self.logger.warning(f"No active employees found after {step_name}")
         elif active_count > total_count:
-            raise ValueError(f"Active count ({active_count}) exceeds total count ({total_count}) after {step_name}")
+            raise ValueError(
+                f"Active count ({active_count}) exceeds total count ({total_count}) after {step_name}"
+            )
 
         self.logger.debug(f"[VALIDATION] Employee state validation passed for {step_name}")
 
-    def _validate_data_quality(self, snapshot: pd.DataFrame, step_name: str, year_context: Optional[YearContext] = None) -> None:
+    def _validate_data_quality(
+        self, snapshot: pd.DataFrame, step_name: str, year_context: Optional[YearContext] = None
+    ) -> None:
         """
         Validate data quality and completeness.
 
@@ -209,17 +213,21 @@ class SnapshotValidator:
             negative_comp = comp_data < 0
             if negative_comp.any():
                 negative_count = negative_comp.sum()
-                self.logger.warning(f"Found {negative_count} employees with negative compensation after {step_name}")
+                self.logger.warning(
+                    f"Found {negative_count} employees with negative compensation after {step_name}"
+                )
 
             # Check for extremely high compensation (potential data errors)
             high_comp = comp_data > 1000000  # $1M threshold
             if high_comp.any():
                 high_count = high_comp.sum()
-                self.logger.warning(f"Found {high_count} employees with compensation > $1M after {step_name}")
+                self.logger.warning(
+                    f"Found {high_count} employees with compensation > $1M after {step_name}"
+                )
 
         # Check for reasonable hire dates
         if EMP_HIRE_DATE in snapshot.columns:
-            hire_dates = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors='coerce')
+            hire_dates = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors="coerce")
 
             # Check for future hire dates relative to simulation context
             # Use simulation year from context if available, otherwise current calendar year
@@ -242,10 +250,7 @@ class SnapshotValidator:
         self.logger.debug(f"[VALIDATION] Data quality validation passed for {step_name}")
 
     def _validate_headcount(
-        self,
-        snapshot: pd.DataFrame,
-        step_name: str,
-        target_headcount: int
+        self, snapshot: pd.DataFrame, step_name: str, target_headcount: int
     ) -> None:
         """
         Validate headcount against target.
@@ -268,13 +273,12 @@ class SnapshotValidator:
             # This allows for some flexibility in headcount targets
             self.logger.warning(f"Continuing with headcount mismatch after {step_name}")
         else:
-            self.logger.info(f"[VALIDATION] Headcount matches target ({target_headcount}) after {step_name}")
+            self.logger.info(
+                f"[VALIDATION] Headcount matches target ({target_headcount}) after {step_name}"
+            )
 
     def _validate_year_consistency(
-        self,
-        snapshot: pd.DataFrame,
-        step_name: str,
-        year_context: YearContext
+        self, snapshot: pd.DataFrame, step_name: str, year_context: YearContext
     ) -> None:
         """
         Validate year-specific consistency requirements.
@@ -287,18 +291,22 @@ class SnapshotValidator:
         # Check simulation year consistency
         if SIMULATION_YEAR in snapshot.columns:
             year_values = snapshot[SIMULATION_YEAR].unique()
-            if len(year_values) > 1 or (len(year_values) == 1 and year_values[0] != year_context.year):
+            if len(year_values) > 1 or (
+                len(year_values) == 1 and year_values[0] != year_context.year
+            ):
                 self.logger.warning(
                     f"Inconsistent simulation years in snapshot after {step_name}: {year_values}"
                 )
 
         # Check hire date consistency for new hires
         if EMP_HIRE_DATE in snapshot.columns:
-            hire_dates = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors='coerce')
+            hire_dates = pd.to_datetime(snapshot[EMP_HIRE_DATE], errors="coerce")
             current_year_hires = hire_dates.dt.year == year_context.year
 
             if current_year_hires.any():
                 current_year_count = current_year_hires.sum()
-                self.logger.info(f"Found {current_year_count} employees hired in {year_context.year} after {step_name}")
+                self.logger.info(
+                    f"Found {current_year_count} employees hired in {year_context.year} after {step_name}"
+                )
 
         self.logger.debug(f"[VALIDATION] Year consistency validation passed for {step_name}")

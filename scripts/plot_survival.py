@@ -2,12 +2,13 @@
 """
 Standalone script to plot Kaplan–Meier survival curves by tenure cohort.
 """
+import argparse
 import logging
 from pathlib import Path
-import pandas as pd
+
 import matplotlib.pyplot as plt
+import pandas as pd
 from lifelines import KaplanMeierFitter
-import argparse
 
 # ── Setup ──────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -27,23 +28,15 @@ def main():
     parser.add_argument(
         "--data",
         type=Path,
-        default=Path(__file__).resolve().parent.parent
-        / "data"
-        / "historical_turnover.csv",
+        default=Path(__file__).resolve().parent.parent / "data" / "historical_turnover.csv",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent.parent
-        / "output"
-        / "survival_curves.png",
+        default=Path(__file__).resolve().parent.parent / "output" / "survival_curves.png",
     )
-    parser.add_argument(
-        "--as-of", type=str, help="Censoring date (YYYY-MM-DD), default=today"
-    )
-    parser.add_argument(
-        "--show", action="store_true", help="Display plot interactively"
-    )
+    parser.add_argument("--as-of", type=str, help="Censoring date (YYYY-MM-DD), default=today")
+    parser.add_argument("--show", action="store_true", help="Display plot interactively")
     args = parser.parse_args()
 
     data_path = args.data
@@ -57,9 +50,7 @@ def main():
     df = pd.read_csv(data_path, parse_dates=["hire_date", "termination_date"])
 
     # ── Compute durations ────────────────────────────────────────────────────────
-    df["duration"] = (
-        df["termination_date"].fillna(censor_date) - df["hire_date"]
-    ).dt.days / 365.25
+    df["duration"] = (df["termination_date"].fillna(censor_date) - df["hire_date"]).dt.days / 365.25
     df["event_observed"] = df["termination_date"].notna().astype(int)
     df["cohort"] = df["duration"].apply(assign_cohort)
 

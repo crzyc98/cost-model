@@ -6,9 +6,10 @@ Patch a notebook so that:
  3) Adjusts any CSV paths under data/ to ../data/.
 """
 import argparse
-import shutil
-import re
 import os
+import re
+import shutil
+
 import nbformat
 from nbformat.v4 import new_code_cell
 

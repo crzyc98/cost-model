@@ -5,18 +5,22 @@ QuickStart: see docs/cost_model/state/tenure.md
 """
 from __future__ import annotations
 
-import pandas as pd
 from enum import Enum
 from typing import List, Tuple
 
+import pandas as pd
+
+
 class TenureBand(Enum):
     """Enumeration of tenure bands for employee categorization."""
+
     NEW_HIRE = "<1"
     EARLY = "1-3"
     CORE = "3-5"
     EXPERIENCED = "5-10"
     VETERAN = "10-15"
     NEAR_RETIREE = "15+"
+
 
 # Tenure cutoffs: (min_years, max_years, TenureBand)
 # Each tuple defines the range [min_years, max_years) for the given tenure band
@@ -31,8 +35,7 @@ TENURE_CUTOFFS: List[Tuple[float, float, TenureBand]] = [
 
 # Create categorical dtype for tenure bands
 TENURE_BAND_CATEGORICAL_DTYPE = pd.CategoricalDtype(
-    categories=["<1", "1-3", "3-5", "5-10", "10-15", "15+"],
-    ordered=True
+    categories=["<1", "1-3", "3-5", "5-10", "10-15", "15+"], ordered=True
 )
 
 __all__ = [
@@ -43,6 +46,7 @@ __all__ = [
     "categorize_tenure",
     "apply_tenure",
 ]
+
 
 def categorize_tenure(tenure):
     """Categorize numeric tenure into a TenureBand enum value."""
@@ -56,6 +60,7 @@ def categorize_tenure(tenure):
     # Fallback (should not happen with proper TENURE_CUTOFFS)
     return TenureBand.NEAR_RETIREE
 
+
 def assign_tenure_band(tenure):
     """Map numeric tenure (years) to a categorical band string."""
     if pd.isna(tenure):
@@ -67,7 +72,10 @@ def assign_tenure_band(tenure):
 
     return band.value
 
-def apply_tenure(df: pd.DataFrame, hire_col: str, as_of: pd.Timestamp, *, out_tenure_col: str, out_band_col: str) -> pd.DataFrame:
+
+def apply_tenure(
+    df: pd.DataFrame, hire_col: str, as_of: pd.Timestamp, *, out_tenure_col: str, out_band_col: str
+) -> pd.DataFrame:
     """Vectorised tenure + band calculation and assignment.
 
     Parameters
@@ -81,5 +89,7 @@ def apply_tenure(df: pd.DataFrame, hire_col: str, as_of: pd.Timestamp, *, out_te
     hire_dates = pd.to_datetime(df[hire_col], errors="coerce")
     tenure_yrs = (as_of - hire_dates).dt.days / 365.25
     df[out_tenure_col] = tenure_yrs.round(3)
-    df[out_band_col] = df[out_tenure_col].map(assign_tenure_band).astype(TENURE_BAND_CATEGORICAL_DTYPE)
+    df[out_band_col] = (
+        df[out_tenure_col].map(assign_tenure_band).astype(TENURE_BAND_CATEGORICAL_DTYPE)
+    )
     return df

@@ -5,18 +5,18 @@ QuickStart: see docs/cost_model/data/writers.md
 """
 
 import logging
-import pandas as pd
 from pathlib import Path
 from typing import Dict
+
+import pandas as pd
 
 # Attempt to import column constants, provide fallbacks
 try:
     # Assuming column definitions might be useful here too (e.g., for ordering)
-    from cost_model.state.schema import (
+    from cost_model.state.schema import EMP_TERM_DATE  # Example relevant date columns
+    from cost_model.state.schema import (  # Add other column constants if needed for output formatting/selection
         EMP_BIRTH_DATE,
         EMP_HIRE_DATE,
-        EMP_TERM_DATE,  # Example relevant date columns
-        # Add other column constants if needed for output formatting/selection
     )
 except ImportError:
     print(
@@ -46,7 +46,7 @@ def write_snapshots(
 ) -> None:
     """
     Writes yearly snapshot DataFrames to Parquet files.
-    
+
     Ensures simulation_year is populated and removes unnecessary columns before saving.
 
     Args:
@@ -65,24 +65,21 @@ def write_snapshots(
     output_dir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
 
     # Columns to remove if they exist
-    columns_to_remove = [
-        'term_rate', 'comp_raise_pct', 'new_hire_term_rate', 
-        'cola_pct', 'cfg'
-    ]
+    columns_to_remove = ["term_rate", "comp_raise_pct", "new_hire_term_rate", "cola_pct", "cfg"]
 
     for year, df in yearly_snapshots.items():
         # Make a copy to avoid modifying the original
         df = df.copy()
-        
+
         # Drop any old simulation_year (in case it was partial or blank),
         # then force-set it on every row
-        if 'simulation_year' in df.columns:
-            df.drop(columns=['simulation_year'], inplace=True)
+        if "simulation_year" in df.columns:
+            df.drop(columns=["simulation_year"], inplace=True)
             logger.debug("Dropped existing simulation_year column")
-        df['simulation_year'] = year
+        df["simulation_year"] = year
         logger.debug(f"Assigned simulation_year={year} on all rows")
         logger.debug(f"simulation_year values now: {df['simulation_year'].unique()}")
-        
+
         # Sanity check the year value
         if not isinstance(year, int):
             logger.warning(f"Unexpected year type: {type(year).__name__} = {year}")
@@ -97,14 +94,12 @@ def write_snapshots(
             if col in df.columns:
                 df = df.drop(columns=[col])
                 logger.debug(f"Removed column: {col}")
-        
+
         # Define output path using the loop's year (always correct)
         out_path = output_dir / f"{file_prefix}_year{year}.parquet"
-        
-        logger.debug(
-            f"Writing snapshot for year {year} to {out_path} ({len(df)} records)"
-        )
-        
+
+        logger.debug(f"Writing snapshot for year {year} to {out_path} ({len(df)} records)")
+
         try:
             df.to_parquet(out_path, index=False)
             logger.info(f"Wrote snapshot: {out_path}")
@@ -142,12 +137,8 @@ def write_summary_metrics(
         # for col in metrics_df.select_dtypes(include=['datetime64[ns]']).columns:
         #     metrics_df[col] = metrics_df[col].dt.strftime('%Y-%m-%d')
 
-        metrics_df.to_csv(
-            summary_path, index=False, float_format="%.4f"
-        )  # Control float precision
-        logger.info(
-            f"Wrote summary metrics: {summary_path}\n{metrics_df.head().to_string()}"
-        )
+        metrics_df.to_csv(summary_path, index=False, float_format="%.4f")  # Control float precision
+        logger.info(f"Wrote summary metrics: {summary_path}\n{metrics_df.head().to_string()}")
         return summary_path
     except Exception as e:
         logger.exception(f"Failed to write summary metrics file {summary_path}")
@@ -181,9 +172,7 @@ if __name__ == "__main__":
         ),
     }
     # Create dummy metrics data
-    metrics = pd.DataFrame(
-        {"year": [2025, 2026], "headcount": [2, 2], "avg_value": [15.0, 20.5]}
-    )
+    metrics = pd.DataFrame({"year": [2025, 2026], "headcount": [2, 2], "avg_value": [15.0, 20.5]})
 
     print("\n--- Testing Snapshot Writer ---")
     try:

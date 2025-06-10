@@ -2,37 +2,38 @@
 """
 utils/preprocess_census.py - Preprocess utility for census data: adds derived fields (bools, status, eligibility, etc.) for use in simulation output and downstream analysis.
 """
+import argparse
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
-from typing import Union, Optional
+from typing import Optional, Union
 
 import pandas as pd
-import argparse
-from cost_model.utils.data_processing import assign_employment_status
+
 from cost_model.rules.eligibility import apply as apply_eligibility
 from cost_model.rules.validators import PlanRules
 from cost_model.utils.columns import (
-    EMP_SSN,
-    EMP_ROLE,
+    DATE_COLS,
+    ELIGIBILITY_ENTRY_DATE,
     EMP_BIRTH_DATE,
-    EMP_HIRE_DATE,
-    EMP_TERM_DATE,
-    EMP_GROSS_COMP,
-    EMP_PLAN_YEAR_COMP,
     EMP_CAPPED_COMP,
-    EMP_DEFERRAL_RATE,
     EMP_CONTR,
+    EMP_DEFERRAL_RATE,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_PLAN_YEAR_COMP,
+    EMP_ROLE,
+    EMP_SSN,
+    EMP_TERM_DATE,
     EMPLOYER_CORE,
     EMPLOYER_MATCH,
-    ELIGIBILITY_ENTRY_DATE,
-    IS_PARTICIPATING,
     IS_ELIGIBLE,
+    IS_PARTICIPATING,
     RAW_TO_STD_COLS,
     to_nullable_bool,
-    DATE_COLS,
 )
+from cost_model.utils.data_processing import assign_employment_status
 
 logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -133,9 +134,7 @@ def preprocess_census(
     df = df.loc[:, df.columns.intersection(keep)]
     # Validate presence of eligibility entry date if eligibility logic was applied
     if config_path and ELIGIBILITY_ENTRY_DATE not in df.columns:
-        raise RuntimeError(
-            f"Missing eligibility column after rename: {ELIGIBILITY_ENTRY_DATE}"
-        )
+        raise RuntimeError(f"Missing eligibility column after rename: {ELIGIBILITY_ENTRY_DATE}")
     # Validate presence of required columns
     required = {EMP_SSN, EMP_GROSS_COMP}
     missing = required - set(df.columns)
@@ -145,9 +144,7 @@ def preprocess_census(
     # Boolean flags for participation
     df[IS_PARTICIPATING] = to_nullable_bool(df.get(EMP_CONTR, 0) > 0)
     # Boolean flag for eligibility ensure series input
-    eligible_series = (
-        df[IS_ELIGIBLE] if IS_ELIGIBLE in df else pd.Series(False, index=df.index)
-    )
+    eligible_series = df[IS_ELIGIBLE] if IS_ELIGIBLE in df else pd.Series(False, index=df.index)
     df[IS_ELIGIBLE] = to_nullable_bool(eligible_series)
     # Final date formatting
     for col in [EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, ELIGIBILITY_ENTRY_DATE]:
@@ -176,32 +173,18 @@ def main() -> pd.DataFrame:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    parser = argparse.ArgumentParser(
-        description="Preprocess census data for simulation."
-    )
+    parser = argparse.ArgumentParser(description="Preprocess census data for simulation.")
     parser.add_argument(
         "--input", default="data/census_data.csv", help="Input census_data.csv path"
     )
-    parser.add_argument(
-        "--output", default="data/census_preprocessed.csv", help="Output CSV path"
-    )
-    parser.add_argument(
-        "--config", required=False, help="Config YAML for eligibility logic"
-    )
-    parser.add_argument(
-        "--year", type=int, required=False, help="Simulation year (default: infer)"
-    )
-    parser.add_argument(
-        "--parquet", action="store_true", help="Also write output as Parquet"
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Show DataFrame shape and head"
-    )
+    parser.add_argument("--output", default="data/census_preprocessed.csv", help="Output CSV path")
+    parser.add_argument("--config", required=False, help="Config YAML for eligibility logic")
+    parser.add_argument("--year", type=int, required=False, help="Simulation year (default: infer)")
+    parser.add_argument("--parquet", action="store_true", help="Also write output as Parquet")
+    parser.add_argument("--verbose", action="store_true", help="Show DataFrame shape and head")
     args = parser.parse_args()
     # Run preprocessing and optionally return df
-    df = preprocess_census(
-        args.input, args.output, args.config, args.year, args.parquet
-    )
+    df = preprocess_census(args.input, args.output, args.config, args.year, args.parquet)
     if args.verbose:
         print(f"DataFrame shape: {df.shape}")
         print(df.head())

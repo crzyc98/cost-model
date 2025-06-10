@@ -1,13 +1,24 @@
 import json
+from pathlib import Path
+from typing import List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 import yaml
-from pathlib import Path
-from logging_config import get_logger, get_diagnostic_logger
-from typing import Tuple, Optional, List
-from cost_model.state.job_levels.sampling import apply_promotion_markov, load_markov_matrix
+from logging_config import get_diagnostic_logger, get_logger
+
 from cost_model.state.event_log import EVENT_COLS, EVT_PROMOTION, EVT_RAISE, EVT_TERM, create_event
-from cost_model.state.schema import EMP_ID, EMP_LEVEL, EMP_EXITED, EMP_LEVEL_SOURCE, EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_BIRTH_DATE, SIMULATION_YEAR
+from cost_model.state.job_levels.sampling import apply_promotion_markov, load_markov_matrix
+from cost_model.state.schema import (
+    EMP_BIRTH_DATE,
+    EMP_EXITED,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_LEVEL,
+    EMP_LEVEL_SOURCE,
+    SIMULATION_YEAR,
+)
 from cost_model.utils.date_utils import age_to_band
 
 logger = get_logger(__name__)
@@ -28,29 +39,35 @@ def _extract_promotion_hazard_config(global_params) -> dict:
     import os
 
     # Check for environment variable override for testing (backward compatibility)
-    hazard_file = os.environ.get('HAZARD_CONFIG_FILE')
+    hazard_file = os.environ.get("HAZARD_CONFIG_FILE")
     if hazard_file:
         config_path = Path(__file__).parent.parent.parent / "config" / hazard_file
-        logger.debug(f"[PROMOTION] Using environment override, loading hazard configuration from: {config_path}")
+        logger.debug(
+            f"[PROMOTION] Using environment override, loading hazard configuration from: {config_path}"
+        )
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
             logger.debug(f"[PROMOTION] Successfully loaded hazard config from {hazard_file}")
             return config
         except FileNotFoundError:
-            logger.warning(f"[PROMOTION] Hazard defaults file not found at {config_path}. Falling back to global_params.")
+            logger.warning(
+                f"[PROMOTION] Hazard defaults file not found at {config_path}. Falling back to global_params."
+            )
         except Exception as e:
-            logger.warning(f"[PROMOTION] Error loading hazard defaults: {e}. Falling back to global_params.")
+            logger.warning(
+                f"[PROMOTION] Error loading hazard defaults: {e}. Falling back to global_params."
+            )
 
     # Extract promotion hazard configuration from global_params
-    if hasattr(global_params, 'promotion_hazard'):
+    if hasattr(global_params, "promotion_hazard"):
         promotion_config = global_params.promotion_hazard
         logger.debug("[PROMOTION] Using promotion hazard configuration from global_params")
 
         # Helper function to convert SimpleNamespace to dict
         def convert_to_dict(obj):
-            if hasattr(obj, '__dict__'):
+            if hasattr(obj, "__dict__"):
                 return {k: convert_to_dict(v) for k, v in obj.__dict__.items()}
             elif isinstance(obj, dict):
                 return {k: convert_to_dict(v) for k, v in obj.items()}
@@ -59,24 +76,27 @@ def _extract_promotion_hazard_config(global_params) -> dict:
 
         # Convert to the expected dictionary format
         config = {
-            'promotion': {
-                'base_rate': getattr(promotion_config, 'base_rate', 0.10),
-                'tenure_multipliers': convert_to_dict(getattr(promotion_config, 'tenure_multipliers', {})),
-                'level_dampener_factor': getattr(promotion_config, 'level_dampener_factor', 0.15),
-                'age_multipliers': convert_to_dict(getattr(promotion_config, 'age_multipliers', {}))
+            "promotion": {
+                "base_rate": getattr(promotion_config, "base_rate", 0.10),
+                "tenure_multipliers": convert_to_dict(
+                    getattr(promotion_config, "tenure_multipliers", {})
+                ),
+                "level_dampener_factor": getattr(promotion_config, "level_dampener_factor", 0.15),
+                "age_multipliers": convert_to_dict(
+                    getattr(promotion_config, "age_multipliers", {})
+                ),
             }
         }
         return config
 
-    logger.warning("[PROMOTION] No promotion_hazard configuration found in global_params. Age multipliers will not be applied.")
+    logger.warning(
+        "[PROMOTION] No promotion_hazard configuration found in global_params. Age multipliers will not be applied."
+    )
     return {}
 
 
 def _apply_promotion_age_multipliers(
-    snapshot: pd.DataFrame,
-    promotion_matrix: pd.DataFrame,
-    year: int,
-    hazard_defaults: dict
+    snapshot: pd.DataFrame, promotion_matrix: pd.DataFrame, year: int, hazard_defaults: dict
 ) -> pd.DataFrame:
     """Apply age-based multipliers to promotion transition probabilities.
 
@@ -92,24 +112,26 @@ def _apply_promotion_age_multipliers(
     Returns:
         Modified promotion matrix with age-adjusted probabilities per employee
     """
-    if not hazard_defaults or 'promotion' not in hazard_defaults:
+    if not hazard_defaults or "promotion" not in hazard_defaults:
         logger.debug(f"[PROMOTION] Year {year}: No age multipliers found in hazard defaults.")
         return promotion_matrix
 
-    age_multipliers = hazard_defaults.get('promotion', {}).get('age_multipliers', {})
+    age_multipliers = hazard_defaults.get("promotion", {}).get("age_multipliers", {})
     if not age_multipliers:
         logger.debug(f"[PROMOTION] Year {year}: No age multipliers configured for promotion.")
         return promotion_matrix
 
     # Check if birth date column exists
     if EMP_BIRTH_DATE not in snapshot.columns:
-        logger.warning(f"[PROMOTION] Year {year}: {EMP_BIRTH_DATE} column not found. Age multipliers will not be applied.")
+        logger.warning(
+            f"[PROMOTION] Year {year}: {EMP_BIRTH_DATE} column not found. Age multipliers will not be applied."
+        )
         return promotion_matrix
 
     # Calculate ages as of year-end (consistent with termination engine)
     as_of_date = pd.Timestamp(f"{year}-12-31")
-    birth_dates = pd.to_datetime(snapshot[EMP_BIRTH_DATE], errors='coerce')
-    ages = ((as_of_date - birth_dates).dt.days / 365.25).round().astype('Int64')
+    birth_dates = pd.to_datetime(snapshot[EMP_BIRTH_DATE], errors="coerce")
+    ages = ((as_of_date - birth_dates).dt.days / 365.25).round().astype("Int64")
 
     # Map ages to age bands and then to multipliers
     emp_ages = {}
@@ -119,8 +141,10 @@ def _apply_promotion_age_multipliers(
         age_band = age_to_band(int(age))
         emp_ages[snapshot.loc[idx, EMP_ID]] = age_band
 
-    logger.info(f"[PROMOTION] Year {year}: Calculated ages for {len(emp_ages)} employees. "
-               f"Age bands: {set(emp_ages.values())}")
+    logger.info(
+        f"[PROMOTION] Year {year}: Calculated ages for {len(emp_ages)} employees. "
+        f"Age bands: {set(emp_ages.values())}"
+    )
 
     # For Markov promotion, we need to create employee-specific matrices
     # Since the current implementation uses a single matrix for all employees,
@@ -129,19 +153,21 @@ def _apply_promotion_age_multipliers(
 
     # Store age multipliers in the snapshot for use during Markov sampling
     snapshot = snapshot.copy()
-    snapshot['_promotion_age_multiplier'] = 1.0  # Default multiplier
+    snapshot["_promotion_age_multiplier"] = 1.0  # Default multiplier
 
     for emp_id, age_band in emp_ages.items():
         if age_band in age_multipliers:
             multiplier = age_multipliers[age_band]
             emp_mask = snapshot[EMP_ID] == emp_id
-            snapshot.loc[emp_mask, '_promotion_age_multiplier'] = multiplier
+            snapshot.loc[emp_mask, "_promotion_age_multiplier"] = multiplier
 
     # Log the impact of age adjustments
-    non_default_multipliers = (snapshot['_promotion_age_multiplier'] != 1.0).sum()
+    non_default_multipliers = (snapshot["_promotion_age_multiplier"] != 1.0).sum()
     if non_default_multipliers > 0:
-        logger.info(f"[PROMOTION] Year {year}: Applied age multipliers to {non_default_multipliers} employees. "
-                   f"Multiplier range: {snapshot['_promotion_age_multiplier'].min():.2f} - {snapshot['_promotion_age_multiplier'].max():.2f}")
+        logger.info(
+            f"[PROMOTION] Year {year}: Applied age multipliers to {non_default_multipliers} employees. "
+            f"Multiplier range: {snapshot['_promotion_age_multiplier'].min():.2f} - {snapshot['_promotion_age_multiplier'].max():.2f}"
+        )
 
     return snapshot  # Return modified snapshot with age multipliers
 
@@ -150,7 +176,7 @@ def create_promotion_raise_events(
     snapshot: pd.DataFrame,
     promoted: pd.DataFrame,
     promo_time: pd.Timestamp,
-    promo_raise_config: dict
+    promo_raise_config: dict,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Create promotion and raise events for promoted employees with level-specific raise percentages.
@@ -174,7 +200,9 @@ def create_promotion_raise_events(
         from_level_val = snapshot.loc[row.name, EMP_LEVEL]
         if isinstance(from_level_val, pd.Series):
             logger = get_logger(__name__)
-            logger.warning(f"[PROMOTION] Duplicate index for employee {emp_id} (row.name={row.name}); skipping promotion/raise event.")
+            logger.warning(
+                f"[PROMOTION] Duplicate index for employee {emp_id} (row.name={row.name}); skipping promotion/raise event."
+            )
             continue
         from_level = int(from_level_val)
         to_level = int(row[EMP_LEVEL])
@@ -183,7 +211,11 @@ def create_promotion_raise_events(
             if pd.isna(comp_val) or comp_val is pd.NA:
                 # This should be rare now that we filter at the start, but keep as a safeguard
                 hire_date = snapshot.loc[row.name, EMP_HIRE_DATE]
-                hire_date_str = hire_date.strftime('%Y-%m-%d') if not pd.isna(hire_date) else 'unknown hire date'
+                hire_date_str = (
+                    hire_date.strftime("%Y-%m-%d")
+                    if not pd.isna(hire_date)
+                    else "unknown hire date"
+                )
                 logger = get_logger(__name__)
                 logger.warning(
                     f"[PROMOTION] Employee {emp_id} (hired {hire_date_str}) missing {EMP_GROSS_COMP}; "
@@ -209,13 +241,15 @@ def create_promotion_raise_events(
             event_time=promo_time,
             employee_id=emp_id,
             event_type=EVT_PROMOTION,
-            value_json=json.dumps({
-                "from_level": from_level,
-                "to_level": to_level,
-                "previous_comp": current_comp,
-                "raise_pct": raise_pct
-            }),
-            meta=f"Promotion from level {from_level} to {to_level} with {raise_pct:.0%} raise"
+            value_json=json.dumps(
+                {
+                    "from_level": from_level,
+                    "to_level": to_level,
+                    "previous_comp": current_comp,
+                    "raise_pct": raise_pct,
+                }
+            ),
+            meta=f"Promotion from level {from_level} to {to_level} with {raise_pct:.0%} raise",
         )
         promotion_events.append(promo_event)
 
@@ -225,31 +259,42 @@ def create_promotion_raise_events(
             event_time=promo_time + pd.Timedelta(seconds=30),  # Promotion raises at 00:00:30
             employee_id=emp_id,
             event_type=EVT_RAISE,
-            value_json=json.dumps({
-                "amount": raise_amount,
-                "previous_comp": current_comp,
-                "new_comp": current_comp * (1 + raise_pct),
-                "raise_pct": raise_pct,
-                "reason": f"promotion_{level_key}",
-                "from_level": from_level,
-                "to_level": to_level
-            }),
-            meta=f"{raise_pct:.1%} raise for promotion from level {from_level} to {to_level}"
+            value_json=json.dumps(
+                {
+                    "amount": raise_amount,
+                    "previous_comp": current_comp,
+                    "new_comp": current_comp * (1 + raise_pct),
+                    "raise_pct": raise_pct,
+                    "reason": f"promotion_{level_key}",
+                    "from_level": from_level,
+                    "to_level": to_level,
+                }
+            ),
+            meta=f"{raise_pct:.1%} raise for promotion from level {from_level} to {to_level}",
         )
         raise_events.append(raise_event)
 
-
     # Convert to DataFrames with proper schema
-    promotions_df = pd.DataFrame(promotion_events, columns=EVENT_COLS) if promotion_events else pd.DataFrame(columns=EVENT_COLS)
-    raises_df = pd.DataFrame(raise_events, columns=EVENT_COLS) if raise_events else pd.DataFrame(columns=EVENT_COLS)
+    promotions_df = (
+        pd.DataFrame(promotion_events, columns=EVENT_COLS)
+        if promotion_events
+        else pd.DataFrame(columns=EVENT_COLS)
+    )
+    raises_df = (
+        pd.DataFrame(raise_events, columns=EVENT_COLS)
+        if raise_events
+        else pd.DataFrame(columns=EVENT_COLS)
+    )
 
     return promotions_df, raises_df
 
-from logging_config import get_logger
-
 
 import sys
+
+from logging_config import get_logger
+
 from cost_model.state.job_levels.sampling import load_markov_matrix
+
 
 def apply_markov_promotions(
     snapshot: pd.DataFrame,
@@ -258,7 +303,7 @@ def apply_markov_promotions(
     promotion_raise_config: Optional[dict] = None,
     simulation_year: Optional[int] = None,
     promotion_matrix: Optional[pd.DataFrame] = None,
-    global_params=None
+    global_params=None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Apply Markov-chain based promotions to the workforce with associated raises.
@@ -288,14 +333,9 @@ def apply_markov_promotions(
         promotion_matrix_path = getattr(global_params, "promotion_matrix_path", None)
 
         try:
-            promotion_matrix = load_markov_matrix(
-                promotion_matrix_path,
-                allow_default
-            )
+            promotion_matrix = load_markov_matrix(promotion_matrix_path, allow_default)
         except (FileNotFoundError, ValueError) as e:
-            logger.error(
-                "Promotion matrix load/validation failed: %s", e
-            )
+            logger.error("Promotion matrix load/validation failed: %s", e)
             sys.exit(1)
 
     # Set default raise config if not provided
@@ -304,7 +344,7 @@ def apply_markov_promotions(
             "1_to_2": 0.05,  # 5% raise for 1→2
             "2_to_3": 0.08,  # 8% raise for 2→3
             "3_to_4": 0.10,  # 10% raise for 3→4
-            "default": 0.10  # Default 10% for any other promotions
+            "default": 0.10,  # Default 10% for any other promotions
         }
 
     # Create a copy to avoid modifying the input
@@ -312,7 +352,9 @@ def apply_markov_promotions(
 
     # Add diagnostics for EMP_LEVEL at start of apply_markov_promotions
     year_val = simulation_year or promo_time.year
-    diag_logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Snapshot analysis at start of apply_markov_promotions:")
+    diag_logger.debug(
+        f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Snapshot analysis at start of apply_markov_promotions:"
+    )
     if EMP_LEVEL in snapshot.columns:
         na_count = snapshot[EMP_LEVEL].isna().sum()
         diag_logger.debug(f"  Input snapshot['{EMP_LEVEL}'] NA count: {na_count}")
@@ -322,8 +364,10 @@ def apply_markov_promotions(
         if na_count > 0:
             na_employees = snapshot[snapshot[EMP_LEVEL].isna()][[EMP_ID, EMP_HIRE_DATE]].copy()
             if not na_employees.empty:
-                na_employees[EMP_HIRE_DATE] = na_employees[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
-                diag_logger.debug(f"  Employees with NaN {EMP_LEVEL}: {na_employees.to_dict('records')}")
+                na_employees[EMP_HIRE_DATE] = na_employees[EMP_HIRE_DATE].dt.strftime("%Y-%m-%d")
+                diag_logger.debug(
+                    f"  Employees with NaN {EMP_LEVEL}: {na_employees.to_dict('records')}"
+                )
 
         # Log level distribution if there are no NaNs or after removing NaNs
         non_na_snapshot = snapshot.dropna(subset=[EMP_LEVEL])
@@ -337,7 +381,7 @@ def apply_markov_promotions(
     missing_comp_mask = snapshot[EMP_GROSS_COMP].isna()
     if missing_comp_mask.any():
         missing_employees = snapshot[missing_comp_mask][[EMP_ID, EMP_HIRE_DATE]].copy()
-        missing_employees[EMP_HIRE_DATE] = missing_employees[EMP_HIRE_DATE].dt.strftime('%Y-%m-%d')
+        missing_employees[EMP_HIRE_DATE] = missing_employees[EMP_HIRE_DATE].dt.strftime("%Y-%m-%d")
 
         # Log summary
         diag_logger.debug(
@@ -353,7 +397,9 @@ def apply_markov_promotions(
             )
 
         if len(missing_employees) > 5:
-            logger.debug(f"... and {len(missing_employees) - 5} more employees with missing compensation.")
+            logger.debug(
+                f"... and {len(missing_employees) - 5} more employees with missing compensation."
+            )
 
         # Filter out employees with missing compensation
         snapshot = snapshot[~missing_comp_mask].copy()
@@ -363,103 +409,120 @@ def apply_markov_promotions(
             return (
                 pd.DataFrame(columns=EVENT_COLS),
                 pd.DataFrame(columns=EVENT_COLS),
-                pd.DataFrame(columns=snapshot.columns)
+                pd.DataFrame(columns=snapshot.columns),
             )
 
     # Get the simulation year from the parameter, promo_time, or the snapshot
     if simulation_year is None:
-        simulation_year = promo_time.year if hasattr(promo_time, 'year') else None
-        if simulation_year is None and 'simulation_year' in snapshot.columns:
-            simulation_year = snapshot['simulation_year'].iloc[0] if not snapshot.empty else None
+        simulation_year = promo_time.year if hasattr(promo_time, "year") else None
+        if simulation_year is None and "simulation_year" in snapshot.columns:
+            simulation_year = snapshot["simulation_year"].iloc[0] if not snapshot.empty else None
 
     # Extract promotion hazard configuration from global_params
     hazard_defaults = _extract_promotion_hazard_config(global_params)
 
     # Apply age multipliers to promotion probabilities
     # Note: This modifies the snapshot to include age multipliers for use in Markov sampling
-    snapshot = _apply_promotion_age_multipliers(snapshot, promotion_matrix, simulation_year, hazard_defaults)
+    snapshot = _apply_promotion_age_multipliers(
+        snapshot, promotion_matrix, simulation_year, hazard_defaults
+    )
 
     # Apply Markov promotions with termination date handling
     out = apply_promotion_markov(
         snapshot,
         rng=rng,
         simulation_year=simulation_year,
-        matrix=promotion_matrix  # Always pass the loaded promotion matrix
+        matrix=promotion_matrix,  # Always pass the loaded promotion matrix
     )
 
     # DIAGNOSTIC: Immediately check for NaNs after apply_promotion_markov
     if pd.isna(out[EMP_LEVEL]).any():
         nan_count = pd.isna(out[EMP_LEVEL]).sum()
-        logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: Found {nan_count} NaN values in {EMP_LEVEL}")
+        logger.debug(
+            f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: Found {nan_count} NaN values in {EMP_LEVEL}"
+        )
 
         # Get some details about the employees with NaN levels
         nan_emps = out[pd.isna(out[EMP_LEVEL])]
         if not nan_emps.empty and EMP_ID in nan_emps.columns:
             nan_emp_ids = nan_emps[EMP_ID].tolist()
-            logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Employees with NaN {EMP_LEVEL}: {nan_emp_ids[:5]}{'...' if len(nan_emp_ids) > 5 else ''}")
+            logger.debug(
+                f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Employees with NaN {EMP_LEVEL}: {nan_emp_ids[:5]}{'...' if len(nan_emp_ids) > 5 else ''}"
+            )
 
             # Check if these employees have exited
-            nan_exited = nan_emps[EMP_EXITED].sum() if EMP_EXITED in nan_emps.columns else 'N/A'
-            logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Out of {len(nan_emps)} employees with NaN {EMP_LEVEL}, {nan_exited} have exited=True")
+            nan_exited = nan_emps[EMP_EXITED].sum() if EMP_EXITED in nan_emps.columns else "N/A"
+            logger.debug(
+                f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Out of {len(nan_emps)} employees with NaN {EMP_LEVEL}, {nan_exited} have exited=True"
+            )
     else:
-        logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: No NaN values in {EMP_LEVEL}, all good!")
+        logger.debug(
+            f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] IMMEDIATELY after apply_promotion_markov: No NaN values in {EMP_LEVEL}, all good!"
+        )
 
     # Create promotion events ONLY for UPWARD level changes (actual promotions)
     # Demotions should not be treated as "promotions" or get promotion raises
     promoted_mask = (out[EMP_LEVEL] > snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
     promoted = out[promoted_mask].copy()
-    
+
     # Log promotion vs demotion statistics for debugging
     all_changes_mask = (out[EMP_LEVEL] != snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
     demotion_mask = (out[EMP_LEVEL] < snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]
-    
+
     num_promotions = promoted_mask.sum()
     num_demotions = demotion_mask.sum()
     num_no_change = ((out[EMP_LEVEL] == snapshot[EMP_LEVEL]) & ~out[EMP_EXITED]).sum()
-    
-    logger.info(f"[PROMOTION] Year {simulation_year}: Actual promotions: {num_promotions}, "
-               f"Demotions: {num_demotions}, No change: {num_no_change}")
-    
+
+    logger.info(
+        f"[PROMOTION] Year {simulation_year}: Actual promotions: {num_promotions}, "
+        f"Demotions: {num_demotions}, No change: {num_no_change}"
+    )
+
     if num_demotions > 0:
-        logger.debug(f"[PROMOTION] Demotions detected but will NOT create promotion events for them")
+        logger.debug(
+            f"[PROMOTION] Demotions detected but will NOT create promotion events for them"
+        )
 
     if promoted.empty:
         return (
             pd.DataFrame(columns=EVENT_COLS),
             pd.DataFrame(columns=EVENT_COLS),
-            out[out[EMP_EXITED]].copy()
+            out[out[EMP_EXITED]].copy(),
         )
 
     # Create promotion and raise events for those who were promoted
     promotions_df, raises_df = create_promotion_raise_events(
-        snapshot,
-        promoted,
-        promo_time,
-        promo_raise_config=promotion_raise_config
+        snapshot, promoted, promo_time, promo_raise_config=promotion_raise_config
     )
 
     # Update job_level_source for promoted employees
     if not promoted.empty:
         # Ensure the category exists before setting the value
-        if EMP_LEVEL_SOURCE in out.columns and pd.api.types.is_categorical_dtype(out[EMP_LEVEL_SOURCE]):
+        if EMP_LEVEL_SOURCE in out.columns and pd.api.types.is_categorical_dtype(
+            out[EMP_LEVEL_SOURCE]
+        ):
             # Add 'markov-promo' to the categories if it's not already there
-            if 'markov-promo' not in out[EMP_LEVEL_SOURCE].cat.categories:
-                out[EMP_LEVEL_SOURCE] = out[EMP_LEVEL_SOURCE].cat.add_categories(['markov-promo'])
+            if "markov-promo" not in out[EMP_LEVEL_SOURCE].cat.categories:
+                out[EMP_LEVEL_SOURCE] = out[EMP_LEVEL_SOURCE].cat.add_categories(["markov-promo"])
 
         # Now it's safe to set the value
-        out.loc[promoted.index, EMP_LEVEL_SOURCE] = 'markov-promo'
+        out.loc[promoted.index, EMP_LEVEL_SOURCE] = "markov-promo"
 
         # DIAGNOSTIC: Check if the level_source update introduced any NaNs
         if pd.isna(out[EMP_LEVEL]).any():
             nan_count = pd.isna(out[EMP_LEVEL]).sum()
-            logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] After EMP_LEVEL_SOURCE update: Found {nan_count} NaN values in {EMP_LEVEL}")
+            logger.debug(
+                f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] After EMP_LEVEL_SOURCE update: Found {nan_count} NaN values in {EMP_LEVEL}"
+            )
 
     # Update the levels in the output snapshot
     # Fill NaN values before converting to int to avoid IntCastingNaNError
     if pd.isna(out[EMP_LEVEL]).any():
         # Log how many NaN values we found
         nan_count = pd.isna(out[EMP_LEVEL]).sum()
-        logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Final check: Found {nan_count} NaN values in {EMP_LEVEL}, filling with default level 1")
+        logger.debug(
+            f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Final check: Found {nan_count} NaN values in {EMP_LEVEL}, filling with default level 1"
+        )
 
         # Get details about the employees with NaNs at this stage
         nan_indices = out.index[pd.isna(out[EMP_LEVEL])].tolist()
@@ -467,12 +530,16 @@ def apply_markov_promotions(
             nan_emps = out.loc[nan_indices]
             if EMP_ID in nan_emps.columns:
                 nan_emp_ids = nan_emps[EMP_ID].tolist()
-                logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Final check - Employees with NaN {EMP_LEVEL}: {nan_emp_ids[:5]}{'...' if len(nan_emp_ids) > 5 else ''}")
+                logger.debug(
+                    f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Final check - Employees with NaN {EMP_LEVEL}: {nan_emp_ids[:5]}{'...' if len(nan_emp_ids) > 5 else ''}"
+                )
 
                 # Check if these employees have exited flag set
                 if EMP_EXITED in nan_emps.columns:
                     exited_count = nan_emps[EMP_EXITED].sum()
-                    logger.debug(f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Out of {nan_count} employees with NaN {EMP_LEVEL}, {exited_count} have exited=True")
+                    logger.debug(
+                        f"[MARKOV_PROMOTION DIAGNOSTIC YR={year_val}] Out of {nan_count} employees with NaN {EMP_LEVEL}, {exited_count} have exited=True"
+                    )
 
         # Fill NaN values with level 1 (or another appropriate default)
         out[EMP_LEVEL] = out[EMP_LEVEL].fillna(1)
@@ -490,7 +557,7 @@ def apply_markov_promotions(
         emp_id = row[EMP_ID]
 
         # Get termination date if it exists, or use promo_time as fallback
-        term_date = row.get('employee_termination_date', promo_time)
+        term_date = row.get("employee_termination_date", promo_time)
         if pd.isna(term_date):
             term_date = promo_time
 
@@ -499,16 +566,19 @@ def apply_markov_promotions(
             event_time=term_date,
             employee_id=emp_id,
             event_type=EVT_TERM,  # Using standard termination event type
-            value_json=json.dumps({
-                "previous_level": int(row.get(EMP_LEVEL, 0)),
-                "exit_source": "markov_promotion"
-            }),
-            meta=f"Employee exited via Markov promotion chain"
+            value_json=json.dumps(
+                {"previous_level": int(row.get(EMP_LEVEL, 0)), "exit_source": "markov_promotion"}
+            ),
+            meta=f"Employee exited via Markov promotion chain",
         )
         exit_events.append(exit_event)
 
     # Convert to DataFrame with proper event schema
-    exited_df = pd.DataFrame(exit_events, columns=EVENT_COLS) if exit_events else pd.DataFrame(columns=EVENT_COLS)
+    exited_df = (
+        pd.DataFrame(exit_events, columns=EVENT_COLS)
+        if exit_events
+        else pd.DataFrame(columns=EVENT_COLS)
+    )
 
     # Add simulation_year column if it's not already there
     if not exited_df.empty and SIMULATION_YEAR not in exited_df.columns:

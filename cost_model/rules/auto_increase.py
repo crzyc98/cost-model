@@ -3,26 +3,24 @@
 Auto Increase rule: apply deferral rate increases according to plan rules.
 """
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 import pandas as pd
 
+from cost_model.rules.validators import AutoIncreaseRule
 from cost_model.state.schema import (
+    AI_ENROLLED,
+    AI_OPTED_OUT,
     EMP_DEFERRAL_RATE,
     EMP_HIRE_DATE,
     IS_PARTICIPATING,
-    AI_OPTED_OUT,
-    AI_ENROLLED,
     to_nullable_bool,
 )
-from cost_model.rules.validators import AutoIncreaseRule
 
 logger = logging.getLogger(__name__)
 
 
-def apply(
-    df: pd.DataFrame, ai_rules: Dict[str, Any], simulation_year: int
-) -> pd.DataFrame:
+def apply(df: pd.DataFrame, ai_rules: Dict[str, Any], simulation_year: int) -> pd.DataFrame:
     """
     Apply auto-increase rules to the DataFrame.
 

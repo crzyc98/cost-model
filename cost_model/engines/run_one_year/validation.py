@@ -3,21 +3,28 @@ Validation module for run_one_year package.
 
 Contains functions for validating and ensuring consistency of inputs.
 """
-import logging
-from typing import Dict, List, Optional, Tuple, Any, Union
-import pandas as pd
-import numpy as np
 
+import logging
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+
+from cost_model.state.schema import EMP_ACTIVE  # Use the actual constant name
 from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_LEVEL,
-    EMP_GROSS_COMP, EMP_TERM_DATE, EMP_LEVEL_SOURCE,
-    EMP_TENURE_BAND as TENURE_BAND,
-    EMP_ACTIVE,  # Use the actual constant name
-    EMP_EXITED
+    EMP_BIRTH_DATE,
+    EMP_EXITED,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_LEVEL,
+    EMP_LEVEL_SOURCE,
+)
+from cost_model.state.schema import EMP_TENURE_BAND as TENURE_BAND
+from cost_model.state.schema import (
+    EMP_TERM_DATE,
 )
 from cost_model.utils.tenure_utils import standardize_tenure_band
-from typing import Optional
-import logging
 
 logger = logging.getLogger(__name__)
 from cost_model.state.schema import EMP_DEFERRAL_RATE, EMP_TENURE
@@ -26,20 +33,19 @@ from cost_model.state.schema import EMP_DEFERRAL_RATE, EMP_TENURE
 # This should match the schema defined in cost_model/state/schema.py
 REQUIRED_SNAPSHOT_DEFAULTS = {
     # Required fields (no defaults)
-    EMP_ID: None,           # must exist, no default
-    EMP_HIRE_DATE: None,    # must exist, no default
-    EMP_BIRTH_DATE: None,   # must exist, no default
-    EMP_GROSS_COMP: None,   # must exist, no default
-
+    EMP_ID: None,  # must exist, no default
+    EMP_HIRE_DATE: None,  # must exist, no default
+    EMP_BIRTH_DATE: None,  # must exist, no default
+    EMP_GROSS_COMP: None,  # must exist, no default
     # Optional fields with defaults
-    EMP_LEVEL: 1,           # Default to level 1 if not specified
-    EMP_LEVEL_SOURCE: 'manual',  # Default source for job level
+    EMP_LEVEL: 1,  # Default to level 1 if not specified
+    EMP_LEVEL_SOURCE: "manual",  # Default source for job level
     EMP_TERM_DATE: pd.NaT,  # Not terminated by default
-    EMP_ACTIVE: True,       # Active by default
-    EMP_DEFERRAL_RATE: 0.0, # No deferral by default
-    TENURE_BAND: "0-1",    # Default tenure band
-    EMP_TENURE: 0.0,        # 0 years of tenure by default
-    EMP_EXITED: False       # Not exited by default
+    EMP_ACTIVE: True,  # Active by default
+    EMP_DEFERRAL_RATE: 0.0,  # No deferral by default
+    TENURE_BAND: "0-1",  # Default tenure band
+    EMP_TENURE: 0.0,  # 0 years of tenure by default
+    EMP_EXITED: False,  # Not exited by default
 }
 
 
@@ -72,10 +78,7 @@ def ensure_snapshot_cols(snapshot: pd.DataFrame) -> pd.DataFrame:
     return snap_copy
 
 
-def validate_and_extract_hazard_slice(
-    hazard_table: pd.DataFrame,
-    year: int
-) -> pd.DataFrame:
+def validate_and_extract_hazard_slice(hazard_table: pd.DataFrame, year: int) -> pd.DataFrame:
     """
     Validates hazard table and extracts the slice for the current year.
 
@@ -110,14 +113,18 @@ def validate_and_extract_hazard_slice(
     if TENURE_BAND in hazard_slice.columns:
         # Before standardization
         original_tenure_bands = list(hazard_slice[TENURE_BAND].unique())
-        logging.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice original tenure_bands: {original_tenure_bands}")
+        logging.info(
+            f"[RUN_ONE_YEAR YR={year}] hazard_slice original tenure_bands: {original_tenure_bands}"
+        )
 
         # Apply standardization
         hazard_slice[TENURE_BAND] = hazard_slice[TENURE_BAND].apply(standardize_tenure_band)
 
         # After standardization
         standardized_tenure_bands = list(hazard_slice[TENURE_BAND].unique())
-        logging.info(f"[RUN_ONE_YEAR YR={year}] hazard_slice standardized tenure_bands: {standardized_tenure_bands}")
+        logging.info(
+            f"[RUN_ONE_YEAR YR={year}] hazard_slice standardized tenure_bands: {standardized_tenure_bands}"
+        )
 
     return hazard_slice
 
@@ -173,16 +180,12 @@ def validate_eoy_snapshot(final_snap: pd.DataFrame, target: Optional[int] = None
             logger.error(
                 f"Active employee count mismatch. Expected: {target}, Actual: {active_count}"
             )
-            raise ValueError(
-                f"EOY headcount {active_count} does not match target {target}"
-            )
+            raise ValueError(f"EOY headcount {active_count} does not match target {target}")
 
     # Check for invalid active/terminated states
     invalid_active = final_snap[final_snap[EMP_ACTIVE] & ~pd.isna(final_snap[EMP_TERM_DATE])]
     if not invalid_active.empty:
-        logger.error(
-            f"Found {len(invalid_active)} employees marked as both active and terminated"
-        )
+        logger.error(f"Found {len(invalid_active)} employees marked as both active and terminated")
         raise ValueError(
             f"Found {len(invalid_active)} employees with both active=True and a termination date"
         )

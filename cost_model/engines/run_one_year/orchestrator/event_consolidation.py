@@ -5,11 +5,12 @@ Handles the complex logic of combining and validating simulation events.
 """
 import logging
 import uuid
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import pandas as pd
 
 from cost_model.state.event_log import EVENT_COLS
-from cost_model.state.schema import EMP_ID, SIMULATION_YEAR, EVENT_TIME
+from cost_model.state.schema import EMP_ID, EVENT_TIME, SIMULATION_YEAR
 
 
 def consolidate_events(
@@ -20,7 +21,7 @@ def consolidate_events(
     compensation_events: pd.DataFrame,
     contribution_events: pd.DataFrame,
     year: int,
-    logger: logging.Logger
+    logger: logging.Logger,
 ) -> pd.DataFrame:
     """
     Consolidate all simulation events into a unified event log.
@@ -47,7 +48,7 @@ def consolidate_events(
         ("hiring", hiring_events),
         ("nh_termination", nh_termination_events),
         ("compensation", compensation_events),
-        ("contribution", contribution_events)
+        ("contribution", contribution_events),
     ]
 
     # Filter out empty DataFrames and log counts
@@ -80,14 +81,16 @@ def consolidate_events(
 
     # Validate consolidated events
     validation_result = validate_event_log(standardized_events, logger)
-    if not validation_result['valid']:
+    if not validation_result["valid"]:
         logger.warning(f"Event validation warnings: {validation_result['warnings']}")
 
     logger.info(f"Successfully consolidated {len(standardized_events)} events")
     return standardized_events
 
 
-def standardize_event_format(events: pd.DataFrame, year: int, logger: logging.Logger) -> pd.DataFrame:
+def standardize_event_format(
+    events: pd.DataFrame, year: int, logger: logging.Logger
+) -> pd.DataFrame:
     """
     Standardize event format to match expected schema.
 
@@ -108,8 +111,8 @@ def standardize_event_format(events: pd.DataFrame, year: int, logger: logging.Lo
     # Ensure required columns exist with appropriate defaults
     column_defaults = {
         SIMULATION_YEAR: year,
-        EVENT_TIME: pd.Timestamp(f'{year}-12-31'),
-        'event_id': lambda: str(uuid.uuid4()),
+        EVENT_TIME: pd.Timestamp(f"{year}-12-31"),
+        "event_id": lambda: str(uuid.uuid4()),
     }
 
     for col in EVENT_COLS:
@@ -151,13 +154,15 @@ def get_default_value_for_column(col_name: str) -> Any:
     """
     col_lower = col_name.lower()
 
-    if 'id' in col_lower:
-        return ''
-    elif any(time_word in col_lower for time_word in ['time', 'date']):
+    if "id" in col_lower:
+        return ""
+    elif any(time_word in col_lower for time_word in ["time", "date"]):
         return pd.NaT
-    elif any(numeric_word in col_lower for numeric_word in ['amount', 'rate', 'value', 'compensation']):
+    elif any(
+        numeric_word in col_lower for numeric_word in ["amount", "rate", "value", "compensation"]
+    ):
         return 0.0
-    elif 'active' in col_lower or 'eligible' in col_lower:
+    elif "active" in col_lower or "eligible" in col_lower:
         return False
     else:
         return pd.NA
@@ -174,11 +179,7 @@ def validate_event_log(events: pd.DataFrame, logger: logging.Logger) -> Dict[str
     Returns:
         Dictionary with validation results
     """
-    validation_result = {
-        'valid': True,
-        'errors': [],
-        'warnings': []
-    }
+    validation_result = {"valid": True, "errors": [], "warnings": []}
 
     if events.empty:
         logger.info("Empty event log - validation passed")
@@ -187,12 +188,12 @@ def validate_event_log(events: pd.DataFrame, logger: logging.Logger) -> Dict[str
     logger.info(f"Validating event log with {len(events)} events")
 
     # Check for required columns
-    required_columns = ['event_id', EMP_ID]
+    required_columns = ["event_id", EMP_ID]
     missing_columns = [col for col in required_columns if col not in events.columns]
     if missing_columns:
         error_msg = f"Missing required columns: {missing_columns}"
-        validation_result['errors'].append(error_msg)
-        validation_result['valid'] = False
+        validation_result["errors"].append(error_msg)
+        validation_result["valid"] = False
         logger.error(error_msg)
 
     # Check for null employee IDs
@@ -200,15 +201,15 @@ def validate_event_log(events: pd.DataFrame, logger: logging.Logger) -> Dict[str
         null_emp_ids = events[EMP_ID].isna().sum()
         if null_emp_ids > 0:
             warning_msg = f"Found {null_emp_ids} events with null employee IDs"
-            validation_result['warnings'].append(warning_msg)
+            validation_result["warnings"].append(warning_msg)
             logger.warning(warning_msg)
 
     # Check for duplicate event IDs
-    if 'event_id' in events.columns:
-        duplicate_ids = events['event_id'].duplicated().sum()
+    if "event_id" in events.columns:
+        duplicate_ids = events["event_id"].duplicated().sum()
         if duplicate_ids > 0:
             warning_msg = f"Found {duplicate_ids} duplicate event IDs"
-            validation_result['warnings'].append(warning_msg)
+            validation_result["warnings"].append(warning_msg)
             logger.warning(warning_msg)
 
     # Check event time consistency
@@ -216,7 +217,7 @@ def validate_event_log(events: pd.DataFrame, logger: logging.Logger) -> Dict[str
         invalid_times = events[EVENT_TIME].isna().sum()
         if invalid_times > 0:
             warning_msg = f"Found {invalid_times} events with invalid times"
-            validation_result['warnings'].append(warning_msg)
+            validation_result["warnings"].append(warning_msg)
             logger.warning(warning_msg)
 
     # Check simulation year consistency
@@ -224,14 +225,16 @@ def validate_event_log(events: pd.DataFrame, logger: logging.Logger) -> Dict[str
         year_values = events[SIMULATION_YEAR].unique()
         if len(year_values) > 1:
             warning_msg = f"Multiple simulation years in events: {year_values}"
-            validation_result['warnings'].append(warning_msg)
+            validation_result["warnings"].append(warning_msg)
             logger.warning(warning_msg)
 
     # Log validation summary
-    if validation_result['valid'] and not validation_result['warnings']:
+    if validation_result["valid"] and not validation_result["warnings"]:
         logger.info("Event log validation passed successfully")
-    elif validation_result['valid']:
-        logger.info(f"Event log validation passed with {len(validation_result['warnings'])} warnings")
+    elif validation_result["valid"]:
+        logger.info(
+            f"Event log validation passed with {len(validation_result['warnings'])} warnings"
+        )
     else:
         logger.error(f"Event log validation failed with {len(validation_result['errors'])} errors")
 
@@ -248,7 +251,9 @@ def create_empty_event_log() -> pd.DataFrame:
     return pd.DataFrame(columns=EVENT_COLS)
 
 
-def merge_event_logs(base_log: pd.DataFrame, new_events: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
+def merge_event_logs(
+    base_log: pd.DataFrame, new_events: pd.DataFrame, logger: logging.Logger
+) -> pd.DataFrame:
     """
     Merge new events into existing event log.
 
@@ -270,7 +275,9 @@ def merge_event_logs(base_log: pd.DataFrame, new_events: pd.DataFrame, logger: l
 
     try:
         merged_log = pd.concat([base_log, new_events], ignore_index=True)
-        logger.info(f"Merged event logs: {len(base_log)} + {len(new_events)} = {len(merged_log)} events")
+        logger.info(
+            f"Merged event logs: {len(base_log)} + {len(new_events)} = {len(merged_log)} events"
+        )
         return merged_log
     except Exception as e:
         logger.error(f"Error merging event logs: {e}")
@@ -287,19 +294,39 @@ class EventConsolidationManager:
         self.year = year
         self.accumulated_events = []
 
-    def add_events(self, events: pd.DataFrame, event_type: str) -> None:
+    def add_events(self, events: Union[pd.DataFrame, List[pd.DataFrame]], event_type: str) -> None:
         """
         Add events from a processing step.
 
         Args:
-            events: Events DataFrame
+            events: Events DataFrame or list of DataFrames
             event_type: Description of event type/source
         """
-        if not events.empty:
-            self.accumulated_events.append((event_type, events))
-            self.logger.info(f"Added {len(events)} {event_type} events")
+        # Handle both single DataFrame and list of DataFrames
+        if isinstance(events, list):
+            # If it's a list, add each DataFrame separately
+            total_events = 0
+            for i, event_df in enumerate(events):
+                if isinstance(event_df, pd.DataFrame) and not event_df.empty:
+                    sub_type = f"{event_type}_{i}" if len(events) > 1 else event_type
+                    self.accumulated_events.append((sub_type, event_df))
+                    total_events += len(event_df)
+
+            if total_events > 0:
+                self.logger.info(f"Added {total_events} {event_type} events from {len(events)} DataFrames")
+            else:
+                self.logger.info(f"No {event_type} events to add (empty list or all empty DataFrames)")
         else:
-            self.logger.info(f"No {event_type} events to add")
+            # Handle single DataFrame
+            if isinstance(events, pd.DataFrame):
+                if not events.empty:
+                    self.accumulated_events.append((event_type, events))
+                    self.logger.info(f"Added {len(events)} {event_type} events")
+                else:
+                    self.logger.info(f"No {event_type} events to add")
+            else:
+                self.logger.warning(f"Invalid events type for {event_type}: {type(events)}")
+                self.logger.info(f"No {event_type} events to add")
 
     def consolidate_all(self) -> pd.DataFrame:
         """
@@ -329,14 +356,14 @@ class EventConsolidationManager:
 
         # Final consolidation
         return consolidate_events(
-            promotion_events=consolidated_by_type.get('promotion', pd.DataFrame()),
-            termination_events=consolidated_by_type.get('termination', pd.DataFrame()),
-            hiring_events=consolidated_by_type.get('hiring', pd.DataFrame()),
-            nh_termination_events=consolidated_by_type.get('nh_termination', pd.DataFrame()),
-            compensation_events=consolidated_by_type.get('compensation', pd.DataFrame()),
-            contribution_events=consolidated_by_type.get('contribution', pd.DataFrame()),
+            promotion_events=consolidated_by_type.get("promotion", pd.DataFrame()),
+            termination_events=consolidated_by_type.get("termination", pd.DataFrame()),
+            hiring_events=consolidated_by_type.get("hiring", pd.DataFrame()),
+            nh_termination_events=consolidated_by_type.get("nh_termination", pd.DataFrame()),
+            compensation_events=consolidated_by_type.get("compensation", pd.DataFrame()),
+            contribution_events=consolidated_by_type.get("contribution", pd.DataFrame()),
             year=self.year,
-            logger=self.logger
+            logger=self.logger,
         )
 
     def clear(self) -> None:

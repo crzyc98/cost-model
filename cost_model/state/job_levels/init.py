@@ -1,21 +1,22 @@
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-from .defaults import DEFAULT_LEVELS
-from .loader import load_from_yaml
-from .intervals import build_intervals
-from .models import ConfigError
 from . import state
+from .defaults import DEFAULT_LEVELS
+from .intervals import build_intervals
+from .loader import load_from_yaml
+from .models import ConfigError
 
 logger = logging.getLogger(__name__)
+
 
 def init_job_levels(
     config_path: Optional[str] = None,
     config_dict: Optional[dict] = None,
     strict_validation: bool = True,
-    reset_warnings: bool = False
+    reset_warnings: bool = False,
 ) -> bool:
     """
     Initialize global job levels state.
@@ -32,6 +33,7 @@ def init_job_levels(
     if config_dict is not None:
         try:
             from .loader import load_job_levels_from_config
+
             levels = load_job_levels_from_config(config_dict, strict_validation=strict_validation)
             logger.info("Loaded job levels from main config dictionary")
         except ConfigError as e:
@@ -51,7 +53,9 @@ def init_job_levels(
                 except ConfigError as e:
                     if strict_validation:
                         raise
-                    logger.warning("Invalid job levels config at %s, falling back to defaults: %s", path, e)
+                    logger.warning(
+                        "Invalid job levels config at %s, falling back to defaults: %s", path, e
+                    )
             else:
                 logger.info("Job levels config path %s does not exist, using defaults", path)
 

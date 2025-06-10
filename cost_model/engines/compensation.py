@@ -4,17 +4,18 @@ Functions related to compensation changes during simulation dynamics.
 QuickStart: see docs/cost_model/engines/compensation.md
 """
 
-import pandas as pd
-import numpy as np
 import json
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+import numpy as np
+import pandas as pd
+
 from cost_model.state.event_log import EVENT_COLS, EVT_RAISE, create_event
-from cost_model.state.schema import EMP_ID, EMP_GROSS_COMP, EMP_LEVEL, EMP_LEVEL_SOURCE
+from cost_model.state.schema import EMP_GROSS_COMP, EMP_ID, EMP_LEVEL, EMP_LEVEL_SOURCE
+
 
 def update_salary(
-    df: pd.DataFrame,
-    params: Dict[str, Any],
-    rng: Optional[np.random.Generator] = None
+    df: pd.DataFrame, params: Dict[str, Any], rng: Optional[np.random.Generator] = None
 ) -> pd.DataFrame:
     """
     Apply promotion raise, merit distribution, and COLA to EMP_GROSS_COMP in that order.
@@ -29,7 +30,7 @@ def update_salary(
       - event_time: pd.Timestamp (optional)
     """
     rng = rng or np.random.default_rng()
-    event_time = getattr(params, 'event_time', pd.Timestamp.now())
+    event_time = getattr(params, "event_time", pd.Timestamp.now())
     events = []
     # Ensure EMP_ID column exists for event logging
     if EMP_ID not in df.columns:
@@ -38,7 +39,7 @@ def update_salary(
     base_comp = df[EMP_GROSS_COMP].copy()
 
     # 1) COLA bump
-    cola_rate = getattr(params, 'COLA_rate', 0.0)
+    cola_rate = getattr(params, "COLA_rate", 0.0)
     if cola_rate:
         for idx, old in base_comp.items():
             bump = old * cola_rate
@@ -48,12 +49,12 @@ def update_salary(
                 employee_id=df.at[idx, EMP_ID],
                 event_type=EVT_RAISE,
                 value_num=bump,
-                meta='COLA adjustment'
+                meta="COLA adjustment",
             )
             events.append(evt)
 
     # 2) Promotion bump (mask-based, avoids pandas NA ambiguity)
-    promo_map = getattr(params, 'promo_raise_pct', {})
+    promo_map = getattr(params, "promo_raise_pct", {})
     if promo_map and EMP_LEVEL_SOURCE in df.columns:
         promo_sources = ["markov-promo", "rule-promo"]
         mask = df[EMP_LEVEL_SOURCE].isin(promo_sources)
@@ -70,15 +71,15 @@ def update_salary(
                     employee_id=df.at[idx, EMP_ID],
                     event_type=EVT_RAISE,
                     value_num=bump,
-                    meta='Promotion bump'
+                    meta="Promotion bump",
                 )
                 events.append(evt)
 
     # 3) Merit distribution (level-specific)
-    merit_map = getattr(params, 'merit_dist', {})
+    merit_map = getattr(params, "merit_dist", {})
     if merit_map:
         # Convert SimpleNamespace to dict if needed
-        if hasattr(merit_map, '__dict__'):
+        if hasattr(merit_map, "__dict__"):
             merit_map = vars(merit_map)
 
         for idx, row in df.iterrows():
@@ -86,8 +87,8 @@ def update_salary(
             if pd.isna(lvl) or not lvl or lvl not in merit_map:
                 continue
             dist = merit_map.get(lvl, {})
-            mu = dist.get('mu', 0.0)
-            sigma = dist.get('sigma', 0.0)
+            mu = dist.get("mu", 0.0)
+            sigma = dist.get("sigma", 0.0)
             pct = rng.normal(mu, sigma)
             old = df.at[idx, EMP_GROSS_COMP]
             bump = base_comp.loc[idx] * pct
@@ -98,7 +99,7 @@ def update_salary(
                 employee_id=df.at[idx, EMP_ID],
                 event_type=EVT_RAISE,
                 value_num=bump,
-                meta='Merit distribution'
+                meta="Merit distribution",
             )
             events.append(evt)
 

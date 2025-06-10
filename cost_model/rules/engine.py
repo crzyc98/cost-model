@@ -5,28 +5,27 @@ Orchestrates eligibility, auto-enrollment, auto-increase, and contributions.
 """
 
 import logging
+from typing import Any, Mapping, Optional
+
 import numpy as np
 import pandas as pd
-from typing import Optional, Mapping, Any
 
 # Use relative imports for rules and validators within the rules package
 try:
     # Import the rule modules directly
-    from . import eligibility
-    from . import auto_enrollment
-    from . import auto_increase
-    from . import contributions
+    from cost_model.config.models import IRSYearLimits
+
+    from . import auto_enrollment, auto_increase, contributions, eligibility
 
     # Import Pydantic models for validation/structure access
     from .validators import (
-        EligibilityRule,
         AutoEnrollmentRule,
         AutoIncreaseRule,
         ContributionsRule,
+        EligibilityRule,
         MatchRule,
         NonElectiveRule,
     )
-    from cost_model.config.models import IRSYearLimits
 
     RULE_MODULES_LOADED = True
 except ImportError as e:
@@ -75,13 +74,13 @@ except ImportError as e:
 
 # Import common elements from state schema (centralized constants)
 from cost_model.state.schema import (
-    STATUS_COL,
-    EMP_TERM_DATE,
-    EMP_DEFERRAL_RATE,
-    IS_ELIGIBLE,
-    ELIGIBILITY_ENTRY_DATE,
     ACTIVE_STATUS,
+    ELIGIBILITY_ENTRY_DATE,
+    EMP_DEFERRAL_RATE,
+    EMP_TERM_DATE,
     INACTIVE_STATUS,
+    IS_ELIGIBLE,
+    STATUS_COL,
 )
 
 logger = logging.getLogger(__name__)
@@ -135,11 +134,7 @@ def _normalize_bool_flag(df, col, is_date=False):
             logger.warning(
                 f"Could not robustly convert column '{col}' to boolean, defaulting unhandled values to False."
             )
-            df[col] = (
-                df[col]
-                .apply(lambda x: bool(x) if pd.notna(x) else False)
-                .astype("boolean")
-            )
+            df[col] = df[col].apply(lambda x: bool(x) if pd.notna(x) else False).astype("boolean")
 
     return df
 
@@ -208,12 +203,16 @@ def apply_rules_for_year(
                     irs_limits_all_years[year] = IRSYearLimits(**limits_dict)
                     log.debug(f"Successfully converted IRS limits for year {year}: {limits_dict}")
                 except Exception as e:
-                    log.warning(f"Failed to convert IRS limits for year {year}: {e}. Skipping this year.")
-            elif hasattr(limits_dict, 'compensation_limit'):
+                    log.warning(
+                        f"Failed to convert IRS limits for year {year}: {e}. Skipping this year."
+                    )
+            elif hasattr(limits_dict, "compensation_limit"):
                 # Already an IRSYearLimits object
                 irs_limits_all_years[year] = limits_dict
             else:
-                log.warning(f"Invalid IRS limits format for year {year}: {type(limits_dict)}. Skipping this year.")
+                log.warning(
+                    f"Invalid IRS limits format for year {year}: {type(limits_dict)}. Skipping this year."
+                )
 
     if not irs_limits_all_years:
         log.warning(
@@ -238,9 +237,7 @@ def apply_rules_for_year(
     if EMP_DEFERRAL_RATE not in df.columns:
         log.warning(f"Column '{EMP_DEFERRAL_RATE}' not found. Adding with default 0.0.")
         df[EMP_DEFERRAL_RATE] = 0.0
-    df[EMP_DEFERRAL_RATE] = pd.to_numeric(
-        df[EMP_DEFERRAL_RATE], errors="coerce"
-    ).fillna(0.0)
+    df[EMP_DEFERRAL_RATE] = pd.to_numeric(df[EMP_DEFERRAL_RATE], errors="coerce").fillna(0.0)
 
     # === Apply Rules Sequentially ===
 
@@ -265,18 +262,14 @@ def apply_rules_for_year(
         try:
             if getattr(ae_config, "enabled", False):
                 log.debug(f"Applying Auto-Enrollment rules with config: {ae_config}")
-                df = auto_enrollment.apply(
-                    df, ae_config, sim_year_start_date, sim_year_end_date
-                )
+                df = auto_enrollment.apply(df, ae_config, sim_year_start_date, sim_year_end_date)
                 log.info(f"After auto_enrollment.apply, columns: {list(df.columns)}")
             else:
                 log.info(f"Auto-Enrollment disabled in config for {sim_year}.")
         except Exception as e:
             log.error(f"Error applying Auto-Enrollment rules: {e}", exc_info=True)
     else:
-        log.info(
-            f"No 'auto_enrollment' configuration found in plan_rules for {sim_year}."
-        )
+        log.info(f"No 'auto_enrollment' configuration found in plan_rules for {sim_year}.")
 
     # 6. Auto-Increase (AI)
     # Safely get AI config (should be AutoIncreaseRules instance or None)
@@ -293,9 +286,7 @@ def apply_rules_for_year(
         except Exception as e:
             log.error(f"Error applying Auto-Increase rules: {e}", exc_info=True)
     else:
-        log.info(
-            f"No 'auto_increase' configuration found in plan_rules for {sim_year}."
-        )
+        log.info(f"No 'auto_increase' configuration found in plan_rules for {sim_year}.")
 
     # 7. Contributions (Employee, Employer Match, Employer Non-Elective)
     # This step relies on contributions.apply handling compensation calculations internally
@@ -336,9 +327,7 @@ def apply_rules_for_year(
     if days_worked_col is not None:
         df["days_worked"] = days_worked_col
     elif "days_worked" not in df.columns:
-        log.warning(
-            "days_worked column missing after rule application; check contributions logic."
-        )
+        log.warning("days_worked column missing after rule application; check contributions logic.")
 
     # === Final Cleanup ===
     # (Add checks for expected output columns if necessary)

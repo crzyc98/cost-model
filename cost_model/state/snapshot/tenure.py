@@ -2,13 +2,15 @@
 Functions for tenure calculations and tenure band assignments.
 """
 
-import pandas as pd
 import logging
-from typing import Union, Optional
+from typing import Optional, Union
+
+import pandas as pd
 
 from .constants import EMP_HIRE_DATE, EMP_TENURE, EMP_TENURE_BAND
 
 logger = logging.getLogger(__name__)
+
 
 def assign_tenure_band(tenure: Optional[Union[float, int]]) -> Optional[str]:
     """
@@ -46,12 +48,13 @@ def assign_tenure_band(tenure: Optional[Union[float, int]]) -> Optional[str]:
     else:
         return "15+"
 
+
 def compute_tenure(
     df: pd.DataFrame,
     as_of: pd.Timestamp,
     hire_date_col: str = EMP_HIRE_DATE,
     out_tenure_col: str = EMP_TENURE,
-    out_band_col: str = EMP_TENURE_BAND
+    out_band_col: str = EMP_TENURE_BAND,
 ) -> pd.DataFrame:
     """
     Compute tenure in years and assign tenure bands for a DataFrame.
@@ -69,7 +72,7 @@ def compute_tenure(
     result = df.copy()
 
     # Calculate tenure in years
-    hire_dates = pd.to_datetime(result[hire_date_col], errors='coerce')
+    hire_dates = pd.to_datetime(result[hire_date_col], errors="coerce")
     tenure_years = (as_of - hire_dates).dt.days / 365.25
     result[out_tenure_col] = tenure_years.round(3)
 
@@ -82,17 +85,18 @@ def compute_tenure(
         logger.warning(
             "Missing tenure for %d employees: %s",
             len(missing_tenure),
-            missing_tenure[:10]  # Only show first 10 to avoid log spam
+            missing_tenure[:10],  # Only show first 10 to avoid log spam
         )
 
     return result
+
 
 def apply_tenure(
     df: pd.DataFrame,
     hire_date_col: str,
     as_of: pd.Timestamp,
     out_tenure_col: str = EMP_TENURE,
-    out_band_col: str = EMP_TENURE_BAND
+    out_band_col: str = EMP_TENURE_BAND,
 ) -> pd.DataFrame:
     """
     Convenience wrapper for compute_tenure that preserves index structure.
@@ -113,7 +117,7 @@ def apply_tenure(
         as_of=as_of,
         hire_date_col=hire_date_col,
         out_tenure_col=out_tenure_col,
-        out_band_col=out_band_col
+        out_band_col=out_band_col,
     )
 
     return result

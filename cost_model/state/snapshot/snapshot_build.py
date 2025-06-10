@@ -4,21 +4,33 @@ Provides full rebuild capability for bootstrapping or testing.
 """
 
 import logging
-import pandas as pd
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-from typing import Dict, List, Any, Optional
+import pandas as pd
 
 from .constants import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP,
-    EMP_TERM_DATE, EMP_ACTIVE, EMP_DEFERRAL_RATE, EMP_TENURE,
-    EMP_TENURE_BAND, SNAPSHOT_COLS, SNAPSHOT_DTYPES,
-    EVT_HIRE, EVT_TERM, EVT_COMP
+    EMP_ACTIVE,
+    EMP_BIRTH_DATE,
+    EMP_DEFERRAL_RATE,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_TENURE,
+    EMP_TENURE_BAND,
+    EMP_TERM_DATE,
+    EVT_COMP,
+    EVT_HIRE,
+    EVT_TERM,
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
 )
-from .helpers import get_first_event, get_last_event, ensure_columns_and_types, validate_snapshot
 from .details import extract_hire_details
+from .helpers import ensure_columns_and_types, get_first_event, get_last_event, validate_snapshot
 from .tenure import compute_tenure
 
 logger = logging.getLogger(__name__)
+
 
 def _empty_snapshot() -> pd.DataFrame:
     """
@@ -31,6 +43,7 @@ def _empty_snapshot() -> pd.DataFrame:
     empty_df = empty_df.astype(SNAPSHOT_DTYPES)
     empty_df.set_index(EMP_ID, inplace=True)
     return empty_df
+
 
 def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
     """
@@ -62,9 +75,7 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
         return _empty_snapshot()
 
     # 3. Extract hire dates from first hire events
-    hire_details = pd.DataFrame({
-        EMP_HIRE_DATE: first_hires.set_index(EMP_ID)["event_time"]
-    })
+    hire_details = pd.DataFrame({EMP_HIRE_DATE: first_hires.set_index(EMP_ID)["event_time"]})
 
     # 4. Extract employee demographic details (birth_date) from hire events
     employee_details = extract_hire_details(first_hires)
@@ -72,9 +83,7 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
     # 5. Get most recent compensation values
     last_comp = get_last_event(events, EVT_COMP)
     if not last_comp.empty:
-        comp_df = pd.DataFrame({
-            EMP_GROSS_COMP: last_comp.set_index(EMP_ID)["value_num"]
-        })
+        comp_df = pd.DataFrame({EMP_GROSS_COMP: last_comp.set_index(EMP_ID)["value_num"]})
     else:
         comp_df = pd.DataFrame(columns=[EMP_GROSS_COMP])
         logger.warning("No compensation events found.")
@@ -82,9 +91,7 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
     # 6. Get termination dates from termination events
     last_term = get_last_event(events, EVT_TERM)
     if not last_term.empty:
-        term_df = pd.DataFrame({
-            EMP_TERM_DATE: last_term.set_index(EMP_ID)["event_time"]
-        })
+        term_df = pd.DataFrame({EMP_TERM_DATE: last_term.set_index(EMP_ID)["event_time"]})
     else:
         term_df = pd.DataFrame(columns=[EMP_TERM_DATE])
         logger.debug("No termination events found.")
@@ -103,7 +110,7 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
         as_of=as_of,
         hire_date_col=EMP_HIRE_DATE,
         out_tenure_col=EMP_TENURE,
-        out_band_col=EMP_TENURE_BAND
+        out_band_col=EMP_TENURE_BAND,
     )
 
     # 10. Add EMP_ID as a column (in addition to being the index)

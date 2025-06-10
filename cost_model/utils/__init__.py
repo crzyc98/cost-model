@@ -1,6 +1,6 @@
+from .date_utils import age_to_band, calculate_age, calculate_tenure
 from .decimal_helpers import ZERO_DECIMAL
-from .date_utils import calculate_age, calculate_tenure, age_to_band
-from .status_enums import EnrollmentMethod, EmploymentStatus
+from .status_enums import EmploymentStatus, EnrollmentMethod
 
 __all__ = [
     "ZERO_DECIMAL",

@@ -4,17 +4,16 @@ Enrollment module for generating auto-enrollment and opt-out events based on pla
 QuickStart: see docs/cost_model/plan_rules/enrollment.md
 """
 
+import logging
+import uuid
 from datetime import timedelta
 from typing import List
-
-import uuid
 
 import numpy as np
 import pandas as pd
 
 from cost_model.config.plan_rules import EnrollmentConfig
 from cost_model.utils.columns import EMP_ID
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,9 @@ def run(
     cfg: EnrollmentConfig,
 ) -> List[pd.DataFrame]:
     # 0) Check if config is present and enabled
-    if not cfg or not getattr(cfg, 'enabled', True): # Default to enabled if 'enabled' attr is missing, but cfg must exist
+    if not cfg or not getattr(
+        cfg, "enabled", True
+    ):  # Default to enabled if 'enabled' attr is missing, but cfg must exist
         logger.debug("[Enrollment] rule skipped, config missing or disabled.")
         return []
 
@@ -66,7 +67,7 @@ def run(
     # Convert timestamps to date objects for more robust comparison
     event_dates = events.event_time.dt.date
     as_of_date = as_of.date()
-    
+
     eligible_ids = (
         events.loc[
             (events.event_type == EVT_ELIGIBLE) & (event_dates <= as_of_date),
@@ -121,15 +122,11 @@ def run(
 
     if getattr(cfg, "voluntary_match_multiplier", None) is not None:
         rate = min(1.0, cfg.voluntary_enrollment_rate * cfg.voluntary_match_multiplier)
-        logger.debug(
-            f"[Enrollment] using match_multiplier; effective rate = {rate:.2%}"
-        )
+        logger.debug(f"[Enrollment] using match_multiplier; effective rate = {rate:.2%}")
         sample = True
     elif getattr(cfg, "auto_enrollment", None) and cfg.auto_enrollment.enabled:
         rate = cfg.voluntary_enrollment_rate
-        logger.debug(
-            f"[Enrollment] auto_enrollment enabled; voluntary rate = {rate:.2%}"
-        )
+        logger.debug(f"[Enrollment] auto_enrollment enabled; voluntary rate = {rate:.2%}")
         sample = True
     else:
         rate = 1.0
@@ -153,9 +150,7 @@ def run(
     rows = []
     for emp in chosen:
         # --- DEBUG: show what the engine sees for this employee ---
-        subset = events.loc[
-            events.event_type.eq(EVT_ELIGIBLE), [EMP_ID, "event_time"]
-        ]
+        subset = events.loc[events.event_type.eq(EVT_ELIGIBLE), [EMP_ID, "event_time"]]
         logger.debug(f"[Enrollment] all eligibility rows:\n{subset}")
 
         # Try matching with a direct .eq() on employee_id
@@ -166,7 +161,9 @@ def run(
             continue
         first_eligible_dt = eligibility_rows.event_time.min()
         effective_dt = first_eligible_dt + timedelta(days=window)
-        logger.debug(f"[Enrollment]   emp {emp} eligible {first_eligible_dt}, effective {effective_dt}")
+        logger.debug(
+            f"[Enrollment]   emp {emp} eligible {first_eligible_dt}, effective {effective_dt}"
+        )
         if effective_dt.date() > as_of.date():
             logger.debug(f"[Enrollment]   emp {emp} not yet enrolled, window not passed")
             continue

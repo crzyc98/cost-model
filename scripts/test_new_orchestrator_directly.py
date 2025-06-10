@@ -10,9 +10,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-import pandas as pd
-import numpy as np
 from types import SimpleNamespace
+
+import numpy as np
+import pandas as pd
+
 
 def create_test_data():
     """Create test data matching your scenario."""
@@ -20,34 +22,34 @@ def create_test_data():
     employee_ids = [f"EMP_{i:04d}" for i in range(100)]
 
     snapshot_data = {
-        'employee_id': employee_ids,
-        'active': [True] * 100,
-        'employee_hire_date': pd.to_datetime('2024-01-01'),
-        'employee_gross_compensation': [65000.0] * 100,
-        'employee_termination_date': pd.NaT,
-        'employee_birth_date': pd.to_datetime('1990-01-01'),
-        'employee_deferral_rate': 0.05,
-        'employee_tenure_band': '1-3',
-        'employee_tenure': 1.5,
-        'employee_level': 1,
-        'employee_level_source': 'existing',
-        'employee_exited': False,
-        'simulation_year': 2024
+        "employee_id": employee_ids,
+        "active": [True] * 100,
+        "employee_hire_date": pd.to_datetime("2024-01-01"),
+        "employee_gross_compensation": [65000.0] * 100,
+        "employee_termination_date": pd.NaT,
+        "employee_birth_date": pd.to_datetime("1990-01-01"),
+        "employee_deferral_rate": 0.05,
+        "employee_tenure_band": "1-3",
+        "employee_tenure": 1.5,
+        "employee_level": 1,
+        "employee_level_source": "existing",
+        "employee_exited": False,
+        "simulation_year": 2024,
     }
 
     snapshot = pd.DataFrame(snapshot_data)
-    snapshot = snapshot.set_index('employee_id', drop=False)
+    snapshot = snapshot.set_index("employee_id", drop=False)
 
     # Create hazard table with correct column names
     hazard_data = {
-        'simulation_year': [2025],
-        'employee_level': [1],
-        'employee_tenure_band': ['1-3'],  # Use correct column name
-        'term_rate': [0.15],
-        'new_hire_termination_rate': [0.25],
-        'cola_pct': [0.02],
-        'merit_raise_pct': [0.03],
-        'promotion_raise_pct': [0.05]  # Add promotion column
+        "simulation_year": [2025],
+        "employee_level": [1],
+        "employee_tenure_band": ["1-3"],  # Use correct column name
+        "term_rate": [0.15],
+        "new_hire_termination_rate": [0.25],
+        "cola_pct": [0.02],
+        "merit_raise_pct": [0.03],
+        "promotion_raise_pct": [0.05],  # Add promotion column
     }
     hazard_table = pd.DataFrame(hazard_data)
 
@@ -68,10 +70,18 @@ def create_test_data():
     rng = np.random.default_rng(42)
 
     # Create empty event log
-    event_log = pd.DataFrame(columns=[
-        'event_id', 'event_time', 'employee_id', 'event_type',
-        'value_num', 'value_json', 'meta', 'simulation_year'
-    ])
+    event_log = pd.DataFrame(
+        columns=[
+            "event_id",
+            "event_time",
+            "employee_id",
+            "event_type",
+            "value_num",
+            "value_json",
+            "meta",
+            "simulation_year",
+        ]
+    )
 
     return snapshot, hazard_table, global_params, plan_rules, rng, event_log
 
@@ -106,7 +116,7 @@ def test_new_orchestrator():
             rng=rng,
             census_template_path=None,
             rng_seed_offset=0,
-            deterministic_term=True
+            deterministic_term=True,
         )
 
         print("✅ Orchestrator ran successfully!")
@@ -115,7 +125,11 @@ def test_new_orchestrator():
         # Analyze results
         initial_count = len(snapshot)
         final_count = len(final_snapshot)
-        active_final = final_snapshot['active'].sum() if 'active' in final_snapshot.columns else len(final_snapshot)
+        active_final = (
+            final_snapshot["active"].sum()
+            if "active" in final_snapshot.columns
+            else len(final_snapshot)
+        )
 
         print(f"Results:")
         print(f"- Initial employees: {initial_count}")
@@ -126,14 +140,14 @@ def test_new_orchestrator():
 
         # Analyze events
         if not new_events.empty:
-            event_types = new_events['event_type'].value_counts()
+            event_types = new_events["event_type"].value_counts()
             print(f"Events generated:")
             for event_type, count in event_types.items():
                 print(f"- {event_type}: {count}")
 
             # Count hires and terminations
-            hire_events = new_events[new_events['event_type'] == 'EVT_HIRE']
-            term_events = new_events[new_events['event_type'] == 'EVT_TERM']
+            hire_events = new_events[new_events["event_type"] == "EVT_HIRE"]
+            term_events = new_events[new_events["event_type"] == "EVT_TERM"]
 
             num_hires = len(hire_events)
             num_terms = len(term_events)
@@ -156,8 +170,8 @@ def test_new_orchestrator():
             # Check new hire termination rate
             if num_hires > 0:
                 # Count new hire terminations (terminations of employees hired this year)
-                hire_ids = set(hire_events['employee_id'])
-                nh_term_events = term_events[term_events['employee_id'].isin(hire_ids)]
+                hire_ids = set(hire_events["employee_id"])
+                nh_term_events = term_events[term_events["employee_id"].isin(hire_ids)]
                 num_nh_terms = len(nh_term_events)
 
                 actual_nh_rate = num_nh_terms / num_hires if num_hires > 0 else 0
@@ -178,7 +192,9 @@ def test_new_orchestrator():
         print()
         print("=== Comparison with Your Results ===")
         print("Your actual results: 100 → 124 (38 hires, 5 NH terms)")
-        print(f"New orchestrator: {initial_count} → {active_final} ({num_hires} hires, {num_nh_terms if 'num_nh_terms' in locals() else 'N/A'} NH terms)")
+        print(
+            f"New orchestrator: {initial_count} → {active_final} ({num_hires} hires, {num_nh_terms if 'num_nh_terms' in locals() else 'N/A'} NH terms)"
+        )
 
         if num_hires != 38:
             print("✅ New orchestrator is using different logic (exact targeting)")
@@ -188,6 +204,7 @@ def test_new_orchestrator():
     except Exception as e:
         print(f"❌ Error running orchestrator: {e}")
         import traceback
+
         traceback.print_exc()
 
 

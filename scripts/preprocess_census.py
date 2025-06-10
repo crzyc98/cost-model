@@ -8,7 +8,6 @@ import os
 import sys
 from pathlib import Path
 
-
 from cost_model.data.readers import read_census_data
 
 # Add project root to Python path

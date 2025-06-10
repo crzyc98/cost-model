@@ -1,5 +1,6 @@
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
 
 
 class EligibilityConfig(BaseModel):
@@ -38,20 +39,24 @@ class EligibilityEventsConfig(BaseModel):
     milestone_months: Optional[list[int]] = None
     event_type: Optional[str] = None
 
+
 class ContributionIncreaseConfig(BaseModel):
     # e.g. increase_pct: float, eligible_roles: List[str], …
     increase_pct: Optional[float] = None
     eligible_roles: Optional[list[str]] = None
+
 
 class ProactiveDecreaseConfig(BaseModel):
     # e.g. decrease_pct: float, irs_limit_pct: float, …
     decrease_pct: Optional[float] = None
     irs_limit_pct: Optional[float] = None
 
+
 """
 Definition of Pydantic config models for Plan Rules engines.
 Each config model specifies parameters needed by its corresponding engine stub.
 """
+
 
 class EligibilityEventsConfig(BaseModel):
     """
@@ -62,11 +67,13 @@ class EligibilityEventsConfig(BaseModel):
         milestone_years: List of service-year milestones (in years) at which to emit events (converted to months).
         event_type_map: Mapping from each milestone month to the event_type string to emit.
     """
+
     milestone_months: List[int] = Field(
         ..., description="Service month milestones for eligibility events (e.g., [12, 24, 36])."
     )
     milestone_years: List[int] = Field(
-        default_factory=list, description="Service year milestones for eligibility events (e.g., [1, 5, 10])."
+        default_factory=list,
+        description="Service year milestones for eligibility events (e.g., [1, 5, 10]).",
     )
     event_type_map: Dict[int, str] = Field(
         ..., description="Mapping from milestone month to event_type (e.g., {12: 'EVT_1YR_ANNIV'})."
@@ -81,12 +88,12 @@ class ContributionIncreaseConfig(BaseModel):
         min_increase_pct: Minimum increase in deferral rate (as a decimal, e.g., 0.01 for 1%) required to trigger the event.
         event_type: Event type string to emit (default: 'EVT_CONTRIB_INCREASE').
     """
+
     min_increase_pct: float = Field(
         ..., description="Minimum pct increase to trigger event (e.g., 0.01 for 1%)."
     )
-    event_type: str = Field(
-        "EVT_CONTRIB_INCREASE", description="Event type to emit."
-    )
+    event_type: str = Field("EVT_CONTRIB_INCREASE", description="Event type to emit.")
+
 
 class ProactiveDecreaseConfig(BaseModel):
     """
@@ -97,13 +104,12 @@ class ProactiveDecreaseConfig(BaseModel):
         threshold_pct: Minimum drop from historical high to current rate to trigger event.
         event_type: Event type string to emit.
     """
+
     lookback_months: int = Field(
         ..., description="Window (in months) for averaging contributions to decide decrease."
     )
     threshold_pct: float = Field(
-        ..., description="Minimum drop from high-water mark to current rate to trigger decrease (e.g., 0.05 for 5%)."
+        ...,
+        description="Minimum drop from high-water mark to current rate to trigger decrease (e.g., 0.05 for 5%).",
     )
-    event_type: str = Field(
-        "EVT_PROACTIVE_DECREASE", description="Event type to emit."
-    )
-
+    event_type: str = Field("EVT_PROACTIVE_DECREASE", description="Event type to emit.")

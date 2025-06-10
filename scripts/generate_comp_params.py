@@ -56,11 +56,12 @@ Output:
   - role_compensation_params: Parameters per role
 
 """
-import pandas as pd
-import numpy as np
-import yaml
 from datetime import datetime
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import yaml
 from sklearn.linear_model import LinearRegression
 
 # 1) Load your census
@@ -97,7 +98,7 @@ out["new_hire_compensation_params"] = {
     "comp_age_factor": float(age_factor),
     "comp_stochastic_std_dev": float(log_dev),
     "new_hire_age_mean": float(df["age"].mean().round(1)),
-    "new_hire_age_std": float(df["age"].std().round(1))
+    "new_hire_age_std": float(df["age"].std().round(1)),
 }
 
 # 4) Role-based compensation parameters removed as part of schema refactoring

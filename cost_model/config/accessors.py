@@ -6,31 +6,29 @@ the merging of global parameters and scenario-specific overrides.
 
 import logging
 from copy import deepcopy
-from typing import Dict, Any, Optional, Union  # Added Union
+from typing import Any, Dict, Optional, Union  # Added Union
 
 # Import the Pydantic models
 try:
     # Use relative import if accessors.py is inside config package
     from .models import (
-        MainConfig,
         GlobalParameters,
+        MainConfig,
         PlanRules,
     )
 except ImportError:
     # Fallback if running standalone or structure differs
     try:
         from cost_model.config.models import (
-            MainConfig,
             GlobalParameters,
+            MainConfig,
             PlanRules,
         )
     except ImportError:
-        print(
-            "Warning (accessors.py): Could not import config models. Using Any type hint."
-        )
-        from typing import Any as MainConfig  # type: ignore
+        print("Warning (accessors.py): Could not import config models. Using Any type hint.")
         from typing import Any as GlobalParameters  # type: ignore
-        from typing import Any as PlanRules  # type: ignore
+        from typing import Any as MainConfig
+        from typing import Any as PlanRules
 
 
 logger = logging.getLogger(__name__)
@@ -72,9 +70,7 @@ def _deep_merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[st
 # --- Main Accessor Function ---
 
 
-def get_scenario_config(
-    main_config: MainConfig, scenario_name: str
-) -> GlobalParameters:
+def get_scenario_config(main_config: MainConfig, scenario_name: str) -> GlobalParameters:
     """
     Retrieves the configuration for a specific scenario, merging global
     parameters with scenario-specific overrides.
@@ -103,9 +99,7 @@ def get_scenario_config(
 
     # 2. Start with a deep copy of the global parameters dictionary
     # Use .dict() to work with dictionaries for merging, exclude defaults that weren't set
-    global_dict = main_config.global_parameters.dict(
-        exclude_unset=False
-    )  # Keep defaults
+    global_dict = main_config.global_parameters.dict(exclude_unset=False)  # Keep defaults
 
     # 3. Get the scenario overrides dictionary, excluding None values and 'name'
     scenario_overrides = scenario_def.dict(exclude={"name"}, exclude_none=True)
@@ -117,9 +111,7 @@ def get_scenario_config(
     try:
         # Pass the merged dictionary to the GlobalParameters model constructor
         resolved_config = GlobalParameters(**merged_config_dict)
-        logger.info(
-            f"Successfully resolved configuration for scenario: '{scenario_name}'"
-        )
+        logger.info(f"Successfully resolved configuration for scenario: '{scenario_name}'")
         return resolved_config
     except Exception as e:  # Catch Pydantic validation errors or others
         logger.exception(
@@ -176,20 +168,14 @@ def get_irs_limit_for_year(
             logger.error("Could not find any valid year keys in IRS limits dictionary.")
             return None
 
-        if (
-            year_limits_model is None
-        ):  # Should not happen if dict not empty, but check anyway
-            logger.error(
-                f"Could not find any IRS limits, even for fallback year {latest_year}."
-            )
+        if year_limits_model is None:  # Should not happen if dict not empty, but check anyway
+            logger.error(f"Could not find any IRS limits, even for fallback year {latest_year}.")
             return None
 
     # Access the specific limit using getattr from the Pydantic model instance
     limit_value = getattr(year_limits_model, limit_type, None)
 
     if limit_value is None:
-        logger.warning(
-            f"Limit type '{limit_type}' not found for year {year} (or fallback year)."
-        )
+        logger.warning(f"Limit type '{limit_type}' not found for year {year} (or fallback year).")
 
     return limit_value

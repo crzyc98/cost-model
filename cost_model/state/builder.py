@@ -50,6 +50,7 @@ updated_snapshot.to_parquet(f'data/snapshot_{snapshot_year}.parquet')
 
 This demonstrates the core workflow of building snapshots from event logs and updating them with new events.
 """
+
 from __future__ import annotations
 
 import pandas as pd

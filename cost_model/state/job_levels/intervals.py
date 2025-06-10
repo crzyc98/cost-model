@@ -1,8 +1,11 @@
 from typing import Dict, List, Tuple
-import pandas as pd
-from .models import JobLevel, ConfigError
 
-__all__ = ['build_intervals', 'check_for_overlapping_bands']
+import pandas as pd
+
+from .models import ConfigError, JobLevel
+
+__all__ = ["build_intervals", "check_for_overlapping_bands"]
+
 
 def build_intervals(levels: Dict[int, JobLevel]) -> pd.IntervalIndex:
     """Build interval index for vectorized level assignment.
@@ -20,11 +23,13 @@ def build_intervals(levels: Dict[int, JobLevel]) -> pd.IntervalIndex:
         raise ConfigError("Cannot build intervals from empty levels dictionary")
     sorted_levels = sorted(levels.values(), key=lambda lv: lv.min_compensation)
     return pd.IntervalIndex.from_tuples(
-        [(lv.min_compensation, lv.max_compensation) for lv in sorted_levels],
-        closed="both"
+        [(lv.min_compensation, lv.max_compensation) for lv in sorted_levels], closed="both"
     )
 
-def check_for_overlapping_bands(levels: Dict[int, JobLevel], strict: bool = True) -> List[Tuple[JobLevel, JobLevel]]:
+
+def check_for_overlapping_bands(
+    levels: Dict[int, JobLevel], strict: bool = True
+) -> List[Tuple[JobLevel, JobLevel]]:
     """Check for overlapping compensation bands between levels.
 
     Args:

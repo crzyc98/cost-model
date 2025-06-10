@@ -1,9 +1,10 @@
 # scripts/employment_status_summary.py
 
-import pandas as pd
 import glob
 import os
+
 import numpy as np
+import pandas as pd
 
 
 def main():
@@ -80,7 +81,9 @@ def main():
             status_column = "derived_status"
 
         if status_column is None:
-            print(f"Warning: No suitable status column found in {files[i] if i < len(files) else 'file'}")
+            print(
+                f"Warning: No suitable status column found in {files[i] if i < len(files) else 'file'}"
+            )
             print(f"Available columns: {list(df.columns)}")
             continue
 
@@ -92,7 +95,9 @@ def main():
             if "active" in df.columns:
                 print(f"  Falling back to 'active' column for year {year}")
                 df_copy = df.copy()
-                df_copy["derived_status"] = df_copy["active"].map({True: "Active", False: "Inactive"})
+                df_copy["derived_status"] = df_copy["active"].map(
+                    {True: "Active", False: "Inactive"}
+                )
                 status_counts = df_copy.groupby("derived_status").size().to_dict()
             else:
                 continue
@@ -124,9 +129,7 @@ def main():
         # Calculate growth rate
         prev_active = summary[-1]["Active"] if i > 0 else np.nan
         growth_rate = (
-            (active_count - prev_active) / prev_active
-            if i > 0 and prev_active > 0
-            else np.nan
+            (active_count - prev_active) / prev_active if i > 0 and prev_active > 0 else np.nan
         )
 
         # Construct the row, including the new total_terminated count

@@ -1,17 +1,18 @@
 # utils/test_eligibility.py
 import pandas as pd
 import pytest
+
+from cost_model.rules.eligibility import (
+    agent_is_eligible,
+    apply,
+)
 from cost_model.utils.columns import (
+    ELIGIBILITY_ENTRY_DATE,
     EMP_BIRTH_DATE,
     EMP_HIRE_DATE,
-    STATUS_COL,
     HOURS_WORKED,
-    ELIGIBILITY_ENTRY_DATE,
     IS_ELIGIBLE,
-)
-from cost_model.rules.eligibility import (
-    apply,
-    agent_is_eligible,
+    STATUS_COL,
 )
 from cost_model.utils.constants import ACTIVE_STATUSES
 

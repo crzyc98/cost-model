@@ -5,9 +5,10 @@ QuickStart: see docs/cost_model/dynamics/compensation.md
 """
 
 import logging
-import pandas as pd
+from typing import Any, Mapping, Optional
+
 import numpy as np
-from typing import Mapping, Any, Optional
+import pandas as pd
 
 # Import column constants from schema to ensure consistency
 try:
@@ -25,11 +26,9 @@ except ImportError:
 
 # Import sampling helpers if needed (e.g., for second-year bumps)
 try:
-    from .sampling.salary import SalarySampler, DefaultSalarySampler
+    from .sampling.salary import DefaultSalarySampler, SalarySampler
 except ImportError:
-    print(
-        "Warning (compensation.py): Could not import SalarySampler. Complex bumps might fail."
-    )
+    print("Warning (compensation.py): Could not import SalarySampler. Complex bumps might fail.")
 
     class DefaultSalarySampler:
         pass  # Dummy class
@@ -77,9 +76,7 @@ def apply_comp_bump(
         log.warning(
             f"Column '{EMP_TENURE}' not found, cannot apply tenure-based comp bump logic. Applying flat rate to all."
         )
-        df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0) * (
-            1 + rate
-        )
+        df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0) * (1 + rate)
         return df2
 
     log.debug(
@@ -87,9 +84,7 @@ def apply_comp_bump(
     )
 
     # Ensure columns are numeric
-    df2[comp_col] = (
-        pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0).astype(float)
-    )
+    df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0).astype(float)
     df2[EMP_TENURE] = pd.to_numeric(df2[EMP_TENURE], errors="coerce").fillna(0.0)
 
     # Define masks based on tenure
@@ -100,9 +95,7 @@ def apply_comp_bump(
     n_new = mask_new_or_first_year.sum()
     n_second = mask_second_year.sum()
     n_exp = mask_experienced.sum()
-    log.debug(
-        f"Comp Bump Groups: New/First={n_new}, Second={n_second}, Experienced={n_exp}"
-    )
+    log.debug(f"Comp Bump Groups: New/First={n_new}, Second={n_second}, Experienced={n_exp}")
 
     # 1) New hires / First year employees: Typically no bump applied in this step
     # (Their salary was set during hiring/onboarding)
@@ -136,9 +129,7 @@ def apply_comp_bump(
 
     # 3) Experienced employees: Apply flat increase rate
     if n_exp > 0:
-        log.debug(
-            f"Applying flat rate bump ({rate:.1%}) to {n_exp} experienced employees."
-        )
+        log.debug(f"Applying flat rate bump ({rate:.1%}) to {n_exp} experienced employees.")
         df2.loc[mask_experienced, comp_col] *= 1 + rate
         # Debug: bump amounts for experienced slice
         bump_amounts = df2[comp_col] - df[comp_col]
@@ -180,9 +171,7 @@ def apply_onboarding_bump(
         log.debug("Onboarding bump disabled or config missing.")
         return df2
     if comp_col not in df2.columns:
-        log.warning(
-            f"Onboarding bump enabled, but comp column '{comp_col}' not found. Skipping."
-        )
+        log.warning(f"Onboarding bump enabled, but comp column '{comp_col}' not found. Skipping.")
         return df2
 
     method = ob_cfg.get("method", "")
@@ -190,9 +179,7 @@ def apply_onboarding_bump(
     log.info(f"Applying onboarding bump: method='{method}', rate={rate:.2%}")
 
     if method == "flat_rate":
-        df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0) * (
-            1 + rate
-        )
+        df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0) * (1 + rate)
     elif method == "sample_plus_rate":
         if not baseline_hire_salaries.empty:
             log.debug(f"Sampling {len(df2)} baseline salaries for onboarding bump.")
@@ -203,9 +190,7 @@ def apply_onboarding_bump(
             log.warning(
                 "Onboarding bump 'sample_plus_rate' method chosen, but baseline_hire_salaries is empty! Applying flat rate to existing comp instead."
             )
-            df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(
-                0.0
-            ) * (
+            df2[comp_col] = pd.to_numeric(df2[comp_col], errors="coerce").fillna(0.0) * (
                 1 + rate
             )  # Fallback
     else:
@@ -213,7 +198,5 @@ def apply_onboarding_bump(
 
     # Ensure non-negative compensation
     df2[comp_col] = df2[comp_col].clip(lower=0)
-    log.debug(
-        f"Onboarding bump applied. New avg comp for hires: {df2[comp_col].mean():.0f}"
-    )
+    log.debug(f"Onboarding bump applied. New avg comp for hires: {df2[comp_col].mean():.0f}")
     return df2

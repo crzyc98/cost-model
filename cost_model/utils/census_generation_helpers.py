@@ -3,31 +3,30 @@ Helper functions for census generation extracted from scripts/generate_census.py
 """
 
 import logging
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
+from typing import Generator, Set  # Added Union
+
+import numpy as np
+import pandas as pd
 from scipy.stats import truncnorm
-from typing import Set, Generator  # Added Union
 
 # Attempt to import column constants, provide fallbacks
 try:
     from utils.columns import (
-        EMP_SSN,
         EMP_BIRTH_DATE,
-        EMP_HIRE_DATE,
-        EMP_TERM_DATE,
-        EMP_GROSS_COMP,
-        EMP_PLAN_YEAR_COMP,
         EMP_CAPPED_COMP,
-        EMP_DEFERRAL_RATE,
         EMP_CONTR,
+        EMP_DEFERRAL_RATE,
+        EMP_GROSS_COMP,
+        EMP_HIRE_DATE,
+        EMP_PLAN_YEAR_COMP,
+        EMP_SSN,
+        EMP_TERM_DATE,
         EMPLOYER_CORE,
         EMPLOYER_MATCH,
     )
 except ImportError:
-    print(
-        "Warning: Could not import column constants from utils. Using string literals."
-    )
+    print("Warning: Could not import column constants from utils. Using string literals.")
     EMP_SSN, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE = (
         "employee_ssn",
         "employee_birth_date",
@@ -51,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 # --- Generate single employee record ---
 from cost_model.state.schema import EMP_TENURE
+
 
 def generate_employee_record(
     year: int,
@@ -90,9 +90,7 @@ def generate_employee_record(
         ssn = f"DUMMY_{prefix}_{rng.integers(100000, 999999)}_{unique_id:06d}_{rng.integers(100)}"
         retry_count += 1
     if ssn in existing_ssns:  # Extremely unlikely after retries
-        logger.error(
-            f"Could not generate unique SSN after {retry_count} retries. ID: {unique_id}"
-        )
+        logger.error(f"Could not generate unique SSN after {retry_count} retries. ID: {unique_id}")
         raise ValueError(f"Could not generate unique SSN after {retry_count} retries.")
     existing_ssns.add(ssn)
     record[EMP_SSN] = ssn  # Use the SSN constant
@@ -103,9 +101,7 @@ def generate_employee_record(
         max_working_age - age_mean
     ) / safe_age_std_dev
     age = (
-        truncnorm.rvs(
-            age_a, age_b, loc=age_mean, scale=safe_age_std_dev, random_state=rng
-        )
+        truncnorm.rvs(age_a, age_b, loc=age_mean, scale=safe_age_std_dev, random_state=rng)
         if age_std_dev > 0
         else age_mean
     )
@@ -129,9 +125,7 @@ def generate_employee_record(
         # Hire date within the current year
         plan_start_date = datetime(year, 1, 1)
         # Ensure hire date is after birth date + min working age
-        min_possible_hire_date = record[EMP_BIRTH_DATE] + timedelta(
-            days=365.25 * min_working_age
-        )
+        min_possible_hire_date = record[EMP_BIRTH_DATE] + timedelta(days=365.25 * min_working_age)
         hire_start_bound = max(plan_start_date, min_possible_hire_date)
         # Ensure hire date is not after plan end date
         if hire_start_bound > plan_end_date:
@@ -179,9 +173,7 @@ def generate_employee_record(
         # Calculate hire date based on tenure relative to plan_end_date
         hire_date = plan_end_date - timedelta(days=tenure_years * 365.25)
         # Ensure hire date is not before birth date + min working age
-        min_possible_hire_date = record[EMP_BIRTH_DATE] + timedelta(
-            days=365.25 * min_working_age
-        )
+        min_possible_hire_date = record[EMP_BIRTH_DATE] + timedelta(days=365.25 * min_working_age)
         record[EMP_HIRE_DATE] = max(hire_date, min_possible_hire_date)
 
     # Store tenure calculated as of plan_end_date (used for comp calc below)
@@ -233,6 +225,7 @@ def generate_employee_record(
 # --- Calculate derived fields ---
 from cost_model.utils.columns import EMP_TENURE
 
+
 def calculate_derived_fields(
     df: pd.DataFrame,
     year: int,
@@ -260,9 +253,7 @@ def calculate_derived_fields(
     catch_up_limit = limits_for_year["catch_up"]
 
     df_calc = df.copy()
-    logger.debug(
-        f"Calculating derived fields for {len(df_calc)} records for year {year}."
-    )
+    logger.debug(f"Calculating derived fields for {len(df_calc)} records for year {year}.")
 
     # Ensure date columns are datetime, coercing errors
     df_calc[EMP_HIRE_DATE] = pd.to_datetime(df_calc[EMP_HIRE_DATE], errors="coerce")
@@ -284,18 +275,16 @@ def calculate_derived_fields(
 
     # Determine service start/end within the plan year
     # Ensure hire date is not NaT before comparison
-    df_calc["calc_service_start"] = df_calc[
-        [EMP_HIRE_DATE, "calc_plan_start_date"]
-    ].max(
+    df_calc["calc_service_start"] = df_calc[[EMP_HIRE_DATE, "calc_plan_start_date"]].max(
         axis=1, skipna=False
     )  # Propagate NaT if hire date is NaT
     df_calc.loc[df_calc[EMP_HIRE_DATE].isna(), "calc_service_start"] = (
         pd.NaT
     )  # Explicitly set NaT if hire date missing
 
-    df_calc["calc_service_end"] = df_calc[
-        ["calc_effective_term_date", "calc_plan_end_date"]
-    ].min(axis=1, skipna=False)
+    df_calc["calc_service_end"] = df_calc[["calc_effective_term_date", "calc_plan_end_date"]].min(
+        axis=1, skipna=False
+    )
 
     # Calculate days worked in the plan year, handle NaT dates
     valid_service_dates = (
@@ -311,14 +300,10 @@ def calculate_derived_fields(
     )  # Ensure non-negative
 
     total_days_in_year = (plan_end_date - plan_start_date).days + 1
-    df_calc["calc_proration_factor"] = (
-        df_calc["calc_days_in_plan_year"] / total_days_in_year
-    )
+    df_calc["calc_proration_factor"] = df_calc["calc_days_in_plan_year"] / total_days_in_year
 
     # Ensure gross comp is numeric
-    df_calc[EMP_GROSS_COMP] = pd.to_numeric(
-        df_calc[EMP_GROSS_COMP], errors="coerce"
-    ).fillna(0.0)
+    df_calc[EMP_GROSS_COMP] = pd.to_numeric(df_calc[EMP_GROSS_COMP], errors="coerce").fillna(0.0)
     df_calc[EMP_PLAN_YEAR_COMP] = (
         df_calc[EMP_GROSS_COMP] * df_calc["calc_proration_factor"]
     ).round(2)
@@ -347,14 +332,12 @@ def calculate_derived_fields(
 
     # Deferrals
     eligible_for_catch_up = df_calc["calc_age_at_year_end"] >= 50
-    max_deferral = np.where(
-        eligible_for_catch_up, deferral_limit + catch_up_limit, deferral_limit
-    )
+    max_deferral = np.where(eligible_for_catch_up, deferral_limit + catch_up_limit, deferral_limit)
 
     # Ensure deferral rate is numeric
-    df_calc[EMP_DEFERRAL_RATE] = pd.to_numeric(
-        df_calc[EMP_DEFERRAL_RATE], errors="coerce"
-    ).fillna(0.0)
+    df_calc[EMP_DEFERRAL_RATE] = pd.to_numeric(df_calc[EMP_DEFERRAL_RATE], errors="coerce").fillna(
+        0.0
+    )
 
     # Calculate deferral based on Plan Year Comp, apply IRS limits
     df_calc["calc_potential_deferral"] = (
@@ -371,13 +354,9 @@ def calculate_derived_fields(
 
     # Match
     # Match based on plan year comp up to match cap percentage
-    deferral_eligible_for_match = (
-        df_calc[EMP_PLAN_YEAR_COMP] * match_cap_deferral_perc
-    ).round(2)
+    deferral_eligible_for_match = (df_calc[EMP_PLAN_YEAR_COMP] * match_cap_deferral_perc).round(2)
     # Consider only the actual deferral amount up to the eligibility cap
-    actual_deferral_for_match = df_calc[EMP_CONTR].clip(
-        upper=deferral_eligible_for_match
-    )
+    actual_deferral_for_match = df_calc[EMP_CONTR].clip(upper=deferral_eligible_for_match)
     df_calc[EMPLOYER_MATCH] = (
         (actual_deferral_for_match * match_rate).round(2).clip(lower=0)
     )  # Ensure non-negative
@@ -427,28 +406,19 @@ def select_weighted_terminations(
     if "tenure" not in eligible_df.columns:
         eligible_df["tenure"] = 0.0  # Add temp if missing
     eligible_df["low_tenure"] = (
-        pd.to_numeric(eligible_df["tenure"], errors="coerce").fillna(0.0)
-        < LOW_TENURE_THRESHOLD
+        pd.to_numeric(eligible_df["tenure"], errors="coerce").fillna(0.0) < LOW_TENURE_THRESHOLD
     )
 
     # Compensation Risk (simplified - no longer role-based)
     eligible_df["low_comp"] = False  # Default
     comp_col = EMP_GROSS_COMP
-    if comp_col in eligible_df.columns and pd.api.types.is_numeric_dtype(
-        eligible_df[comp_col]
-    ):
+    if comp_col in eligible_df.columns and pd.api.types.is_numeric_dtype(eligible_df[comp_col]):
         # Calculate global compensation percentile rank
-        eligible_df["comp_percentile_rank"] = eligible_df[comp_col].rank(
-            pct=True, method="average"
-        )
-        eligible_df["low_comp"] = (
-            eligible_df["comp_percentile_rank"] < LOW_COMP_PERCENTILE
-        )
+        eligible_df["comp_percentile_rank"] = eligible_df[comp_col].rank(pct=True, method="average")
+        eligible_df["low_comp"] = eligible_df["comp_percentile_rank"] < LOW_COMP_PERCENTILE
         logger.debug("Calculated comp risk globally.")
     else:
-        logger.warning(
-            f"Column '{comp_col}' not found or not numeric. Cannot calculate comp risk."
-        )
+        logger.warning(f"Column '{comp_col}' not found or not numeric. Cannot calculate comp risk.")
 
     # Assign Weights
     eligible_df["is_at_risk"] = eligible_df["low_tenure"] & eligible_df["low_comp"]
@@ -456,9 +426,7 @@ def select_weighted_terminations(
         eligible_df["is_at_risk"], HIGH_RISK_WEIGHT, LOW_RISK_WEIGHT
     )
     at_risk_count = eligible_df["is_at_risk"].sum()
-    logger.info(
-        "Identified %d employees as 'at-risk' (low tenure & low comp).", at_risk_count
-    )
+    logger.info("Identified %d employees as 'at-risk' (low tenure & low comp).", at_risk_count)
 
     # Calculate Probabilities
     total_weight = eligible_df["term_weight"].sum()

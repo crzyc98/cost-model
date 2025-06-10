@@ -1,24 +1,27 @@
-from typing import Sequence, Optional, List, Dict, Any, Union
-import pandas as pd
 import logging
+from typing import Any, Dict, List, Optional, Sequence, Union
+
+import pandas as pd
 
 from cost_model.state.schema import (
-    EMP_LEVEL,
     EMP_GROSS_COMP,
+    EMP_LEVEL,
     EMP_LEVEL_SOURCE,
     EMP_TENURE,
-    EMP_TENURE_BAND
+    EMP_TENURE_BAND,
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
 )
-from cost_model.state.schema import SNAPSHOT_COLS, SNAPSHOT_DTYPES
 
 logger = logging.getLogger(__name__)
+
 
 def infer_job_level_by_percentile(
     df: pd.DataFrame,
     salary_col: str = EMP_GROSS_COMP,
     level_percentiles: Sequence[float] = (0.20, 0.50, 0.80, 0.95),
-    target_level_col: str = 'imputed_level',
-    source_col: str = EMP_LEVEL_SOURCE
+    target_level_col: str = "imputed_level",
+    source_col: str = EMP_LEVEL_SOURCE,
 ) -> pd.DataFrame:
     """
     Impute job levels for rows where they're missing using global compensation percentiles.
@@ -67,11 +70,8 @@ def infer_job_level_by_percentile(
     bins = [0.0, *sorted(level_percentiles), 1.0]  # Ensure percentiles are sorted
     labels = list(range(1, len(bins)))  # Start from 1 instead of 0 to match hazard table
     out[target_level_col] = pd.cut(
-        out["_pct"],
-        bins=bins,
-        labels=labels,
-        include_lowest=True
-    ).astype('Int64')
+        out["_pct"], bins=bins, labels=labels, include_lowest=True
+    ).astype("Int64")
 
     # Initialize source column if needed
     if source_col not in out.columns:
@@ -82,7 +82,7 @@ def infer_job_level_by_percentile(
 
     # Check for existing level columns
     level_col = None
-    level_cols_to_check = [EMP_LEVEL, 'level_id', 'job_level']  # Common column names for job levels
+    level_cols_to_check = [EMP_LEVEL, "level_id", "job_level"]  # Common column names for job levels
     for col in level_cols_to_check:
         if col in out.columns:
             level_col = col
@@ -97,6 +97,4 @@ def infer_job_level_by_percentile(
         out.loc[missing_mask, source_col] = "percentile-impute"
 
     # Clean up temporary columns and return
-    return out.drop(columns=["_pct"], errors='ignore')
-
-
+    return out.drop(columns=["_pct"], errors="ignore")

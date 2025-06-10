@@ -5,13 +5,13 @@ This module provides utilities to migrate from legacy column naming conventions
 to the new unified schema system while maintaining backward compatibility.
 """
 
-from typing import Dict, List, Optional, Set, Any, Tuple
-import pandas as pd
 import logging
 from dataclasses import dataclass
+from typing import Any, Dict, List, Tuple
 
-from .columns import SnapshotColumns, EventColumns
+import pandas as pd
 
+from .columns import EventColumns, SnapshotColumns
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MigrationResult:
     """Result of a schema migration operation."""
+
     success: bool
     migrated_columns: Dict[str, str]  # old_name -> new_name
     unmapped_columns: List[str]
@@ -28,10 +29,11 @@ class MigrationResult:
 
 class LegacyColumnMapper:
     """Handles mapping between legacy and new column names."""
-    
+
     # Legacy to new column mappings for snapshots
+    # Organized by priority: preferred mappings first, alternatives second
     LEGACY_SNAPSHOT_MAPPING: Dict[str, str] = {
-        # Old schema (with EMP_ prefix) to new schema
+        # Primary EMP_ prefix mappings (legacy schema)
         "EMP_ID": SnapshotColumns.EMP_ID,
         "EMP_HIRE_DATE": SnapshotColumns.EMP_HIRE_DATE,
         "EMP_BIRTH_DATE": SnapshotColumns.EMP_BIRTH_DATE,
@@ -47,17 +49,21 @@ class LegacyColumnMapper:
         "EMP_LEVEL_SOURCE": SnapshotColumns.EMP_LEVEL_SOURCE,
         "EMP_EXITED": SnapshotColumns.EMP_EXITED,
         "EMP_STATUS_EOY": SnapshotColumns.EMP_STATUS_EOY,
-        "EMP_CONTR": SnapshotColumns.EMP_CONTRIBUTION,
-        "EMP_EMPLOYEE_CONTRIB": SnapshotColumns.EMP_CONTRIBUTION,
-        "EMP_EMPLOYER_MATCH": SnapshotColumns.EMPLOYER_MATCH_CONTRIBUTION,
+        "EMP_CONTRIBUTION": SnapshotColumns.EMP_CONTRIBUTION,
         "EMPLOYER_CORE": SnapshotColumns.EMPLOYER_CORE_CONTRIBUTION,
         "EMPLOYER_MATCH": SnapshotColumns.EMPLOYER_MATCH_CONTRIBUTION,
         "IS_ELIGIBLE": SnapshotColumns.IS_ELIGIBLE,
-        "ACTIVE_STATUS": SnapshotColumns.EMP_ACTIVE,
         "SIMULATION_YEAR": SnapshotColumns.SIMULATION_YEAR,
         "TERM_RATE": SnapshotColumns.TERM_RATE,
-        
-        # Alternative legacy names
+        "PROMOTION_RATE": SnapshotColumns.PROMOTION_RATE,
+
+        # Alternative EMP_ prefix mappings (avoid duplicates with primary)
+        "EMP_CONTR": SnapshotColumns.EMP_CONTRIBUTION,  # Alternative for EMP_CONTRIBUTION
+        "EMP_EMPLOYEE_CONTRIB": SnapshotColumns.EMP_CONTRIBUTION,  # Legacy alternative
+        "EMP_EMPLOYER_MATCH": SnapshotColumns.EMPLOYER_MATCH_CONTRIBUTION,  # Alternative
+        "ACTIVE_STATUS": SnapshotColumns.EMP_ACTIVE,  # Alternative for EMP_ACTIVE
+
+        # Descriptive name mappings (only if not conflicting with EMP_ prefix)
         "employee_id": SnapshotColumns.EMP_ID,
         "employee_hire_date": SnapshotColumns.EMP_HIRE_DATE,
         "employee_birth_date": SnapshotColumns.EMP_BIRTH_DATE,
@@ -82,7 +88,7 @@ class LegacyColumnMapper:
         "term_rate": SnapshotColumns.TERM_RATE,
         "promotion_rate": SnapshotColumns.PROMOTION_RATE,
     }
-    
+
     # Legacy to new column mappings for events
     LEGACY_EVENT_MAPPING: Dict[str, str] = {
         # Event schema mappings
@@ -102,7 +108,7 @@ class LegacyColumnMapper:
         "created_at": EventColumns.CREATED_AT,
         "updated_at": EventColumns.UPDATED_AT,
     }
-    
+
     # Common pattern mappings for fuzzy matching
     PATTERN_MAPPINGS: Dict[str, str] = {
         # Patterns that can be matched with regex or fuzzy logic
@@ -117,14 +123,14 @@ class LegacyColumnMapper:
         r".*age.*": SnapshotColumns.EMP_AGE,
         r".*level.*": SnapshotColumns.EMP_LEVEL,
     }
-    
+
     @classmethod
     def get_snapshot_mapping(cls, columns: List[str]) -> Dict[str, str]:
         """Get column mapping for snapshot data.
-        
+
         Args:
             columns: List of column names to map
-            
+
         Returns:
             Dictionary mapping old column names to new names
         """
@@ -133,14 +139,14 @@ class LegacyColumnMapper:
             if col in cls.LEGACY_SNAPSHOT_MAPPING:
                 mapping[col] = cls.LEGACY_SNAPSHOT_MAPPING[col]
         return mapping
-    
+
     @classmethod
     def get_event_mapping(cls, columns: List[str]) -> Dict[str, str]:
         """Get column mapping for event data.
-        
+
         Args:
             columns: List of column names to map
-            
+
         Returns:
             Dictionary mapping old column names to new names
         """
@@ -149,36 +155,37 @@ class LegacyColumnMapper:
             if col in cls.LEGACY_EVENT_MAPPING:
                 mapping[col] = cls.LEGACY_EVENT_MAPPING[col]
         return mapping
-    
+
     @classmethod
     def fuzzy_match_columns(cls, columns: List[str]) -> Dict[str, str]:
         """Attempt fuzzy matching for unmapped columns.
-        
+
         Args:
             columns: List of column names to fuzzy match
-            
+
         Returns:
             Dictionary mapping columns to best guesses
         """
         import re
+
         fuzzy_mapping = {}
-        
+
         for col in columns:
             col_lower = col.lower()
             for pattern, target_col in cls.PATTERN_MAPPINGS.items():
                 if re.match(pattern, col_lower):
                     fuzzy_mapping[col] = target_col
                     break
-        
+
         return fuzzy_mapping
-    
+
     @classmethod
     def get_reverse_mapping(cls, schema_type: str = "snapshot") -> Dict[str, str]:
         """Get reverse mapping (new -> old) for backward compatibility.
-        
+
         Args:
             schema_type: Either "snapshot" or "event"
-            
+
         Returns:
             Dictionary mapping new column names to legacy names
         """
@@ -188,39 +195,37 @@ class LegacyColumnMapper:
             source_mapping = cls.LEGACY_EVENT_MAPPING
         else:
             raise ValueError(f"Unknown schema type: {schema_type}")
-        
+
         # Create reverse mapping, preferring the first legacy name for each new name
         reverse_mapping = {}
         for old_name, new_name in source_mapping.items():
             if new_name not in reverse_mapping:
                 reverse_mapping[new_name] = old_name
-        
+
         return reverse_mapping
 
 
-def migrate_legacy_columns(df: pd.DataFrame, 
-                          schema_type: str = "snapshot",
-                          strict_mode: bool = False,
-                          attempt_fuzzy_match: bool = True) -> Tuple[pd.DataFrame, MigrationResult]:
+def migrate_legacy_columns(
+    df: pd.DataFrame,
+    schema_type: str = "snapshot",
+    strict_mode: bool = False,
+    attempt_fuzzy_match: bool = True,
+) -> Tuple[pd.DataFrame, MigrationResult]:
     """Migrate a DataFrame from legacy column names to new schema.
-    
+
     Args:
         df: DataFrame to migrate
         schema_type: Type of schema ("snapshot" or "event")
         strict_mode: If True, fail on any unmapped columns
         attempt_fuzzy_match: If True, attempt fuzzy matching for unmapped columns
-        
+
     Returns:
         Tuple of (migrated_dataframe, migration_result)
     """
     result = MigrationResult(
-        success=True,
-        migrated_columns={},
-        unmapped_columns=[],
-        warnings=[],
-        errors=[]
+        success=True, migrated_columns={}, unmapped_columns=[], warnings=[], errors=[]
     )
-    
+
     # Get appropriate mapping
     if schema_type == "snapshot":
         column_mapping = LegacyColumnMapper.get_snapshot_mapping(df.columns.tolist())
@@ -230,12 +235,12 @@ def migrate_legacy_columns(df: pd.DataFrame,
         result.errors.append(f"Unknown schema type: {schema_type}")
         result.success = False
         return df, result
-    
+
     # Identify unmapped columns
     mapped_columns = set(column_mapping.keys())
     all_columns = set(df.columns)
     unmapped_columns = all_columns - mapped_columns
-    
+
     # Attempt fuzzy matching if enabled
     fuzzy_mapping = {}
     if attempt_fuzzy_match and unmapped_columns:
@@ -244,7 +249,7 @@ def migrate_legacy_columns(df: pd.DataFrame,
             result.warnings.append(f"Fuzzy matched column '{old_col}' -> '{new_col}'")
         column_mapping.update(fuzzy_mapping)
         unmapped_columns = unmapped_columns - set(fuzzy_mapping.keys())
-    
+
     # Handle unmapped columns
     if unmapped_columns:
         result.unmapped_columns = list(unmapped_columns)
@@ -254,11 +259,11 @@ def migrate_legacy_columns(df: pd.DataFrame,
             return df, result
         else:
             result.warnings.append(f"Unmapped columns (will be preserved): {unmapped_columns}")
-    
+
     # Perform the migration
     try:
         migrated_df = df.copy()
-        
+
         # Rename columns
         if column_mapping:
             # Check for potential duplicate target columns before renaming
@@ -266,11 +271,14 @@ def migrate_legacy_columns(df: pd.DataFrame,
             target_counts = {}
             for target in target_columns:
                 target_counts[target] = target_counts.get(target, 0) + 1
-            
+
             duplicated_targets = {k: v for k, v in target_counts.items() if v > 1}
             if duplicated_targets:
-                logger.warning(f"Multiple source columns map to the same target: {duplicated_targets}")
-                
+                logger.debug(
+                    f"Multiple source columns map to the same target: {duplicated_targets}"
+                )
+                logger.debug("Resolving duplicates by keeping first mapping for each target")
+
                 # Remove columns that would create duplicates - keep the first mapping
                 filtered_mapping = {}
                 seen_targets = set()
@@ -280,47 +288,53 @@ def migrate_legacy_columns(df: pd.DataFrame,
                         seen_targets.add(new_col)
                     else:
                         logger.debug(f"Skipping duplicate mapping: {old_col} -> {new_col}")
-                
+
                 column_mapping = filtered_mapping
-            
+
             migrated_df = migrated_df.rename(columns=column_mapping)
             result.migrated_columns = column_mapping
             logger.info(f"Migrated {len(column_mapping)} columns to new schema")
-        
+
         # Validate the migration
         if schema_type == "snapshot":
             # Check that we have the essential columns
             essential_columns = [SnapshotColumns.EMP_ID, SnapshotColumns.EMP_HIRE_DATE]
             missing_essential = [col for col in essential_columns if col not in migrated_df.columns]
             if missing_essential:
-                result.warnings.append(f"Missing essential columns after migration: {missing_essential}")
-        
-        logger.info(f"Successfully migrated {schema_type} schema with {len(column_mapping)} column mappings")
-        
+                result.warnings.append(
+                    f"Missing essential columns after migration: {missing_essential}"
+                )
+
+        logger.info(
+            f"Successfully migrated {schema_type} schema with {len(column_mapping)} column mappings"
+        )
+
     except Exception as e:
         result.errors.append(f"Migration failed: {str(e)}")
         result.success = False
         return df, result
-    
+
     return migrated_df, result
 
 
-def create_compatibility_wrapper(df: pd.DataFrame, 
-                               target_schema: str = "legacy") -> pd.DataFrame:
+def create_compatibility_wrapper(df: pd.DataFrame, target_schema: str = "legacy") -> pd.DataFrame:
     """Create a compatibility wrapper that maps columns back to legacy names.
-    
+
     Args:
         df: DataFrame with new schema column names
         target_schema: Target schema ("legacy" or "new")
-        
+
     Returns:
         DataFrame with target schema column names
     """
     if target_schema == "legacy":
         # Map new names back to legacy names
         reverse_mapping = LegacyColumnMapper.get_reverse_mapping("snapshot")
-        mapping = {new_name: old_name for new_name, old_name in reverse_mapping.items() 
-                  if new_name in df.columns}
+        mapping = {
+            new_name: old_name
+            for new_name, old_name in reverse_mapping.items()
+            if new_name in df.columns
+        }
         return df.rename(columns=mapping)
     elif target_schema == "new":
         # No change needed if already in new schema
@@ -331,36 +345,36 @@ def create_compatibility_wrapper(df: pd.DataFrame,
 
 def detect_schema_version(df: pd.DataFrame) -> str:
     """Detect which schema version a DataFrame is using.
-    
+
     Args:
         df: DataFrame to analyze
-        
+
     Returns:
         Schema version ("legacy_emp_prefix", "new", or "unknown")
     """
     columns = set(df.columns)
-    
+
     # Check for legacy EMP_ prefix schema first (more specific)
     legacy_emp_indicators = {"EMP_ID", "EMP_HIRE_DATE", "EMP_GROSS_COMP"}
     if legacy_emp_indicators.issubset(columns):
         return "legacy_emp_prefix"
-    
+
     # Check for new schema (descriptive names)
     new_schema_core = {
         SnapshotColumns.EMP_ID.value,
         SnapshotColumns.EMP_HIRE_DATE.value,
-        SnapshotColumns.EMP_GROSS_COMP.value
+        SnapshotColumns.EMP_GROSS_COMP.value,
     }
-    
+
     # New schema should have these core columns
     if new_schema_core.issubset(columns):
         # Additional check: new schema typically has more structured columns
         new_schema_indicators = [
             SnapshotColumns.SIMULATION_YEAR.value,
             SnapshotColumns.EMP_ACTIVE.value,
-            SnapshotColumns.IS_ELIGIBLE.value
+            SnapshotColumns.IS_ELIGIBLE.value,
         ]
-        
+
         # If it has several new schema indicators, it's the new schema
         new_indicators_count = sum(1 for col in new_schema_indicators if col in columns)
         if new_indicators_count >= 1:  # At least one new-style column
@@ -368,16 +382,16 @@ def detect_schema_version(df: pd.DataFrame) -> str:
         else:
             # Has core columns but no new indicators - could be legacy or minimal new
             return "new"  # Default to new since we're using descriptive names
-    
+
     return "unknown"
 
 
 def get_migration_recommendations(df: pd.DataFrame) -> Dict[str, Any]:
     """Get recommendations for migrating a DataFrame to the new schema.
-    
+
     Args:
         df: DataFrame to analyze
-        
+
     Returns:
         Dictionary with migration recommendations
     """
@@ -387,30 +401,42 @@ def get_migration_recommendations(df: pd.DataFrame) -> Dict[str, Any]:
         "migration_needed": schema_version != "new",
         "recommendations": [],
         "potential_mappings": {},
-        "confidence": "high"
+        "confidence": "high",
     }
-    
+
     if schema_version == "legacy_emp_prefix":
-        recommendations["recommendations"].append("Direct mapping available for EMP_ prefixed columns")
-        recommendations["potential_mappings"] = LegacyColumnMapper.get_snapshot_mapping(df.columns.tolist())
+        recommendations["recommendations"].append(
+            "Direct mapping available for EMP_ prefixed columns"
+        )
+        recommendations["potential_mappings"] = LegacyColumnMapper.get_snapshot_mapping(
+            df.columns.tolist()
+        )
         recommendations["confidence"] = "high"
-    
+
     elif schema_version == "legacy_full_names":
         recommendations["recommendations"].append("Direct mapping available for full name columns")
-        recommendations["potential_mappings"] = LegacyColumnMapper.get_snapshot_mapping(df.columns.tolist())
+        recommendations["potential_mappings"] = LegacyColumnMapper.get_snapshot_mapping(
+            df.columns.tolist()
+        )
         recommendations["confidence"] = "high"
-    
+
     elif schema_version == "unknown":
-        recommendations["recommendations"].append("Schema not recognized, fuzzy matching recommended")
-        recommendations["potential_mappings"] = LegacyColumnMapper.fuzzy_match_columns(df.columns.tolist())
+        recommendations["recommendations"].append(
+            "Schema not recognized, fuzzy matching recommended"
+        )
+        recommendations["potential_mappings"] = LegacyColumnMapper.fuzzy_match_columns(
+            df.columns.tolist()
+        )
         recommendations["confidence"] = "low"
-        
+
         # Provide specific recommendations
         unmapped_cols = set(df.columns) - set(recommendations["potential_mappings"].keys())
         if unmapped_cols:
-            recommendations["recommendations"].append(f"Manual review needed for columns: {unmapped_cols}")
-    
+            recommendations["recommendations"].append(
+                f"Manual review needed for columns: {unmapped_cols}"
+            )
+
     elif schema_version == "new":
         recommendations["recommendations"].append("Already using new schema, no migration needed")
-    
+
     return recommendations

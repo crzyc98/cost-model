@@ -4,22 +4,36 @@ Provides efficient update capability for year-over-year processing.
 """
 
 import logging
-import pandas as pd
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 import numpy as np
-from typing import Dict, List, Any, Optional, Set, Tuple
+import pandas as pd
 
 from .constants import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP,
-    EMP_TERM_DATE, EMP_ACTIVE, EMP_DEFERRAL_RATE, EMP_TENURE,
-    EMP_TENURE_BAND, EMP_LEVEL, EMP_LEVEL_SOURCE, EMP_EXITED,
-    SNAPSHOT_COLS, SNAPSHOT_DTYPES,
-    EVT_HIRE, EVT_TERM, EVT_COMP
+    EMP_ACTIVE,
+    EMP_BIRTH_DATE,
+    EMP_DEFERRAL_RATE,
+    EMP_EXITED,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_LEVEL,
+    EMP_LEVEL_SOURCE,
+    EMP_TENURE,
+    EMP_TENURE_BAND,
+    EMP_TERM_DATE,
+    EVT_COMP,
+    EVT_HIRE,
+    EVT_TERM,
+    SNAPSHOT_COLS,
+    SNAPSHOT_DTYPES,
 )
-from .helpers import get_first_event, get_last_event, ensure_columns_and_types, validate_snapshot
 from .details import extract_hire_details
-from .tenure import compute_tenure, apply_tenure
+from .helpers import ensure_columns_and_types, get_first_event, get_last_event, validate_snapshot
+from .tenure import apply_tenure, compute_tenure
 
 logger = logging.getLogger(__name__)
+
 
 def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int) -> pd.DataFrame:
     """
@@ -37,6 +51,16 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     hires = get_first_event(new_events, EVT_HIRE)
     new_ids = hires[~hires[EMP_ID].isin(current.index)][EMP_ID].unique()
 
+    # Filter out null/empty employee IDs to prevent duplicate <NA> entries
+    original_count = len(new_ids)
+    new_ids = new_ids[pd.notna(new_ids)]  # Remove null values
+    new_ids = new_ids[new_ids != ""]      # Remove empty strings
+    new_ids = new_ids[new_ids != "<NA>"]  # Remove explicit <NA> strings
+
+    if original_count > len(new_ids):
+        filtered_count = original_count - len(new_ids)
+        logger.warning(f"Filtered out {filtered_count} hire events with null/empty employee IDs")
+
     if len(new_ids) == 0:
         return current
 
@@ -50,7 +74,9 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     details = extract_hire_details(first_hire)
 
     # Get last compensation for new hires
-    last_comp = get_last_event(batch, EVT_COMP).set_index(EMP_ID)["value_num"].rename(EMP_GROSS_COMP)
+    last_comp = (
+        get_last_event(batch, EVT_COMP).set_index(EMP_ID)["value_num"].rename(EMP_GROSS_COMP)
+    )
 
     # Get termination events for new hires (if any were terminated immediately)
     last_term = get_last_event(batch, EVT_TERM)
@@ -96,7 +122,7 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
             hire_date_col=EMP_HIRE_DATE,
             as_of=as_of,
             out_tenure_col=EMP_TENURE,
-            out_band_col=EMP_TENURE_BAND
+            out_band_col=EMP_TENURE_BAND,
         )
 
     # Ensure new hires have the correct columns and types
@@ -129,12 +155,17 @@ def _apply_new_hires(current: pd.DataFrame, new_events: pd.DataFrame, year: int)
     if not result.index.is_unique:
         # This case should ideally not be reached if pre-concat checks are correct
         post_concat_dups = result.index[result.index.duplicated()].unique().tolist()
-        logger.error(f"CRITICAL: Duplicate EMP_IDs persisted after concat: {post_concat_dups}. Deduplicating (keep='last'). This indicates a deeper issue.")
-        result = result[~result.index.duplicated(keep='last')]
+        logger.error(
+            f"CRITICAL: Duplicate EMP_IDs persisted after concat: {post_concat_dups}. Deduplicating (keep='last'). This indicates a deeper issue."
+        )
+        result = result[~result.index.duplicated(keep="last")]
 
     return result
 
-def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, year: int) -> pd.DataFrame:
+
+def _apply_existing_updates(
+    current: pd.DataFrame, new_events: pd.DataFrame, year: int
+) -> pd.DataFrame:
     """
     Process updates for existing employees (comp changes, terminations).
 
@@ -166,12 +197,15 @@ def _apply_existing_updates(current: pd.DataFrame, new_events: pd.DataFrame, yea
         hire_date_col=EMP_HIRE_DATE,
         as_of=as_of,
         out_tenure_col=EMP_TENURE,
-        out_band_col=EMP_TENURE_BAND
+        out_band_col=EMP_TENURE_BAND,
     )
 
     return current
 
-def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:
+
+def update(
+    prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year: int
+) -> pd.DataFrame:
     """
     Updates an existing snapshot based on new events that occurred *since*
     the previous snapshot was generated. Designed for efficiency.
@@ -238,6 +272,7 @@ def update(prev_snapshot: pd.DataFrame, new_events: pd.DataFrame, snapshot_year:
 
     # Handle categorical types
     from pandas import CategoricalDtype
+
     if isinstance(current[EMP_LEVEL_SOURCE].dtype, CategoricalDtype):
         current[EMP_LEVEL_SOURCE] = current[EMP_LEVEL_SOURCE].astype("category")
 

@@ -1,14 +1,13 @@
-import pandas as pd
-import numpy as np
-from typing import Sequence, Optional, List
 import logging
+from typing import List, Optional, Sequence
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
-def _generate_sequential_ids(
-    existing_ids: Optional[Sequence[str]], num_new: int
-) -> List[str]:
+def _generate_sequential_ids(existing_ids: Optional[Sequence[str]], num_new: int) -> List[str]:
     """Generates unique sequential placeholder IDs prefixed with 'NEW_'.
 
     Handles potential numeric suffixes in existing IDs to continue sequence,
@@ -24,9 +23,7 @@ def _generate_sequential_ids(
         try:
             # Extract numeric parts only if they are strings and match pattern 'prefix_number'
             numeric_parts = pd.to_numeric(
-                pd.Series(
-                    [s for s in existing_ids_set if isinstance(s, str)]
-                ).str.extract(
+                pd.Series([s for s in existing_ids_set if isinstance(s, str)]).str.extract(
                     r"_(\d+)$", expand=False
                 ),  # Look for underscore prefix
                 errors="coerce",
@@ -64,13 +61,8 @@ def _generate_sequential_ids(
         rng_fallback = np.random.default_rng()  # Local RNG for fallback
         for i in range(needed):
             while True:
-                fallback_id = (
-                    f"FALLBACK_{base_ts}_{rng_fallback.integers(10000,99999)}_{i}"
-                )
-                if (
-                    fallback_id not in existing_ids_set
-                    and fallback_id not in temp_new_ids
-                ):
+                fallback_id = f"FALLBACK_{base_ts}_{rng_fallback.integers(10000,99999)}_{i}"
+                if fallback_id not in existing_ids_set and fallback_id not in temp_new_ids:
                     new_ids.append(fallback_id)
                     temp_new_ids.add(fallback_id)
                     break

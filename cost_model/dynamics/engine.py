@@ -6,25 +6,26 @@ QuickStart: see docs/cost_model/dynamics/engine.md
 
 import logging
 import math
-import pandas as pd
+from typing import Any, List, Mapping, Optional
+
 import numpy as np
-from typing import Optional, Mapping, Any, List
+import pandas as pd
 
 # Use relative imports within the cost_model package
 try:
-    from ..utils.date_utils import calculate_tenure, get_random_dates_in_year
-    from .hiring import generate_new_hires
-    from .compensation import apply_comp_bump, apply_onboarding_bump
-    from .termination import apply_turnover
-    from ..ml.ml_utils import try_load_ml_model, predict_turnover
+    from ..ml.ml_utils import predict_turnover, try_load_ml_model
     from ..utils.columns import (
-        EMP_ID,
-        EMP_HIRE_DATE,
-        EMP_TERM_DATE,
         EMP_BIRTH_DATE,
         EMP_GROSS_COMP,
+        EMP_HIRE_DATE,
+        EMP_ID,
+        EMP_TERM_DATE,
     )
+    from ..utils.date_utils import calculate_tenure, get_random_dates_in_year
+    from .compensation import apply_comp_bump, apply_onboarding_bump
+    from .hiring import generate_new_hires
     from .sampling.salary import DefaultSalarySampler
+    from .termination import apply_turnover
 except ImportError as e:
     print(f"Error importing dynamics components from engine.py: {e}")
     EMP_ID, EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_GROSS_COMP = (
@@ -84,9 +85,7 @@ def run_dynamics_for_year(
         rng_nh_term = np.random.default_rng(ss_nh_term)
         rng_ml = np.random.default_rng(ss_ml)
     else:
-        log.warning(
-            "No random seed provided for dynamics. Results may not be reproducible."
-        )
+        log.warning("No random seed provided for dynamics. Results may not be reproducible.")
         rng_bump, rng_exp_term, rng_nh_gen, rng_nh_term, rng_ml = (
             np.random.default_rng() for _ in range(5)
         )
@@ -95,9 +94,7 @@ def run_dynamics_for_year(
     # --- Config Parameters ---
     comp_increase_rate = getattr(year_config, "annual_compensation_increase_rate", 0.0)
     termination_rate = getattr(year_config, "annual_termination_rate", 0.0)
-    new_hire_termination_rate = getattr(
-        year_config, "new_hire_termination_rate", termination_rate
-    )
+    new_hire_termination_rate = getattr(year_config, "new_hire_termination_rate", termination_rate)
     new_hire_term_rate_safety_margin = getattr(
         year_config, "new_hire_termination_rate_safety_margin", 0.0
     )
@@ -136,9 +133,7 @@ def run_dynamics_for_year(
         ):  # If EMP_ID column exists and is not already the index
             if df_processed[EMP_ID].is_unique:
                 log.debug(f"Setting '{EMP_ID}' as index for df_processed.")
-                df_processed = df_processed.set_index(
-                    EMP_ID, drop=False
-                )  # Index is now EMP_ID
+                df_processed = df_processed.set_index(EMP_ID, drop=False)  # Index is now EMP_ID
             else:
                 log.error(
                     f"CRITICAL: Column '{EMP_ID}' is not unique. Cannot set as index. Retaining original index. This may lead to issues."
@@ -163,9 +158,7 @@ def run_dynamics_for_year(
 
     # 4. Determine the base headcount for calculating growth/maintenance targets
     if n0_exp == 0 and getattr(year_config, "initial_headcount_for_target", 0) > 0:
-        year_start_headcount_for_calc = getattr(
-            year_config, "initial_headcount_for_target", 0
-        )
+        year_start_headcount_for_calc = getattr(year_config, "initial_headcount_for_target", 0)
         log.info(
             f"Year {sim_year}: Active headcount (n0_exp) is 0. Using initial_headcount_for_target ({year_start_headcount_for_calc}) as base for calculations."
         )
@@ -234,9 +227,7 @@ def run_dynamics_for_year(
                     rng=rng_exp_term,
                     day_of_month=15,
                 )
-                df_processed.loc[terminated_exp_indices, EMP_TERM_DATE] = (
-                    term_dates_for_exp
-                )
+                df_processed.loc[terminated_exp_indices, EMP_TERM_DATE] = term_dates_for_exp
             log.info(
                 f"Year {sim_year}: Deterministically terminated {len(terminated_exp_indices)} experienced employees."
             )
@@ -267,19 +258,9 @@ def run_dynamics_for_year(
 
             # Identify who was terminated stochastically from the original eligible indices
             terminated_this_step_mask = (
-                (
-                    df_processed.loc[
-                        exp_attrition_eligible_df.index, EMP_TERM_DATE
-                    ].notna()
-                )
-                & (
-                    df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE]
-                    >= start_date
-                )
-                & (
-                    df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE]
-                    <= end_date
-                )
+                (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE].notna())
+                & (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] >= start_date)
+                & (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] <= end_date)
             )
             terminated_exp_indices = df_processed.loc[exp_attrition_eligible_df.index][
                 terminated_this_step_mask
@@ -296,9 +277,7 @@ def run_dynamics_for_year(
     if n0_exp > 0:
         survivor_mask_on_eligible = (
             df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE].isna()
-        ) | (
-            df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] > end_date
-        )
+        ) | (df_processed.loc[exp_attrition_eligible_df.index, EMP_TERM_DATE] > end_date)
         num_survivors_initial_cohort = survivor_mask_on_eligible.sum()
     log.info(
         f"Year {sim_year}: Survivors from initial active cohort (n0_exp={n0_exp}, after experienced attrition): {num_survivors_initial_cohort}"
@@ -308,12 +287,14 @@ def run_dynamics_for_year(
     if maintain_headcount:
         target_eoy_headcount = year_start_headcount_for_calc
     else:  # Growth rate
-        log.info(f"[HIRING DEBUG Year {sim_year}] year_start_headcount_for_calc: {year_start_headcount_for_calc}")
-        log.info(f"[HIRING DEBUG Year {sim_year}] growth_rate (runtime): {growth_rate:.4f}")
-        target_eoy_headcount = math.ceil(
-            year_start_headcount_for_calc * (1 + growth_rate)
+        log.info(
+            f"[HIRING DEBUG Year {sim_year}] year_start_headcount_for_calc: {year_start_headcount_for_calc}"
         )
-        log.info(f"[HIRING DEBUG Year {sim_year}] Calculated target_eoy_headcount: {target_eoy_headcount}")
+        log.info(f"[HIRING DEBUG Year {sim_year}] growth_rate (runtime): {growth_rate:.4f}")
+        target_eoy_headcount = math.ceil(year_start_headcount_for_calc * (1 + growth_rate))
+        log.info(
+            f"[HIRING DEBUG Year {sim_year}] Calculated target_eoy_headcount: {target_eoy_headcount}"
+        )
     log.info(
         f"Year {sim_year}: Target EOY headcount (based on active start {year_start_headcount_for_calc} and growth {growth_rate:.2%}) = {target_eoy_headcount}"
     )
@@ -334,15 +315,21 @@ def run_dynamics_for_year(
     if net_growth_needed > 0:
         if new_hire_termination_rate < 1.0:
             log.info(f"[HIRING DEBUG Year {sim_year}] net_growth_needed: {net_growth_needed}")
-            log.info(f"[HIRING DEBUG Year {sim_year}] new_hire_termination_rate: {new_hire_termination_rate:.4f}")
+            log.info(
+                f"[HIRING DEBUG Year {sim_year}] new_hire_termination_rate: {new_hire_termination_rate:.4f}"
+            )
             hires_to_make = math.ceil(net_growth_needed / (1 - new_hire_termination_rate))
-            log.info(f"[HIRING DEBUG Year {sim_year}] Calculated hires_to_make (grossed up): {hires_to_make}")
+            log.info(
+                f"[HIRING DEBUG Year {sim_year}] Calculated hires_to_make (grossed up): {hires_to_make}"
+            )
             log.info(
                 f"Year {sim_year}: Calculated {hires_to_make} hires needed to achieve net growth of {net_growth_needed} (accounting for {new_hire_termination_rate:.2%} new hire terminations via division)"
             )
         else:
             hires_to_make = 0
-            log.warning(f"Year {sim_year}: new_hire_termination_rate >= 1.0, cannot hire any employees.")
+            log.warning(
+                f"Year {sim_year}: new_hire_termination_rate >= 1.0, cannot hire any employees."
+            )
     else:
         hires_to_make = 0
         log.info(
@@ -375,14 +362,10 @@ def run_dynamics_for_year(
         if not new_hires_df.empty:
             log.info(f"Generated {len(new_hires_df)} new hire records.")
             if EMP_ID not in new_hires_df.columns:
-                log.error(
-                    f"CRITICAL: generate_new_hires did not produce column '{EMP_ID}'."
-                )
+                log.error(f"CRITICAL: generate_new_hires did not produce column '{EMP_ID}'.")
                 return pd.DataFrame()
             if not new_hires_df[EMP_ID].is_unique:
-                log.error(
-                    f"CRITICAL: Generated new hire '{EMP_ID}' values are not unique."
-                )
+                log.error(f"CRITICAL: Generated new hire '{EMP_ID}' values are not unique.")
 
             new_hires_df = new_hires_df.set_index(EMP_ID, drop=False)
             if EMP_TERM_DATE not in new_hires_df.columns:
@@ -416,9 +399,7 @@ def run_dynamics_for_year(
                     rng=rng_nh_term,
                     day_of_month=28,
                 )
-                new_hires_df.loc[terminated_nh_indices, EMP_TERM_DATE] = (
-                    term_dates_for_nh
-                )
+                new_hires_df.loc[terminated_nh_indices, EMP_TERM_DATE] = term_dates_for_nh
             log.info(
                 f"Year {sim_year}: Deterministically terminated {len(terminated_nh_indices)} new hires."
             )
@@ -447,9 +428,7 @@ def run_dynamics_for_year(
                 & (new_hires_df[EMP_TERM_DATE] >= start_date)
                 & (new_hires_df[EMP_TERM_DATE] <= end_date)
             )
-            terminated_nh_indices = new_hires_df[
-                terminated_nh_this_step_mask
-            ].index.tolist()
+            terminated_nh_indices = new_hires_df[terminated_nh_this_step_mask].index.tolist()
             log.info(
                 f"Year {sim_year}: Stochastically terminated {len(terminated_nh_indices)} new hires."
             )
@@ -462,9 +441,13 @@ def run_dynamics_for_year(
         # Debug: Log birth date distribution in new hires
         birth_dates = new_hires_df[EMP_BIRTH_DATE]
         unique_birth_dates = birth_dates.nunique()
-        log.debug(f"New hires birth date stats: Total={len(new_hires_df)}, Unique={unique_birth_dates}")
+        log.debug(
+            f"New hires birth date stats: Total={len(new_hires_df)}, Unique={unique_birth_dates}"
+        )
         if unique_birth_dates < len(new_hires_df):
-            log.warning(f"Potential birth date duplication: Only {unique_birth_dates} unique birth dates among {len(new_hires_df)} new hires")
+            log.warning(
+                f"Potential birth date duplication: Only {unique_birth_dates} unique birth dates among {len(new_hires_df)} new hires"
+            )
         final_df_list.append(new_hires_df.reset_index(drop=True))
 
     if not final_df_list:
@@ -490,9 +473,7 @@ def run_dynamics_for_year(
         final_dynamics_df[EMP_TERM_DATE] > end_date
     )
     final_eoy_active_headcount = final_eoy_active_mask.sum()
-    calculated_target_eoy = (
-        target_eoy_headcount if "target_eoy_headcount" in locals() else "N/A"
-    )
+    calculated_target_eoy = target_eoy_headcount if "target_eoy_headcount" in locals() else "N/A"
     log.info(
         f"Year {sim_year}: Combined population. Total records = {len(final_dynamics_df)}. "
         f"Active EOY = {final_eoy_active_headcount} (Calculated Target EOY for hiring: {calculated_target_eoy})"

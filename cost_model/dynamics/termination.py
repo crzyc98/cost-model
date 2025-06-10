@@ -5,17 +5,18 @@ QuickStart: /docs/cost_model/dynamics/termination.md
 """
 
 import logging
-import pandas as pd
+from typing import Optional, Union
+
 import numpy as np
-from typing import Union, Optional
+import pandas as pd
 
 # Use relative imports for other modules within the dynamics package if needed
 try:
-    from .sampling.terminations import sample_terminations  # Assumes this exists
-    from .sampling.salary import (
-        SalarySampler,
+    from .sampling.salary import (  # If needed for salary sampling
         DefaultSalarySampler,
-    )  # If needed for salary sampling
+        SalarySampler,
+    )
+    from .sampling.terminations import sample_terminations  # Assumes this exists
 except ImportError:
     print("Warning (termination.py): Could not import sampling helpers.")
 
@@ -30,7 +31,7 @@ except ImportError:
 
 # Use absolute imports for modules outside dynamics
 try:
-    from cost_model.utils.columns import EMP_TERM_DATE, EMP_HIRE_DATE, EMP_GROSS_COMP
+    from cost_model.utils.columns import EMP_GROSS_COMP, EMP_HIRE_DATE, EMP_TERM_DATE
 except ImportError:
     print("Warning (termination.py): Could not import column constants.")
     EMP_TERM_DATE, EMP_HIRE_DATE, EMP_GROSS_COMP = (
@@ -78,25 +79,19 @@ def apply_turnover(
 
     # Call the underlying sampling function (which should handle masking etc.)
     # sample_terminations should return df with EMP_TERM_DATE updated
-    local_log.debug(
-        f"Applying turnover for period {start_date.date()} to {end_date.date()}..."
-    )
+    local_log.debug(f"Applying turnover for period {start_date.date()} to {end_date.date()}...")
     df_with_terms = sample_terminations(df, hire_col, probs_or_rate, end_date, rng)
 
     # --- Optional: Sample Termination Compensation ---
     # Check if sampler and previous salaries are provided
     if sampler and prev_term_salaries is not None and not prev_term_salaries.empty:
-        term_mask = df_with_terms[EMP_TERM_DATE].between(
-            start_date, end_date, inclusive="both"
-        )
+        term_mask = df_with_terms[EMP_TERM_DATE].between(start_date, end_date, inclusive="both")
         # Also check if the term date was newly assigned in this step (optional, depends on sample_terminations logic)
         # Example: term_mask = term_mask & df[EMP_TERM_DATE].isna() # Only sample for newly termed
 
         n_term_in_period = term_mask.sum()
         if n_term_in_period > 0:
-            local_log.debug(
-                f"Sampling termination compensation for {n_term_in_period} employees."
-            )
+            local_log.debug(f"Sampling termination compensation for {n_term_in_period} employees.")
             try:
                 draws = sampler.sample_terminations(
                     prev_term_salaries, size=n_term_in_period, rng=rng

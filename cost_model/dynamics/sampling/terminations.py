@@ -4,16 +4,19 @@ Functions related to sampling terminations during workforce simulations.
 QuickStart: see docs/cost_model/dynamics/sampling/terminations.md
 """
 
-import pandas as pd
-import numpy as np
-from typing import Union, Optional
-from numpy.random import Generator, default_rng
 import logging
-from cost_model.state.schema import (
+from typing import Optional, Union
+
+import numpy as np
+import pandas as pd
+from numpy.random import Generator, default_rng
+
+from cost_model.state.schema import (  # Ensure these are correct
     EMP_TERM_DATE,
     STATUS_COL,
     TERM_RATE,
-)  # Ensure these are correct
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,9 +68,7 @@ def sample_terminations(
         logger.debug(f"Applying uniform termination rate: {rate:.2%}")
         probs = pd.Series(rate, index=df_out.index)
     else:
-        logger.error(
-            f"Unexpected type for termination_rate: {type(termination_rate)}. Using 0%."
-        )
+        logger.error(f"Unexpected type for termination_rate: {type(termination_rate)}. Using 0%.")
         probs = pd.Series(0.0, index=df_out.index)
     probs = probs.clip(0.0, 1.0)
     # --- End probability handling block ---
@@ -85,16 +86,19 @@ def sample_terminations(
 
     # --- Special-case float/int “annual” termination_rate: pick exactly N = ceil(rate×active), weighted by hazard ---
     import math
+
     if isinstance(termination_rate, (float, int)):
-        valid_idx  = df_out.index[~already_term & valid_hire]
-        total_valid= len(valid_idx)
-        rate       = float(termination_rate)
-        n_to_term  = math.ceil(total_valid * rate)
-        logger.info(f"sample_terminations: terminating exactly {n_to_term} of {total_valid} per annual rate {rate:.2%}")
+        valid_idx = df_out.index[~already_term & valid_hire]
+        total_valid = len(valid_idx)
+        rate = float(termination_rate)
+        n_to_term = math.ceil(total_valid * rate)
+        logger.info(
+            f"sample_terminations: terminating exactly {n_to_term} of {total_valid} per annual rate {rate:.2%}"
+        )
 
         if n_to_term > 0 and total_valid > 0:
             # — merge in per-row hazard (term_rate) if it’s on df_out —
-            if hasattr(df_out, 'columns') and TERM_RATE in df_out.columns:
+            if hasattr(df_out, "columns") and TERM_RATE in df_out.columns:
                 weights = df_out.loc[valid_idx, TERM_RATE].fillna(0.0)
                 # normalize to sum=1
                 probs_w = weights.div(weights.sum()) if weights.sum() > 0 else None
@@ -103,8 +107,9 @@ def sample_terminations(
 
             # weighted sampling without replacement
             if probs_w is not None:
-                losers = rng.choice(valid_idx, size=min(n_to_term, total_valid),
-                                    replace=False, p=probs_w.values)
+                losers = rng.choice(
+                    valid_idx, size=min(n_to_term, total_valid), replace=False, p=probs_w.values
+                )
             else:
                 losers = rng.choice(valid_idx, size=min(n_to_term, total_valid), replace=False)
 
@@ -124,9 +129,9 @@ def sample_terminations(
 
     if n_terminated > 0:
         # Restore random offset logic for termination date
-        offsets = np.floor(
-            rng.random(n_terminated) * days_until[terminated_mask].values
-        ).astype(int)
+        offsets = np.floor(rng.random(n_terminated) * days_until[terminated_mask].values).astype(
+            int
+        )
         term_dates = hires[terminated_mask] + pd.to_timedelta(offsets, unit="D")
 
         # Ensure termination date is not before the start of the year and not after the end of the year
@@ -137,16 +142,22 @@ def sample_terminations(
         hire_dates = hires[terminated_mask]
         invalid_mask = term_dates < hire_dates
         if invalid_mask.any():
-            logger.warning(f"{invalid_mask.sum()} terminations had term_date < hire_date. Setting term_date to NaT and not marking as terminated for these rows.")
+            logger.warning(
+                f"{invalid_mask.sum()} terminations had term_date < hire_date. Setting term_date to NaT and not marking as terminated for these rows."
+            )
             # For these, set term_date to NaT and do not mark as terminated
             # Only assign valid term dates
             valid_mask = ~invalid_mask
             # Assign only to valid rows
-            df_out.loc[terminated_mask[terminated_mask].index[valid_mask], EMP_TERM_DATE] = term_dates[valid_mask]
+            df_out.loc[terminated_mask[terminated_mask].index[valid_mask], EMP_TERM_DATE] = (
+                term_dates[valid_mask]
+            )
             # Mark only valid as terminated
             if STATUS_COL not in df_out.columns:
                 df_out[STATUS_COL] = "Active"
-            df_out.loc[terminated_mask[terminated_mask].index[valid_mask], STATUS_COL] = "Terminated"
+            df_out.loc[terminated_mask[terminated_mask].index[valid_mask], STATUS_COL] = (
+                "Terminated"
+            )
             # For invalid, leave as not terminated (Active/NaT)
         else:
             # Assign termination date and status using .loc
@@ -158,8 +169,6 @@ def sample_terminations(
 
         # Ensure correct dtype after assignment
         df_out[EMP_TERM_DATE] = pd.to_datetime(df_out[EMP_TERM_DATE])
-        logger.debug(
-            f"Assigned random termination dates and status for {n_terminated} employees."
-        )
+        logger.debug(f"Assigned random termination dates and status for {n_terminated} employees.")
 
     return df_out

@@ -10,31 +10,38 @@ signature and behavior as the original implementation.
 """
 import logging
 import uuid
-from typing import Dict, List, Optional, Tuple, Any
-import pandas as pd
+from typing import Any, Dict, List, Optional, Tuple
 
-from logging_config import get_logger, get_diagnostic_logger
+import pandas as pd
+from logging_config import get_diagnostic_logger, get_logger
 
 from cost_model.state.event_log import EVENT_COLS
 from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_STATUS_EOY,
-    ACTIVE_STATUS, EMP_CONTR, EMPLOYER_CORE, EMPLOYER_MATCH, IS_ELIGIBLE,
-    EMP_ACTIVE
+    ACTIVE_STATUS,
+    EMP_ACTIVE,
+    EMP_BIRTH_DATE,
+    EMP_CONTR,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_STATUS_EOY,
+    EMPLOYER_CORE,
+    EMPLOYER_MATCH,
+    IS_ELIGIBLE,
 )
 
 # Import validation and utility functions
 from ..validation import ensure_snapshot_cols, validate_and_extract_hazard_slice
 
 # Import orchestrator components
-from .base import YearContext, filter_valid_employee_ids, ensure_simulation_year_column
-from .hiring import HiringOrchestrator
-from .termination import TerminationOrchestrator
-from .promotion import PromotionOrchestrator
-from .validator import SnapshotValidator
+from .base import YearContext, ensure_simulation_year_column, filter_valid_employee_ids
 
 # Import extracted diagnostic and event consolidation utilities
-from .diagnostic_utils import DiagnosticTracker, n_active, log_headcount_stage
+from .diagnostic_utils import DiagnosticTracker, log_headcount_stage, n_active
 from .event_consolidation import EventConsolidationManager, consolidate_events
+from .hiring import HiringOrchestrator
+from .promotion import PromotionOrchestrator
+from .termination import TerminationOrchestrator
+from .validator import SnapshotValidator
 
 
 def run_one_year(
@@ -47,7 +54,7 @@ def run_one_year(
     rng: Any,
     census_template_path: Optional[str] = None,
     rng_seed_offset: int = 0,
-    deterministic_term: bool = False
+    deterministic_term: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Orchestrates simulation for a single year using refactored modular components.
@@ -103,50 +110,47 @@ def run_one_year(
             rng=rng,
             rng_seed_offset=rng_seed_offset,
             deterministic_term=deterministic_term,
-            census_template_path=census_template_path
+            census_template_path=census_template_path,
         )
 
         # Step 1: Process promotions for experienced employees
-        promotion_events, snapshot = promotion_orchestrator.get_events(
-            snapshot, year_context
-        )
-        event_manager.add_events(promotion_events, 'promotion')
+        promotion_events, snapshot = promotion_orchestrator.get_events(snapshot, year_context)
+        event_manager.add_events(promotion_events, "promotion")
         diagnostic_tracker.track_stage(snapshot, "Post-Promotions")
 
         # Step 2: Process terminations for experienced employees
         termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
             snapshot, year_context
         )
-        event_manager.add_events(termination_events, 'termination')
+        event_manager.add_events(termination_events, "termination")
         diagnostic_tracker.track_stage(snapshot, "Post-Experienced-Terminations")
 
         # Step 3: Process hiring
-        hiring_events, snapshot = hiring_orchestrator.get_events(
-            snapshot, year_context
-        )
-        event_manager.add_events(hiring_events, 'hiring')
+        hiring_events, snapshot = hiring_orchestrator.get_events(snapshot, year_context)
+        event_manager.add_events(hiring_events, "hiring")
         diagnostic_tracker.track_stage(snapshot, "Post-Hiring")
 
         # Step 4: Process new hire terminations
         nh_termination_events, snapshot = termination_orchestrator.get_new_hire_termination_events(
             snapshot, year_context
         )
-        event_manager.add_events(nh_termination_events, 'nh_termination')
+        event_manager.add_events(nh_termination_events, "nh_termination")
         diagnostic_tracker.track_stage(snapshot, "Post-New-Hire-Terminations")
 
         # Step 5: Apply contribution calculations
         contribution_events, snapshot = _apply_contribution_calculations(
             snapshot, year, global_params, plan_rules, logger
         )
-        event_manager.add_events(contribution_events, 'contribution')
+        event_manager.add_events(contribution_events, "contribution")
         diagnostic_tracker.track_stage(snapshot, "Post-Contributions")
 
         # Step 6: Apply compensation events (if any)
         compensation_events = _generate_compensation_events(snapshot, year, logger)
-        event_manager.add_events(compensation_events, 'compensation')
+        event_manager.add_events(compensation_events, "compensation")
 
         # Step 7: Final validation
-        final_snapshot = validator.validate_final_snapshot(snapshot, year)
+        validator.validate_eoy(snapshot)
+        final_snapshot = snapshot
         diagnostic_tracker.track_stage(final_snapshot, "Final-Snapshot")
 
         # Step 8: Consolidate all events
@@ -170,7 +174,7 @@ def _prepare_inputs(
     year: int,
     hazard_table: pd.DataFrame,
     logger: logging.Logger,
-    diagnostic_tracker: DiagnosticTracker
+    diagnostic_tracker: DiagnosticTracker,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Prepare and validate inputs for orchestration.
@@ -189,7 +193,7 @@ def _prepare_inputs(
 
     # Ensure snapshot has required columns
     snapshot = ensure_snapshot_cols(prev_snapshot)
-    
+
     # Track initial state
     diagnostic_tracker.track_stage(snapshot, "Initial-Snapshot")
 
@@ -203,7 +207,7 @@ def _prepare_inputs(
     snapshot = ensure_simulation_year_column(snapshot, year)
 
     logger.info(f"Prepared snapshot with {len(snapshot)} employees for year {year}")
-    
+
     return snapshot, hazard_slice
 
 
@@ -212,7 +216,7 @@ def _apply_contribution_calculations(
     year: int,
     global_params: Any,
     plan_rules: Dict[str, Any],
-    logger: logging.Logger
+    logger: logging.Logger,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Apply contribution calculations and plan rules to snapshot.
@@ -234,17 +238,17 @@ def _apply_contribution_calculations(
     try:
         # Import and apply contribution calculation logic
         from cost_model.plan_rules.contributions import apply_contributions
-        
+
         updated_snapshot, events = apply_contributions(
             snapshot=snapshot,
             simulation_year=year,
             global_params=global_params,
-            plan_rules=plan_rules
+            plan_rules=plan_rules,
         )
-        
+
         logger.info(f"Applied contribution calculations: {len(events)} events generated")
         return events, updated_snapshot
-        
+
     except ImportError:
         logger.warning("Contribution calculation module not available, skipping")
         return pd.DataFrame(), snapshot.copy()
@@ -254,9 +258,7 @@ def _apply_contribution_calculations(
 
 
 def _generate_compensation_events(
-    snapshot: pd.DataFrame,
-    year: int,
-    logger: logging.Logger
+    snapshot: pd.DataFrame, year: int, logger: logging.Logger
 ) -> pd.DataFrame:
     """
     Generate compensation-related events.
@@ -276,15 +278,12 @@ def _generate_compensation_events(
     try:
         # Import and apply compensation event logic
         from cost_model.engines.comp import generate_compensation_events
-        
-        events = generate_compensation_events(
-            snapshot=snapshot,
-            simulation_year=year
-        )
-        
+
+        events = generate_compensation_events(snapshot=snapshot, simulation_year=year)
+
         logger.info(f"Generated {len(events)} compensation events")
         return events
-        
+
     except ImportError:
         logger.info("Compensation event module not available, skipping")
         return pd.DataFrame()
@@ -295,9 +294,9 @@ def _generate_compensation_events(
 
 # Backward compatibility exports
 __all__ = [
-    'run_one_year',
-    'n_active',
-    'log_headcount_stage',
-    'DiagnosticTracker',
-    'EventConsolidationManager'
+    "run_one_year",
+    "n_active",
+    "log_headcount_stage",
+    "DiagnosticTracker",
+    "EventConsolidationManager",
 ]

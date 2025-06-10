@@ -1,18 +1,17 @@
 import pandas as pd
 from pandas import Timestamp
-
-from utils.rules.auto_enrollment import apply as apply_ae
 from utils.columns import (
+    AE_OPTED_OUT,
+    AE_WINDOW_END,
+    AE_WINDOW_START,
+    ELIGIBILITY_ENTRY_DATE,
+    EMP_DEFERRAL_RATE,
     IS_ELIGIBLE,
     IS_PARTICIPATING,
-    EMP_DEFERRAL_RATE,
-    AE_OPTED_OUT,
-    ELIGIBILITY_ENTRY_DATE,
-    AE_WINDOW_START,
-    AE_WINDOW_END,
     STATUS_COL,
 )
 from utils.constants import ACTIVE_STATUSES
+from utils.rules.auto_enrollment import apply as apply_ae
 
 
 def test_ae_window_and_flags():

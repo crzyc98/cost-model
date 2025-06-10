@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 import json
 import logging
-from pathlib import Path
-import pandas as pd
 import uuid
+from pathlib import Path
+
+import pandas as pd
 
 from cost_model.state.event_log import (
-    EVT_HIRE,
-    EVT_COMP,
-    EVT_TERM,
     EVENT_COLS,
     EVENT_PANDAS_DTYPES,
+    EVT_COMP,
+    EVT_HIRE,
+    EVT_TERM,
 )
 from cost_model.utils.columns import (
-    EMP_ID,
-    EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_TERM_DATE,
     EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_TERM_DATE,
 )
 
 
@@ -30,9 +31,7 @@ def seed_from_census(
     if input_path.suffix == ".parquet":
         df = pd.read_parquet(input_path)
     else:  # Assume CSV
-        df = pd.read_csv(
-            input_path, parse_dates=[EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_TERM_DATE]
-        )
+        df = pd.read_csv(input_path, parse_dates=[EMP_HIRE_DATE, EMP_BIRTH_DATE, EMP_TERM_DATE])
     logger.info(f"Loaded {len(df)} records from census")
 
     records = []
@@ -43,9 +42,7 @@ def seed_from_census(
 
         # --- HIRE Event ---
         hire_details_dict = {
-            "birth_date": (
-                birth_date.strftime("%Y-%m-%d") if pd.notna(birth_date) else None
-            ),
+            "birth_date": (birth_date.strftime("%Y-%m-%d") if pd.notna(birth_date) else None),
             "role": row.get("employee_role", None),
         }
         records.append(
@@ -76,9 +73,9 @@ def seed_from_census(
 
         # --- TERM Event ---
         term_date = row.get(EMP_TERM_DATE)
-        if pd.notna(term_date) and pd.Timestamp(
-            "2024-01-01"
-        ) <= term_date <= pd.Timestamp("2024-12-31"):
+        if pd.notna(term_date) and pd.Timestamp("2024-01-01") <= term_date <= pd.Timestamp(
+            "2024-12-31"
+        ):
             records.append(
                 {
                     "event_id": str(uuid.uuid4()),
@@ -128,9 +125,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--census", type=str, required=True, help="Path to census CSV or Parquet file"
     )
-    parser.add_argument(
-        "--out", type=str, required=True, help="Output path for event log Parquet"
-    )
+    parser.add_argument("--out", type=str, required=True, help="Output path for event log Parquet")
     args = parser.parse_args()
 
     # Run the main function

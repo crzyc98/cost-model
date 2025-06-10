@@ -1,11 +1,9 @@
 # utils/compensation/bump.py
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
-def apply_comp_increase(
-    series: pd.Series, increase_rule, seed: int = None
-) -> pd.Series:
+def apply_comp_increase(series: pd.Series, increase_rule, seed: int = None) -> pd.Series:
     """
     Apply a compensation bump to a pandas Series.
 

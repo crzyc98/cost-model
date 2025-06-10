@@ -2,28 +2,30 @@
 # This file contains the logic for applying plan rules (Phase II)
 
 import logging
-import pandas as pd
-import numpy as np
-from typing import Mapping, Any
+from typing import Any, Mapping
 
-# Import specific rule application functions using relative paths
-from .rules.eligibility import apply as apply_eligibility
+import numpy as np
+import pandas as pd
+
+# Import constants
+from cost_model.state.schema import EMP_TERM_DATE, STATUS_COL
+
+from .constants import ACTIVE_STATUS, INACTIVE_STATUS
 from .rules.auto_enrollment import apply as apply_auto_enrollment
 from .rules.auto_increase import apply as apply_auto_increase
 from .rules.contributions import apply as apply_contributions
 
+# Import specific rule application functions using relative paths
+from .rules.eligibility import apply as apply_eligibility
+
 # Import rule validators/data classes
 from .rules.validators import (
-    EligibilityRule,
     AutoEnrollmentRule,
     ContributionsRule,
+    EligibilityRule,
     MatchRule,
     NonElectiveRule,
 )
-
-# Import constants
-from cost_model.state.schema import STATUS_COL, EMP_TERM_DATE
-from .constants import ACTIVE_STATUS, INACTIVE_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +54,7 @@ def apply_plan_rules(
     # normalize participation and enrollment flags using pandas nullable BooleanDtype
     for col in ["is_participating", "ae_opted_out", "ai_opted_out"]:
         # get existing col or create empty BooleanDtype Series
-        series = (
-            df[col] if col in df.columns else pd.Series(index=df.index, dtype="boolean")
-        )
+        series = df[col] if col in df.columns else pd.Series(index=df.index, dtype="boolean")
         # cast to BooleanDtype and fill missing as False
         df[col] = series.astype("boolean").fillna(False)
 

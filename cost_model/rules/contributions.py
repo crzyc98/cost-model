@@ -5,31 +5,31 @@ Calculates employee and employer contributions for the simulation year.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 
 from cost_model.rules.validators import ContributionsRule, MatchRule, NonElectiveRule
 from cost_model.state.schema import (
-    EMP_ID,
-    EMP_GROSS_COMP,
-    EMP_DEFERRAL_RATE,
-    EMP_CONTR,
-    EMPLOYER_MATCH,
-    EMPLOYER_CORE,
-    EMP_CAPPED_COMP,
-    EMP_PLAN_YEAR_COMP,
-    EMP_HIRE_DATE,
-    EMP_TERM_DATE,
-    EMP_STATUS_EOY,
+    ACTIVE_STATUS,
     EMP_ACTIVE,
     EMP_BIRTH_DATE,
-    ACTIVE_STATUS,
+    EMP_CAPPED_COMP,
+    EMP_CONTR,
+    EMP_DEFERRAL_RATE,
+    EMP_GROSS_COMP,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_PLAN_YEAR_COMP,
+    EMP_STATUS_EOY,
+    EMP_TERM_DATE,
+    EMPLOYER_CORE,
+    EMPLOYER_MATCH,
     to_nullable_bool,
 )
-from cost_model.utils.date_utils import calculate_age
 from cost_model.utils.constants import ACTIVE_STATUSES
+from cost_model.utils.date_utils import calculate_age
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -84,17 +84,13 @@ def apply(
     # 1) Check for duplicate indices
     dupes = df.index.duplicated()
     if dupes.any():
-        logger.error(
-            "Duplicate indices found in input DataFrame: %d duplicates", dupes.sum()
-        )
+        logger.error("Duplicate indices found in input DataFrame: %d duplicates", dupes.sum())
         logger.debug("Duplicate index values: %s", df.index[dupes].unique())
 
     logger.info(f"Calculating contributions for {simulation_year}")
 
     # --- Extract IRS limits for the year ---
-    year_limits_obj = irs_limits.get(
-        simulation_year
-    )  # Get the IRSYearLimits object or None
+    year_limits_obj = irs_limits.get(simulation_year)  # Get the IRSYearLimits object or None
 
     if year_limits_obj:  # Check if limits exist for the year
         comp_limit = getattr(year_limits_obj, "compensation_limit", 345000)
@@ -153,17 +149,13 @@ def apply(
             df.loc[:, col] = pd.to_numeric(val, errors="coerce").fillna(0.0)
         elif isinstance(val, (list, tuple, np.ndarray)):
             df.loc[:, col] = (
-                pd.Series(val, index=df.index)
-                .pipe(pd.to_numeric, errors="coerce")
-                .fillna(0.0)
+                pd.Series(val, index=df.index).pipe(pd.to_numeric, errors="coerce").fillna(0.0)
             )
         else:
             df.loc[:, col] = 0.0
 
     # --- 3) Proration of compensation ---
-    total_days_in_year = (
-        pd.to_datetime(year_end) - pd.to_datetime(year_start)
-    ).days + 1
+    total_days_in_year = (pd.to_datetime(year_end) - pd.to_datetime(year_start)).days + 1
 
     # Ensure date columns are in datetime format
     hire_date_col = pd.to_datetime(df.get(EMP_HIRE_DATE), errors="coerce")
@@ -202,9 +194,7 @@ def apply(
     if EMP_TERM_DATE in df.columns:  # only if original column exists
         original_term_dates_series = df[EMP_TERM_DATE]
         # Check for non-None/non-NaN in original, and NaT in coerced
-        unparseable_term_date_mask = (
-            original_term_dates_series.notna() & term_date_col.isna()
-        )
+        unparseable_term_date_mask = original_term_dates_series.notna() & term_date_col.isna()
         if unparseable_term_date_mask.any():
             df.loc[unparseable_term_date_mask, "days_worked"] = 0
             logger.warning(
@@ -218,9 +208,7 @@ def apply(
     if EMP_HIRE_DATE in df.columns:  # only if original column exists
         original_hire_dates_series = df[EMP_HIRE_DATE]
         # Check for non-None/non-NaN in original, and NaT in coerced
-        unparseable_hire_date_mask = (
-            original_hire_dates_series.notna() & hire_date_col.isna()
-        )
+        unparseable_hire_date_mask = original_hire_dates_series.notna() & hire_date_col.isna()
         if unparseable_hire_date_mask.any():
             df.loc[unparseable_hire_date_mask, "days_worked"] = 0
             logger.warning(
@@ -234,9 +222,7 @@ def apply(
         df.loc[:, "proration"] = df["days_worked"] / total_days_in_year
 
     # Ensure EMP_GROSS_COMP is numeric before multiplication
-    current_gross_comp = pd.to_numeric(df.get(EMP_GROSS_COMP), errors="coerce").fillna(
-        0.0
-    )
+    current_gross_comp = pd.to_numeric(df.get(EMP_GROSS_COMP), errors="coerce").fillna(0.0)
     df.loc[:, EMP_PLAN_YEAR_COMP] = current_gross_comp * df["proration"]
 
     # Calculate capped compensation based on prorated comp_limit
@@ -260,7 +246,9 @@ def apply(
         active_mask = df["status"].isin(ACTIVE_STATUSES)
     else:
         # Last resort: assume all employees are active and log warning
-        logger.warning("No status column found (EMP_STATUS_EOY, EMP_ACTIVE, or 'status'). Assuming all employees are active.")
+        logger.warning(
+            "No status column found (EMP_STATUS_EOY, EMP_ACTIVE, or 'status'). Assuming all employees are active."
+        )
         active_mask = pd.Series(True, index=df.index)
 
     catch_mask = active_mask & (df["current_age"] >= catch_age)
@@ -272,13 +260,19 @@ def apply(
     # --- 5) Employee pre-tax contributions ---
     potential = df[EMP_CAPPED_COMP] * df[EMP_DEFERRAL_RATE]
     df.loc[:, EMP_CONTR] = np.minimum(potential, df["effective_deferral_limit"])
-    logger.info(f"Employee contributions calculated - sample potential: {potential.head().tolist()}")
-    logger.info(f"Employee contributions calculated - sample final: {df[EMP_CONTR].head().tolist()}")
+    logger.info(
+        f"Employee contributions calculated - sample potential: {potential.head().tolist()}"
+    )
+    logger.info(
+        f"Employee contributions calculated - sample final: {df[EMP_CONTR].head().tolist()}"
+    )
 
     # --- 6) Employer non-elective contributions (NEC) ---
     df.loc[:, EMPLOYER_CORE] = df[EMP_CAPPED_COMP] * nec_rules.rate
     logger.info(f"NEC rate: {nec_rules.rate}")
-    logger.info(f"Employer core contributions calculated - sample: {df[EMPLOYER_CORE].head().tolist()}")
+    logger.info(
+        f"Employer core contributions calculated - sample: {df[EMPLOYER_CORE].head().tolist()}"
+    )
 
     # --- 7) Employer match contributions ---
     df.loc[:, EMPLOYER_MATCH] = 0.0
@@ -300,7 +294,9 @@ def apply(
         if dollar_cap is not None:
             match_amt = np.minimum(match_amt, dollar_cap)
         df.loc[active_mask, EMPLOYER_MATCH] = match_amt[active_mask]
-        logger.info(f"Employer match contributions calculated - sample: {df[EMPLOYER_MATCH].head().tolist()}")
+        logger.info(
+            f"Employer match contributions calculated - sample: {df[EMPLOYER_MATCH].head().tolist()}"
+        )
     else:
         logger.info("No match tiers defined - match contributions remain 0")
 
@@ -345,7 +341,14 @@ def apply(
 
     # Log a few sample rows for debugging
     logger.info(f"Sample output rows (first 3):")
-    sample_cols = [EMP_ID, EMP_GROSS_COMP, EMP_DEFERRAL_RATE, EMP_CONTR, EMPLOYER_MATCH, EMPLOYER_CORE]
+    sample_cols = [
+        EMP_ID,
+        EMP_GROSS_COMP,
+        EMP_DEFERRAL_RATE,
+        EMP_CONTR,
+        EMPLOYER_MATCH,
+        EMPLOYER_CORE,
+    ]
     available_cols = [col for col in sample_cols if col in df.columns]
     logger.info(f"{df[available_cols].head(3).to_string()}")
 

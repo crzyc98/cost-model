@@ -1,30 +1,31 @@
 """Auto Enrollment rule: window setup, proactive enroll, re-enroll, and outcome application."""
 
 import logging
+
 import numpy as np
 import pandas as pd
 
+from cost_model.rules.validators import AutoEnrollmentRule
 from cost_model.utils.columns import (
+    AE_OPT_OUT_DATE,
+    AE_OPTED_OUT,
+    AE_WINDOW_END,
+    AE_WINDOW_START,
+    AUTO_ENROLLED,
+    AUTO_REENROLLED,
+    BECAME_ELIGIBLE_DURING_YEAR,
+    ELIGIBILITY_ENTRY_DATE,
     EMP_DEFERRAL_RATE,
+    ENROLLMENT_DATE,
+    ENROLLMENT_METHOD,
+    FIRST_CONTRIBUTION_DATE,
     IS_ELIGIBLE,
     IS_PARTICIPATING,
-    ELIGIBILITY_ENTRY_DATE,
-    STATUS_COL,
-    AE_OPTED_OUT,
     PROACTIVE_ENROLLED,
-    AUTO_ENROLLED,
-    ENROLLMENT_DATE,
-    AE_WINDOW_START,
-    AE_WINDOW_END,
-    FIRST_CONTRIBUTION_DATE,
-    AE_OPT_OUT_DATE,
-    AUTO_REENROLLED,
-    ENROLLMENT_METHOD,
-    BECAME_ELIGIBLE_DURING_YEAR,
+    STATUS_COL,
     WINDOW_CLOSED_DURING_YEAR,
 )
 from cost_model.utils.constants import ACTIVE_STATUSES
-from cost_model.rules.validators import AutoEnrollmentRule
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +53,7 @@ def apply(
     ]
     missing = [col for col in required if col not in df.columns]
     if missing:
-        logger.warning(
-            f"Required columns missing for Auto Enrollment: {missing}. Skipping."
-        )
+        logger.warning(f"Required columns missing for Auto Enrollment: {missing}. Skipping.")
         return df
 
     # Initialize tracking columns
@@ -100,9 +99,7 @@ def apply(
         df.loc[selected, IS_PARTICIPATING] = True
         df.loc[selected, PROACTIVE_ENROLLED] = True
         df.loc[selected, ENROLLMENT_DATE] = df.loc[selected, ELIGIBILITY_ENTRY_DATE]
-        df.loc[selected, FIRST_CONTRIBUTION_DATE] = df.loc[
-            selected, ELIGIBILITY_ENTRY_DATE
-        ]
+        df.loc[selected, FIRST_CONTRIBUTION_DATE] = df.loc[selected, ELIGIBILITY_ENTRY_DATE]
         logger.info(f"{len(selected)} proactively enrolled at eligibility.")
 
     # Re-enroll existing participants below default rate
@@ -132,9 +129,7 @@ def apply(
     df.loc[within_window, WINDOW_CLOSED_DURING_YEAR] = True
 
     # Target for AE outcomes
-    ae_target = (
-        df[IS_ELIGIBLE] & (~df[IS_PARTICIPATING]) & (~df[AE_OPTED_OUT]) & within_window
-    )
+    ae_target = df[IS_ELIGIBLE] & (~df[IS_PARTICIPATING]) & (~df[AE_OPTED_OUT]) & within_window
     num_targeted = ae_target.sum()
     if num_targeted == 0:
         logger.info("No employees targeted for Auto Enrollment this year.")

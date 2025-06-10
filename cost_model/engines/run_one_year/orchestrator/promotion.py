@@ -6,11 +6,13 @@ Handles Markov chain-based promotions, merit increases, and cost-of-living adjus
 """
 import logging
 from typing import List, Optional, Tuple
+
 import pandas as pd
 
 from cost_model.engines.markov_promotion import apply_markov_promotions
-from cost_model.state.schema import EMP_ID, EMP_LEVEL
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
+from cost_model.state.schema import EMP_ID, EMP_LEVEL
+
 from .base import YearContext, filter_valid_employee_ids
 
 
@@ -35,9 +37,7 @@ class PromotionOrchestrator:
         self.logger = logger or logging.getLogger(__name__)
 
     def get_events(
-        self,
-        snapshot: pd.DataFrame,
-        year_context: YearContext
+        self, snapshot: pd.DataFrame, year_context: YearContext
     ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
         """
         Generate promotion and compensation events and update the snapshot.
@@ -71,9 +71,7 @@ class PromotionOrchestrator:
         return [promotion_events, raise_events, exit_events], updated_snapshot
 
     def _apply_markov_promotions(
-        self,
-        snapshot: pd.DataFrame,
-        year_context: YearContext
+        self, snapshot: pd.DataFrame, year_context: YearContext
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Apply Markov chain-based promotions to the workforce.
@@ -88,11 +86,15 @@ class PromotionOrchestrator:
         # Extract promotion raise configuration from hazard table
         from cost_model.engines.comp import extract_promotion_raise_config_from_hazard
 
-        promotion_raise_config = extract_promotion_raise_config_from_hazard(year_context.hazard_slice)
+        promotion_raise_config = extract_promotion_raise_config_from_hazard(
+            year_context.hazard_slice
+        )
 
         # Fallback to global config if hazard table doesn't have promotion_raise_pct
         if not promotion_raise_config:
-            promotion_raise_config = getattr(year_context.global_params, 'promotion_raise_config', {})
+            promotion_raise_config = getattr(
+                year_context.global_params, "promotion_raise_config", {}
+            )
             self.logger.info("[PROMOTION] Using fallback promotion_raise_config from global params")
         else:
             self.logger.info("[PROMOTION] Using promotion_raise_config extracted from hazard table")
@@ -104,7 +106,7 @@ class PromotionOrchestrator:
             rng=year_context.year_rng,
             promotion_raise_config=promotion_raise_config,
             simulation_year=year_context.year,
-            global_params=year_context.global_params
+            global_params=year_context.global_params,
         )
 
         # Validate and clean events
@@ -137,7 +139,9 @@ class PromotionOrchestrator:
                 try:
                     events[col] = events[col].astype(dtype)
                 except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Could not convert {event_type} events column {col} to {dtype}: {e}")
+                    self.logger.warning(
+                        f"Could not convert {event_type} events column {col} to {dtype}: {e}"
+                    )
 
         return events
 
@@ -146,7 +150,7 @@ class PromotionOrchestrator:
         snapshot: pd.DataFrame,
         promotion_events: pd.DataFrame,
         raise_events: pd.DataFrame,
-        exit_events: pd.DataFrame
+        exit_events: pd.DataFrame,
     ) -> pd.DataFrame:
         """
         Update the snapshot with promotion results and remove exited employees.
@@ -171,27 +175,27 @@ class PromotionOrchestrator:
 
         # Apply raises (compensation changes)
         if not raise_events.empty:
-            updated_snapshot = self._apply_raises_to_snapshot(
-                updated_snapshot, raise_events
-            )
+            updated_snapshot = self._apply_raises_to_snapshot(updated_snapshot, raise_events)
 
         # Remove exited employees
         if not exit_events.empty:
             exited_emp_ids = set(exit_events[EMP_ID].unique())
             # Handle both index-based and column-based employee ID filtering
             if EMP_ID in updated_snapshot.columns:
-                updated_snapshot = updated_snapshot[~updated_snapshot[EMP_ID].isin(exited_emp_ids)].copy()
+                updated_snapshot = updated_snapshot[
+                    ~updated_snapshot[EMP_ID].isin(exited_emp_ids)
+                ].copy()
             else:
                 # If EMP_ID is in the index
-                updated_snapshot = updated_snapshot.loc[~updated_snapshot.index.isin(exited_emp_ids)].copy()
+                updated_snapshot = updated_snapshot.loc[
+                    ~updated_snapshot.index.isin(exited_emp_ids)
+                ].copy()
             self.logger.info(f"[MARKOV] Removed {len(exited_emp_ids)} exited employees")
 
         return updated_snapshot
 
     def _apply_promotions_to_snapshot(
-        self,
-        snapshot: pd.DataFrame,
-        promotion_events: pd.DataFrame
+        self, snapshot: pd.DataFrame, promotion_events: pd.DataFrame
     ) -> pd.DataFrame:
         """
         Apply promotion level changes to the snapshot.
@@ -221,9 +225,7 @@ class PromotionOrchestrator:
         return snapshot_copy
 
     def _apply_raises_to_snapshot(
-        self,
-        snapshot: pd.DataFrame,
-        raise_events: pd.DataFrame
+        self, snapshot: pd.DataFrame, raise_events: pd.DataFrame
     ) -> pd.DataFrame:
         """
         Apply compensation raises to the snapshot.
@@ -248,6 +250,7 @@ class PromotionOrchestrator:
                 mask = snapshot_copy[EMP_ID] == emp_id
                 if mask.any():
                     from cost_model.state.schema import EMP_GROSS_COMP
+
                     snapshot_copy.loc[mask, EMP_GROSS_COMP] = new_comp
                     self.logger.debug(f"Updated compensation for {emp_id} to {new_comp}")
 
@@ -266,20 +269,21 @@ class PromotionOrchestrator:
         import json
 
         # Try value_json first
-        if 'value_json' in promotion_event and pd.notna(promotion_event['value_json']):
+        if "value_json" in promotion_event and pd.notna(promotion_event["value_json"]):
             try:
-                value_data = json.loads(promotion_event['value_json'])
+                value_data = json.loads(promotion_event["value_json"])
                 if isinstance(value_data, dict):
-                    to_level = value_data.get('to_level')
+                    to_level = value_data.get("to_level")
                     if to_level is not None:
                         return int(to_level)
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
         # Try meta
-        if 'meta' in promotion_event and pd.notna(promotion_event['meta']):
+        if "meta" in promotion_event and pd.notna(promotion_event["meta"]):
             from .base import safe_get_meta
-            level = safe_get_meta(promotion_event['meta'], 'to_level')
+
+            level = safe_get_meta(promotion_event["meta"], "to_level")
             if level is not None:
                 try:
                     return int(level)
@@ -299,16 +303,17 @@ class PromotionOrchestrator:
             New compensation or None if not found
         """
         # Try value_num first
-        if 'value_num' in raise_event and pd.notna(raise_event['value_num']):
-            return float(raise_event['value_num'])
+        if "value_num" in raise_event and pd.notna(raise_event["value_num"]):
+            return float(raise_event["value_num"])
 
         # Try value_json
-        if 'value_json' in raise_event and pd.notna(raise_event['value_json']):
+        if "value_json" in raise_event and pd.notna(raise_event["value_json"]):
             import json
+
             try:
-                value_data = json.loads(raise_event['value_json'])
+                value_data = json.loads(raise_event["value_json"])
                 if isinstance(value_data, dict):
-                    new_comp = value_data.get('new_compensation') or value_data.get('new_comp')
+                    new_comp = value_data.get("new_compensation") or value_data.get("new_comp")
                     if new_comp is not None:
                         return float(new_comp)
                 elif isinstance(value_data, (int, float)):

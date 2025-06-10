@@ -1,17 +1,13 @@
 # utils/rules/formula_parsers.py
-import re
 import logging
-from typing import Tuple, List, Dict, Any
+import re
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
 _SIMPLE_RX = re.compile(r"^\s*(\d+(\.\d+)?)\s*%\s*$")
-_STANDARD_RX = re.compile(
-    r"^\s*(\d+(\.\d+)?)\s*%\s+up\s+to\s+(\d+(\.\d+)?)\s*%$", re.IGNORECASE
-)
-_TIER_RX = re.compile(
-    r"^\s*(\d+(\.\d+)?)\s*%\s+up\s+to\s+(\d+(\.\d+)?)\s*%$", re.IGNORECASE
-)
+_STANDARD_RX = re.compile(r"^\s*(\d+(\.\d+)?)\s*%\s+up\s+to\s+(\d+(\.\d+)?)\s*%$", re.IGNORECASE)
+_TIER_RX = re.compile(r"^\s*(\d+(\.\d+)?)\s*%\s+up\s+to\s+(\d+(\.\d+)?)\s*%$", re.IGNORECASE)
 
 
 def _pct_to_dec(val: str) -> float:
@@ -32,9 +28,7 @@ def parse_match_formula(formula_str: Any) -> Tuple[float, float]:
         rate = _pct_to_dec(m.group(1))
         return rate, 1.0  # or (rate, rate) if you prefer
 
-    logger.warning(
-        "Could not parse match formula '%s'; returning (0.0, 0.0)", formula_str
-    )
+    logger.warning("Could not parse match formula '%s'; returning (0.0, 0.0)", formula_str)
     return 0.0, 0.0
 
 

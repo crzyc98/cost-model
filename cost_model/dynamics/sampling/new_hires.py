@@ -4,10 +4,11 @@ Functions related to sampling new hires during workforce simulations.
 QuickStart: see docs/cost_model/dynamics/sampling/new_hires.md
 """
 
-import pandas as pd
-import numpy as np
-from numpy.random import Generator, default_rng
 from typing import Optional, Sequence
+
+import numpy as np
+import pandas as pd
+from numpy.random import Generator, default_rng
 
 
 def sample_new_hire_compensation(

@@ -1,4 +1,5 @@
 from typing import Dict
+
 from .models import JobLevel
 
 # Default job level definitions
@@ -14,7 +15,7 @@ DEFAULT_LEVELS: Dict[int, JobLevel] = {
         comp_stochastic_std_dev=0.1,
         avg_annual_merit_increase=0.03,
         promotion_probability=0.08,
-        target_bonus_percent=0.0
+        target_bonus_percent=0.0,
     ),
     1: JobLevel(
         level_id=1,
@@ -27,7 +28,7 @@ DEFAULT_LEVELS: Dict[int, JobLevel] = {
         comp_stochastic_std_dev=0.1,
         avg_annual_merit_increase=0.035,
         promotion_probability=0.12,
-        target_bonus_percent=0.05
+        target_bonus_percent=0.05,
     ),
     2: JobLevel(
         level_id=2,
@@ -40,7 +41,7 @@ DEFAULT_LEVELS: Dict[int, JobLevel] = {
         comp_stochastic_std_dev=0.1,
         avg_annual_merit_increase=0.04,
         promotion_probability=0.08,
-        target_bonus_percent=0.15
+        target_bonus_percent=0.15,
     ),
     3: JobLevel(
         level_id=3,
@@ -53,7 +54,7 @@ DEFAULT_LEVELS: Dict[int, JobLevel] = {
         comp_stochastic_std_dev=0.1,
         avg_annual_merit_increase=0.045,
         promotion_probability=0.05,
-        target_bonus_percent=0.25
+        target_bonus_percent=0.25,
     ),
     4: JobLevel(
         level_id=4,
@@ -66,6 +67,6 @@ DEFAULT_LEVELS: Dict[int, JobLevel] = {
         comp_stochastic_std_dev=0.15,
         avg_annual_merit_increase=0.05,
         promotion_probability=0.02,
-        target_bonus_percent=0.40
-    )
+        target_bonus_percent=0.40,
+    ),
 }

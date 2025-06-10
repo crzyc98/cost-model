@@ -8,9 +8,10 @@ import argparse
 import logging
 from pathlib import Path
 from typing import List, Optional
+
 import pandas as pd
 import yaml
-from lifelines import KaplanMeierFitter, CoxPHFitter
+from lifelines import CoxPHFitter, KaplanMeierFitter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,9 +27,7 @@ def main(
     baseline_out: Path,
 ):
     """Run KM and Cox models, save CSVs and YAML parameters."""
-    df = pd.read_csv(
-        historical, parse_dates=["hire_date", "termination_date", "birth_date"]
-    )
+    df = pd.read_csv(historical, parse_dates=["hire_date", "termination_date", "birth_date"])
     # Drop bad rows
     df = df[df["hire_date"] <= df["termination_date"].fillna(pd.Timestamp.today())]
     # Event observed
@@ -47,9 +46,7 @@ def main(
     # Kaplan–Meier
     kmf = KaplanMeierFitter()
     kmf.fit(durations=df["duration"], event_observed=df["event_observed"])
-    km_df = kmf.survival_function_.reset_index().rename(
-        columns={"timeline": "duration"}
-    )
+    km_df = kmf.survival_function_.reset_index().rename(columns={"timeline": "duration"})
     km_out.parent.mkdir(parents=True, exist_ok=True)
     km_df.to_csv(km_out, index=False)
     ci_df = kmf.confidence_interval_.reset_index()
@@ -89,12 +86,8 @@ def main(
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(
-        description="Fit survival/hazard models on turnover data"
-    )
-    p.add_argument(
-        "--historical", type=Path, required=True, help="CSV of historical turnover data"
-    )
+    p = argparse.ArgumentParser(description="Fit survival/hazard models on turnover data")
+    p.add_argument("--historical", type=Path, required=True, help="CSV of historical turnover data")
     p.add_argument(
         "--output",
         type=Path,

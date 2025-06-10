@@ -1,6 +1,8 @@
 import logging
 from typing import Dict, Optional
+
 import pandas as pd
+
 from .models import JobLevel
 
 logger = logging.getLogger(__name__)

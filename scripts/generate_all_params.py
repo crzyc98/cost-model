@@ -55,12 +55,13 @@ Output:
 - YAML configuration with all simulation parameters
 """
 
-import pandas as pd
-import numpy as np
-import yaml
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import numpy as np
+import pandas as pd
+import yaml
 from sklearn.linear_model import LinearRegression
 
 
@@ -73,7 +74,7 @@ def generate_compensation_params(df: pd.DataFrame) -> Dict[str, Any]:
     PLAN_YEAR = datetime.today().year - 1
     ref = pd.Timestamp(f"{PLAN_YEAR}-01-01")
     df["age"] = ((ref - df["employee_birth_date"]).dt.days / 365.25).astype(int)
-    df["tenure"] = ((ref - df["employee_hire_date"]).dt.days / 365.25)
+    df["tenure"] = (ref - df["employee_hire_date"]).dt.days / 365.25
 
     # Select employees with 1-3 years tenure for new hire parameters
     new_hires = df[(df["tenure"] >= 1) & (df["tenure"] < 4)].copy()
@@ -112,10 +113,9 @@ def generate_attrition_rates(df: pd.DataFrame) -> Dict[str, Any]:
     # Compute tenure for terminated employees
     df_term = df.dropna(subset=["employee_termination_date"]).copy()
     df_term["tenure_at_term"] = (
-        (pd.to_datetime(df_term["employee_termination_date"]) -
-         pd.to_datetime(df_term["employee_hire_date"]))
-        .dt.days / 365.25
-    )
+        pd.to_datetime(df_term["employee_termination_date"])
+        - pd.to_datetime(df_term["employee_hire_date"])
+    ).dt.days / 365.25
 
     # Define tenure bands
     bins = [0, 1, 3, 5, 100]
@@ -123,21 +123,13 @@ def generate_attrition_rates(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Bin terminated employees
     df_term["tenure_band"] = pd.cut(
-        df_term["tenure_at_term"],
-        bins=bins,
-        labels=labels,
-        right=False
+        df_term["tenure_at_term"], bins=bins, labels=labels, right=False
     )
 
     # Compute tenure for active employees
     ref = pd.Timestamp(f"{datetime.today().year}-01-01")
     df["tenure"] = ((ref - df["employee_hire_date"]).dt.days / 365.25).astype(int)
-    df["tenure_band"] = pd.cut(
-        df["tenure"],
-        bins=bins,
-        labels=labels,
-        right=False
-    )
+    df["tenure_band"] = pd.cut(df["tenure"], bins=bins, labels=labels, right=False)
 
     # Calculate attrition rates
     headcounts = df.groupby("tenure_band", observed=True).size()
@@ -146,7 +138,7 @@ def generate_attrition_rates(df: pd.DataFrame) -> Dict[str, Any]:
 
     return {
         "annual_termination_rate": float(df_term.shape[0] / df.shape[0]),
-        "termination_rate_by_tenure": attrition
+        "termination_rate_by_tenure": attrition,
     }
 
 
@@ -164,7 +156,7 @@ def generate_new_hire_params(df_boy: pd.DataFrame, df_eoy: pd.DataFrame) -> Dict
 
     return {
         "new_hire_rate": float(new_hire_rate),
-        "replacement_hire_premium": float(replacement_premium)
+        "replacement_hire_premium": float(replacement_premium),
     }
 
 
@@ -174,7 +166,7 @@ def generate_behavioral_params(df: pd.DataFrame) -> Dict[str, Any]:
     return {
         "behavioral_params": {
             "voluntary_default_deferral": float(def_rates.mean()),
-            "voluntary_window_days": 180
+            "voluntary_window_days": 180,
         }
     }
 
@@ -184,30 +176,23 @@ def generate_productivity_curve(df: pd.DataFrame) -> dict:
     # Filter out low comp and compute tenure
     df = df[df["employee_gross_compensation"] >= 10000].copy()
     ref = pd.Timestamp(f"{datetime.today().year}-01-01")
-    df["tenure"] = ((ref - df["employee_hire_date"]).dt.days / 365.25)
+    df["tenure"] = (ref - df["employee_hire_date"]).dt.days / 365.25
 
     # Select employees with 1–3 years tenure
     bucket = df[(df["tenure"] >= 1) & (df["tenure"] < 3)].copy()
 
     # Calculate months since hire
-    bucket["months_since_hire"] = (
-        (ref - bucket["employee_hire_date"]).dt.days / 30
-    ).astype(int)
+    bucket["months_since_hire"] = ((ref - bucket["employee_hire_date"]).dt.days / 30).astype(int)
 
     # Compute average productivity by month
     prod = bucket.groupby("months_since_hire")["performance_rating"].mean().to_dict()
 
     # Build first 6 months of the curve
-    return {
-        "onboarding": {
-            "productivity_curve": [prod.get(m, 1.0) for m in range(6)]
-        }
-    }
+    return {"onboarding": {"productivity_curve": [prod.get(m, 1.0) for m in range(6)]}}
 
 
 def generate_all_parameters(
-    eoy_df: pd.DataFrame,
-    boy_df: Optional[pd.DataFrame] = None
+    eoy_df: pd.DataFrame, boy_df: Optional[pd.DataFrame] = None
 ) -> Dict[str, Any]:
     """Generate all simulation parameters from census data."""
     # Initialize output structure
@@ -215,23 +200,23 @@ def generate_all_parameters(
         "scenarios": {
             "baseline": {
                 "name": "Baseline",
-                "description": "Default simulation parameters generated from historical data"
+                "description": "Default simulation parameters generated from historical data",
             }
         },
         "global_parameters": {
             "compensation": {},  # Will hold both new hire and role params
             "attrition": {},
             "new_hires": {},
-            "onboarding": {}
+            "onboarding": {},
         },
-        "plan_rules": {
-            "behavioral_params": {}
-        }
+        "plan_rules": {"behavioral_params": {}},
     }
 
     # Generate compensation parameters and nest under global_parameters.compensation
     comp_params = generate_compensation_params(eoy_df)
-    out["global_parameters"]["compensation"]["new_hire"] = comp_params["new_hire_compensation_params"]
+    out["global_parameters"]["compensation"]["new_hire"] = comp_params[
+        "new_hire_compensation_params"
+    ]
     # roles section removed as part of schema refactoring
 
     # Generate attrition rates and nest under global_parameters.attrition
@@ -243,7 +228,9 @@ def generate_all_parameters(
 
     # Add behavioral parameters if deferral rates are available
     if "employee_deferral_rate" in eoy_df.columns:
-        out["plan_rules"]["behavioral_params"] = generate_behavioral_params(eoy_df)["behavioral_params"]
+        out["plan_rules"]["behavioral_params"] = generate_behavioral_params(eoy_df)[
+            "behavioral_params"
+        ]
 
     # Add productivity curve if performance ratings are available
     if "performance_rating" in eoy_df.columns:

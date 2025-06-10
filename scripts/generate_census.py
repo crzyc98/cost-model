@@ -19,37 +19,38 @@ except Exception as e:
     print(f"Error determining project root or modifying sys.path: {e}")
     sys.exit(1)  # Exit if we can't setup the path
 
+import argparse
+import logging
+import warnings
+from datetime import datetime
+from typing import Dict, List, Optional
+
 # --- Now perform imports ---
 import numpy as np
 import pandas as pd
-from datetime import datetime
-import warnings
-import logging
-import argparse
 from numpy.random import default_rng
-from typing import Dict, List, Optional
 
 # --- Import from utils AFTER path modification ---
 try:
     # Import the refactored helper functions
     from cost_model.utils.census_generation_helpers import (
-        generate_employee_record,
         calculate_derived_fields,
+        generate_employee_record,
         select_weighted_terminations,
     )
 
     # Import column constants
     from cost_model.utils.columns import (
-        EMP_SSN,
-        EMP_ROLE,
         EMP_BIRTH_DATE,
-        EMP_HIRE_DATE,
-        EMP_TERM_DATE,
-        EMP_GROSS_COMP,
-        EMP_PLAN_YEAR_COMP,
         EMP_CAPPED_COMP,
-        EMP_DEFERRAL_RATE,
         EMP_CONTR,
+        EMP_DEFERRAL_RATE,
+        EMP_GROSS_COMP,
+        EMP_HIRE_DATE,
+        EMP_PLAN_YEAR_COMP,
+        EMP_ROLE,
+        EMP_SSN,
+        EMP_TERM_DATE,
         EMPLOYER_CORE,
         EMPLOYER_MATCH,
     )
@@ -58,9 +59,7 @@ except ImportError as e:
         f"Error importing from cost_model.utils: {e}. Make sure cost_model/utils directory exists and contains census_generation_helpers.py and columns.py relative to {project_root}."
     )
     # Define fallbacks if running standalone or utils is missing
-    print(
-        "Warning: Using fallback column names and potentially missing helper functions."
-    )
+    print("Warning: Using fallback column names and potentially missing helper functions.")
     EMP_SSN, EMP_ROLE, EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_TERM_DATE = (
         "employee_ssn",
         "employee_role",
@@ -211,9 +210,7 @@ def create_dummy_census_files(
         },  # Example projection
     }
     latest_known_year = max(IRS_LIMITS.keys())
-    for y in range(
-        latest_known_year + 1, base_year + 2
-    ):  # Ensure coverage for base_year
+    for y in range(latest_known_year + 1, base_year + 2):  # Ensure coverage for base_year
         if y not in IRS_LIMITS:
             IRS_LIMITS[y] = IRS_LIMITS[latest_known_year]
 
@@ -224,9 +221,7 @@ def create_dummy_census_files(
             return {}
         total_prob = sum(dist.values())
         if total_prob <= 0:
-            logger.error(
-                f"{name} distribution probabilities sum to zero or less. Check config."
-            )
+            logger.error(f"{name} distribution probabilities sum to zero or less. Check config.")
             return {k: 1.0 / len(dist) for k in dist}  # Fallback to uniform
         if not np.isclose(total_prob, 1.0):
             logger.warning(
@@ -238,12 +233,8 @@ def create_dummy_census_files(
 
     role_distribution = _normalize_dist(role_distribution, "Role")
     # Ensure keys are floats for deferral rates before normalizing
-    deferral_distribution_float_keys = {
-        float(k): v for k, v in deferral_distribution.items()
-    }
-    deferral_distribution = _normalize_dist(
-        deferral_distribution_float_keys, "Deferral"
-    )
+    deferral_distribution_float_keys = {float(k): v for k, v in deferral_distribution.items()}
+    deferral_distribution = _normalize_dist(deferral_distribution_float_keys, "Deferral")
 
     start_year = base_year - num_years + 1
 
@@ -328,11 +319,9 @@ def create_dummy_census_files(
                 ].copy()
                 year_start_dt = datetime(year, 1, 1)
                 days_range = (plan_end_date - year_start_dt).days + 1
-                term_offsets = rng.integers(
-                    0, days_range, size=len(terminated_records_this_year)
-                )
-                terminated_records_this_year[EMP_TERM_DATE] = (
-                    year_start_dt + pd.to_timedelta(term_offsets, unit="D")
+                term_offsets = rng.integers(0, days_range, size=len(terminated_records_this_year))
+                terminated_records_this_year[EMP_TERM_DATE] = year_start_dt + pd.to_timedelta(
+                    term_offsets, unit="D"
                 )
 
                 survivor_df = previous_population_df.drop(indices_to_terminate)
@@ -341,17 +330,14 @@ def create_dummy_census_files(
                 logger.info("No terminations simulated this cycle.")
 
             # --- Update Survivors for the Current Year End ---
-            logger.info(
-                "Updating %d survivors for end of %d...", len(survivor_df), year
-            )
+            logger.info("Updating %d survivors for end of %d...", len(survivor_df), year)
             if not survivor_df.empty:
                 # Increment tenure approx 1 year
                 # Ensure 'tenure' column exists and is numeric before incrementing
                 if "tenure" not in survivor_df.columns:
                     survivor_df["tenure"] = 0.0  # Initialize if missing
                 survivor_df["tenure"] = (
-                    pd.to_numeric(survivor_df["tenure"], errors="coerce").fillna(0.0)
-                    + 1
+                    pd.to_numeric(survivor_df["tenure"], errors="coerce").fillna(0.0) + 1
                 )
 
                 # Apply random compensation increase
@@ -360,9 +346,9 @@ def create_dummy_census_files(
                     scale=annual_comp_increase_std,
                     size=len(survivor_df),
                 ).clip(min=0.5)
-                survivor_df[EMP_GROSS_COMP] = (
-                    survivor_df[EMP_GROSS_COMP] * increase_factor
-                ).round(2)
+                survivor_df[EMP_GROSS_COMP] = (survivor_df[EMP_GROSS_COMP] * increase_factor).round(
+                    2
+                )
 
             # --- Add New Hires for the Current Year ---
             num_survivors = len(survivor_df)
@@ -470,9 +456,7 @@ def create_dummy_census_files(
                 if col in df_final_year.columns:
                     if pd.api.types.is_datetime64_any_dtype(df_final_year[col]):
                         # Format valid dates, leave NaT as empty string
-                        df_final_year[col] = (
-                            df_final_year[col].dt.strftime("%Y-%m-%d").fillna("")
-                        )
+                        df_final_year[col] = df_final_year[col].dt.strftime("%Y-%m-%d").fillna("")
                     else:  # Handle cases where coercion might have failed
                         df_final_year[col] = ""
 
@@ -496,9 +480,7 @@ def create_dummy_census_files(
             )
 
             # Select active rows using the boolean mask from the *original* combined DF
-            current_active_population_df = current_census_population_df[
-                active_mask
-            ].copy()
+            current_active_population_df = current_census_population_df[active_mask].copy()
             logger.debug(
                 "Carrying forward %d active employees to year %d",
                 len(current_active_population_df),
@@ -516,9 +498,7 @@ def create_dummy_census_files(
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Generate dummy census files.")
     # Add arguments with defaults from the function signature
-    p.add_argument(
-        "--years", type=int, default=5, help="Number of years ending at base-year"
-    )
+    p.add_argument("--years", type=int, default=5, help="Number of years ending at base-year")
     p.add_argument(
         "--base-year",
         type=int,
@@ -531,21 +511,15 @@ if __name__ == "__main__":
         default=1000,
         help="Target total population size for each year",
     )
-    p.add_argument(
-        "--term-rate", type=float, default=0.10, help="Approx annual termination rate"
-    )
-    p.add_argument(
-        "--seed", type=int, default=None, help="Random seed for reproducibility"
-    )
+    p.add_argument("--term-rate", type=float, default=0.10, help="Approx annual termination rate")
+    p.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     p.add_argument(
         "--outdir",
         type=Path,
         default=Path("./data/generated_census"),
         help="Output directory",
     )
-    p.add_argument(
-        "--prefix", type=str, default="census_", help="Prefix for output filenames"
-    )
+    p.add_argument("--prefix", type=str, default="census_", help="Prefix for output filenames")
     # Could add arguments for other parameters like age/tenure means, etc. if desired
 
     args = p.parse_args()

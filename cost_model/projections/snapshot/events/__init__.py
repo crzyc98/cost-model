@@ -11,27 +11,27 @@ Example Usage:
     >>> updated_snapshot = processor.process_events(snapshot, events)
 """
 
-from .base import BaseEventProcessor, EventProcessorProtocol, EventContext
-from .core import EventProcessor, EventProcessingResult
+from .base import BaseEventProcessor, EventContext, EventProcessorProtocol
+from .core import EventProcessingResult, EventProcessor
 from .handlers import (
+    CompensationEventHandler,
     HireEventHandler,
-    TerminationEventHandler,
     PromotionEventHandler,
-    CompensationEventHandler
+    TerminationEventHandler,
 )
 from .registry import EventHandlerRegistry
 from .validation import EventValidator
 
 __all__ = [
-    'BaseEventProcessor',
-    'EventProcessorProtocol',
-    'EventContext',
-    'EventProcessor',
-    'EventProcessingResult',
-    'HireEventHandler',
-    'TerminationEventHandler',
-    'PromotionEventHandler',
-    'CompensationEventHandler',
-    'EventHandlerRegistry',
-    'EventValidator',
+    "BaseEventProcessor",
+    "EventProcessorProtocol",
+    "EventContext",
+    "EventProcessor",
+    "EventProcessingResult",
+    "HireEventHandler",
+    "TerminationEventHandler",
+    "PromotionEventHandler",
+    "CompensationEventHandler",
+    "EventHandlerRegistry",
+    "EventValidator",
 ]

@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-import sys
 import argparse
-import yaml
-import pandas as pd
+import sys
+
 import numpy as np
+import pandas as pd
+import yaml
 
 
 def check_census(year, df, cfg):
     # 1. Age bounds
-    min_age, max_age = cfg["global_parameters"].get("min_age", 18), cfg[
-        "global_parameters"
-    ].get("max_age", 70)
+    min_age, max_age = cfg["global_parameters"].get("min_age", 18), cfg["global_parameters"].get(
+        "max_age", 70
+    )
     ages = df["employee_birth_date"].apply(lambda bd: pd.to_datetime(bd))
     ages = ages.apply(lambda bd: year - bd.year - ((12, 31) < (bd.month, bd.day)))
     assert ages.between(

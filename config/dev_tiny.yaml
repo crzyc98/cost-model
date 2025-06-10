@@ -20,7 +20,7 @@ global_parameters:
 
   # Workforce demographics
   min_working_age: 22
-  max_working_age: 65
+  max_working_age: 70
   new_hire_average_age: 30
   new_hire_age_std_dev: 5
 

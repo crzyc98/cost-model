@@ -11,19 +11,19 @@ CLI‐driven training of a termination‐prediction model:
 6. Build a preprocessing+LightGBM pipeline.
 7. Evaluate and save model + feature names.
 """
-import sys
 import argparse
-import logging
-from pathlib import Path
 import glob
+import logging
+import sys
+from pathlib import Path
 
-import pandas as pd
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import roc_auc_score, classification_report, confusion_matrix
 import joblib
 import lightgbm as lgb
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 # Default constants (overridden by CLI)
 ID_COLUMN = "ssn"
@@ -70,9 +70,7 @@ def add_termination_target(
 ) -> pd.DataFrame:
     unique_years = sorted(df[year_col].unique())
     if len(unique_years) < 2:
-        logging.error(
-            "Need at least 2 distinct years to build target; got %s", unique_years
-        )
+        logging.error("Need at least 2 distinct years to build target; got %s", unique_years)
         sys.exit(1)
 
     dfs = []
@@ -108,9 +106,7 @@ def calculate_features(
     return df
 
 
-def clean_and_prepare_data(
-    df: pd.DataFrame, feature_cols: list, target: str
-) -> pd.DataFrame:
+def clean_and_prepare_data(df: pd.DataFrame, feature_cols: list, target: str) -> pd.DataFrame:
     keep = feature_cols + [target, "year"]
     dfm = df[keep].copy()
     dfm.dropna(subset=feature_cols + [target], inplace=True)

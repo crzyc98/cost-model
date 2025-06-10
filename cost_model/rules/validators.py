@@ -3,16 +3,17 @@ rules/validators.py
 Validators for plan rules.
 """
 
+from typing import Dict, Optional
+
 from pydantic import (
     BaseModel,
+    Field,
+    ValidationError,
     confloat,
     conint,
     conlist,
-    ValidationError,
-    Field,
     root_validator,
 )
-from typing import Optional, Dict
 
 
 class Tier(BaseModel):
@@ -31,9 +32,7 @@ class MatchRule(BaseModel):
     def check_tiers_increasing(cls, values):
         caps = [t.cap_deferral_pct for t in values.get("tiers", [])]
         if any(c2 <= c1 for c1, c2 in zip(caps, caps[1:])):
-            raise ValueError(
-                "cap_deferral_pct must be strictly increasing across tiers"
-            )
+            raise ValueError("cap_deferral_pct must be strictly increasing across tiers")
         return values
 
 
@@ -41,9 +40,7 @@ def load_match_rule(raw: dict) -> MatchRule:
     try:
         return MatchRule(**raw)
     except ValidationError as e:
-        raise ValueError(
-            f"Invalid employer_match config (keys={list(raw.keys())}): {e}"
-        )
+        raise ValueError(f"Invalid employer_match config (keys={list(raw.keys())}): {e}")
 
 
 class EligibilityRule(BaseModel):

@@ -8,10 +8,12 @@ Produces:
 import argparse
 import os
 import sys
-import yaml
+
 import pandas as pd
-from cost_model.utils.projection_utils import project_hr, apply_plan_rules
+import yaml
+
 from cost_model.rules.validators import PlanRules, ValidationError
+from cost_model.utils.projection_utils import apply_plan_rules, project_hr
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -78,12 +80,8 @@ def run_single(config, census_df, seed):
                     "total_contributions": total_contrib,
                     "total_plan_year_compensation": plan_comp,
                     "total_capped_compensation": cap_comp,
-                    "employer_cost_pct_plan_comp": (
-                        emp_cost / plan_comp if plan_comp > 0 else 0
-                    ),
-                    "employer_cost_pct_capped_comp": (
-                        emp_cost / cap_comp if cap_comp > 0 else 0
-                    ),
+                    "employer_cost_pct_plan_comp": (emp_cost / plan_comp if plan_comp > 0 else 0),
+                    "employer_cost_pct_capped_comp": (emp_cost / cap_comp if cap_comp > 0 else 0),
                 }
             )
 

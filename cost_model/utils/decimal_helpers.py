@@ -1,6 +1,6 @@
 # utils/decimal_helpers.py
 
-from decimal import Decimal, ROUND_HALF_UP, getcontext
+from decimal import ROUND_HALF_UP, Decimal, getcontext
 
 # Shared zero constant for financial calculations
 ZERO_DECIMAL = Decimal("0.00")

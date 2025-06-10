@@ -4,8 +4,10 @@ Models existing participants' potential deferral rate increase in response to
 a more generous match formula compared to a baseline scenario.
 """
 
-import numpy as np
 import logging
+
+import numpy as np
+
 from cost_model.rules.formula_parsers import parse_match_formula
 
 logger = logging.getLogger(__name__)
@@ -13,9 +15,8 @@ logger = logging.getLogger(__name__)
 
 from cost_model.utils.columns import EMP_TENURE
 
-def apply(
-    df, current_scenario_config, baseline_scenario_config, simulation_year, start_year
-):
+
+def apply(df, current_scenario_config, baseline_scenario_config, simulation_year, start_year):
     """
     Models existing participants' potential deferral rate increase in response to
     a more generous match formula compared to a baseline scenario.
@@ -42,9 +43,7 @@ def apply(
 
     # Ensure required columns
     if "is_participating" not in df.columns or "deferral_rate" not in df.columns:
-        logger.warning(
-            "Required columns missing. Cannot apply plan change response logic."
-        )
+        logger.warning("Required columns missing. Cannot apply plan change response logic.")
         return df
     if "status" not in df.columns:
         is_active = True
@@ -68,14 +67,10 @@ def apply(
         or (curr and not base)
     )
     if not is_more_generous:
-        logger.info(
-            f"Current match ('{curr}') not more generous than baseline ('{base}')."
-        )
+        logger.info(f"Current match ('{curr}') not more generous than baseline ('{base}').")
         return df
 
-    logger.info(
-        f"Detected more generous match ('{curr}' vs '{base}'). Applying response."
-    )
+    logger.info(f"Detected more generous match ('{curr}' vs '{base}'). Applying response.")
 
     optimal_rate = curr_cap
     if optimal_rate <= 0:
@@ -105,7 +100,5 @@ def apply(
         if target == "optimal":
             df.loc[chosen, "deferral_rate"] = optimal_rate
         else:
-            logger.warning(
-                f"Unsupported increase_target '{target}'. No change applied."
-            )
+            logger.warning(f"Unsupported increase_target '{target}'. No change applied.")
     return df

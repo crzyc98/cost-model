@@ -4,12 +4,14 @@ Functions for extracting employee details from events.
 
 import json
 import logging
-import pandas as pd
-from typing import Dict, Any
+from typing import Any, Dict
 
-from .constants import EMP_ID, EMP_BIRTH_DATE
+import pandas as pd
+
+from .constants import EMP_BIRTH_DATE, EMP_ID
 
 logger = logging.getLogger(__name__)
+
 
 def extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
     """
@@ -25,9 +27,7 @@ def extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
     """
     details = []
     if hire_events.empty:
-        return pd.DataFrame(
-            columns=[EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID)
-        )
+        return pd.DataFrame(columns=[EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID))
 
     for _, event in hire_events.iterrows():
         employee_id = event[EMP_ID]
@@ -59,9 +59,7 @@ def extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:
         details.append({EMP_ID: employee_id, EMP_BIRTH_DATE: birth_date})
 
     if not details:  # Should not happen if hire_events was not empty, but safeguard
-        return pd.DataFrame(
-            columns=[EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID)
-        )
+        return pd.DataFrame(columns=[EMP_BIRTH_DATE], index=pd.Index([], name=EMP_ID))
 
     details_df = pd.DataFrame(details).set_index(EMP_ID)
 

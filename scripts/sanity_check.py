@@ -4,10 +4,11 @@ Usage:
   python scripts/sanity_check.py --snapshots snapshots --plan_outputs plan_outputs
 """
 
+import argparse
 import os
 from pathlib import Path
+
 import pandas as pd
-import argparse
 
 
 def load_hr_metrics(snapshots_dir):
@@ -78,11 +79,7 @@ def main(snapshots_dir, plan_outputs_dir):
 doc = __doc__
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=doc)
-    parser.add_argument(
-        "--snapshots", required=True, help="Phase I snapshots directory"
-    )
-    parser.add_argument(
-        "--plan_outputs", required=True, help="Phase II outputs directory"
-    )
+    parser.add_argument("--snapshots", required=True, help="Phase I snapshots directory")
+    parser.add_argument("--plan_outputs", required=True, help="Phase II outputs directory")
     args = parser.parse_args()
     main(args.snapshots, args.plan_outputs)

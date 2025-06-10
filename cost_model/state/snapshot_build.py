@@ -12,24 +12,24 @@ import numpy as np
 import pandas as pd
 
 from .schema import (
-    EVT_HIRE,
-    EVT_COMP,
-    EVT_TERM,
-    EMP_ID,
-    EMP_HIRE_DATE,
     EMP_BIRTH_DATE,
-    EMP_LEVEL,
     EMP_GROSS_COMP,
-    EMP_TERM_DATE,
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_LEVEL,
     EMP_TENURE,
+    EMP_TERM_DATE,
+    EVT_COMP,
+    EVT_HIRE,
+    EVT_TERM,
     SNAPSHOT_COLS,
     SNAPSHOT_DTYPES,
 )
 from .snapshot_utils import (
+    ensure_columns_and_types,
+    extract_hire_details,
     get_first_event,
     get_last_event,
-    extract_hire_details,
-    ensure_columns_and_types,
 )
 from .tenure import assign_tenure_band
 
@@ -41,9 +41,13 @@ __all__: List[str] = ["build_full"]
 def _empty_snapshot() -> pd.DataFrame:
     """Return an empty, correctly typed snapshot DataFrame."""
     # Include simulation_year in the columns and dtypes
-    cols = SNAPSHOT_COLS + ['simulation_year'] if 'simulation_year' not in SNAPSHOT_COLS else SNAPSHOT_COLS
-    dtypes = {**SNAPSHOT_DTYPES, 'simulation_year': 'int64'}
-    
+    cols = (
+        SNAPSHOT_COLS + ["simulation_year"]
+        if "simulation_year" not in SNAPSHOT_COLS
+        else SNAPSHOT_COLS
+    )
+    dtypes = {**SNAPSHOT_DTYPES, "simulation_year": "int64"}
+
     df = pd.DataFrame(columns=cols)
     df = df.astype(dtypes)
     df.index.name = EMP_ID
@@ -97,49 +101,51 @@ def build_full(events: pd.DataFrame, snapshot_year: int) -> pd.DataFrame:  # noq
 
     # Assign job levels based on compensation for employees without levels
     from .job_levels.utils import assign_levels_to_dataframe
+
     snap = assign_levels_to_dataframe(snap, target_level_col=EMP_LEVEL)
 
     # Calculate tenure for active and terminated employees
     as_of = pd.Timestamp(f"{snapshot_year}-12-31")
-    
+
     # Ensure datetime types
-    snap[EMP_HIRE_DATE] = pd.to_datetime(snap[EMP_HIRE_DATE], errors='coerce')
-    snap[EMP_TERM_DATE] = pd.to_datetime(snap[EMP_TERM_DATE], errors='coerce')
-    
+    snap[EMP_HIRE_DATE] = pd.to_datetime(snap[EMP_HIRE_DATE], errors="coerce")
+    snap[EMP_TERM_DATE] = pd.to_datetime(snap[EMP_TERM_DATE], errors="coerce")
+
     # For active employees, calculate to year-end
     active_mask = snap[EMP_ACTIVE].fillna(False)
     snap.loc[active_mask, EMP_TENURE] = (
         (as_of - snap.loc[active_mask, EMP_HIRE_DATE]).dt.days / 365.25
     ).round(3)
-    
+
     # For terminated employees, calculate to termination date
     term_mask = (~active_mask) & snap[EMP_TERM_DATE].notna()
     snap.loc[term_mask, EMP_TENURE] = (
-        (snap.loc[term_mask, EMP_TERM_DATE] - 
-         snap.loc[term_mask, EMP_HIRE_DATE]).dt.days / 365.25
+        (snap.loc[term_mask, EMP_TERM_DATE] - snap.loc[term_mask, EMP_HIRE_DATE]).dt.days / 365.25
     ).round(3)
-    
+
     # Assign tenure bands based on calculated tenure
     snap[EMP_TENURE_BAND] = snap[EMP_TENURE].apply(assign_tenure_band).astype(pd.StringDtype())
-    
+
     # Log any employees with missing or invalid tenure
     missing_tenure = snap[snap[EMP_TENURE].isna()].index.tolist()
     if missing_tenure:
         logger.warning(
             "Could not calculate tenure for %d employees (missing/invalid dates): %s",
             len(missing_tenure),
-            missing_tenure[:10]  # Only show first 10 to avoid log spam
+            missing_tenure[:10],  # Only show first 10 to avoid log spam
         )
 
     snap[EMP_ID] = snap.index.astype(str)
-    
+
     # Add simulation_year to the snapshot
-    snap['simulation_year'] = snapshot_year
+    snap["simulation_year"] = snapshot_year
 
     logger.info("Full snapshot built (shape=%s)", snap.shape)
     # Defensive: ensure unique index before returning
     if not snap.index.is_unique:
         dups = snap.index[snap.index.duplicated()].unique()
-        logger.error(f"Duplicate EMP_IDs in snapshot: {dups.tolist()} – dropping duplicates (keeping last)")
-        snap = snap[~snap.index.duplicated(keep='last')]
+        logger.error(
+            f"Duplicate EMP_IDs in snapshot: {dups.tolist()} – dropping duplicates (keeping last)"
+        )
+        snap = snap[~snap.index.duplicated(keep="last")]
     return snap

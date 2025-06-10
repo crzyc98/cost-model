@@ -5,13 +5,14 @@ QuickStart: see docs/cost_model/data/readers.md
 """
 
 import logging
-import pandas as pd
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 # Attempt to import column constants, provide fallbacks
 try:
-    from ..utils.columns import EMP_HIRE_DATE, EMP_TERM_DATE, EMP_BIRTH_DATE, EMP_SSN
+    from ..utils.columns import EMP_BIRTH_DATE, EMP_HIRE_DATE, EMP_SSN, EMP_TERM_DATE
 except ImportError:
     print(
         "Warning (readers.py): Could not import column constants from utils. Using string literals."
@@ -88,12 +89,8 @@ def read_census_data(file_path: Path) -> Optional[pd.DataFrame]:
             try:
                 # Read just the header first to check columns
                 cols_in_csv = pd.read_csv(file_path, nrows=0).columns.tolist()
-                parse_dates_present = [
-                    c for c in date_cols_to_parse if c in cols_in_csv
-                ]
-                logger.debug(
-                    f"Attempting to parse date columns in CSV: {parse_dates_present}"
-                )
+                parse_dates_present = [c for c in date_cols_to_parse if c in cols_in_csv]
+                logger.debug(f"Attempting to parse date columns in CSV: {parse_dates_present}")
                 df = pd.read_csv(file_path, parse_dates=parse_dates_present)
                 logger.info(f"Loaded {len(df)} records from CSV census: {file_path}")
                 # Check for parse errors after loading
@@ -142,9 +139,7 @@ def read_census_data(file_path: Path) -> Optional[pd.DataFrame]:
                     )
                     # Optionally drop the other column: df.drop(columns=[id_col_found], inplace=True)
                 else:
-                    logger.info(
-                        f"Renaming identifier column '{id_col_found}' to 'employee_id'."
-                    )
+                    logger.info(f"Renaming identifier column '{id_col_found}' to 'employee_id'.")
                     df.rename(columns={id_col_found: "employee_id"}, inplace=True)
             else:
                 logger.debug("Identifier column 'employee_id' already present.")
@@ -153,9 +148,7 @@ def read_census_data(file_path: Path) -> Optional[pd.DataFrame]:
             logger.error(
                 f"Could not find a recognizable employee identifier column ({possible_id_cols}) in {file_path}."
             )
-            raise DataReadError(
-                f"Missing required employee identifier column in {file_path}"
-            )
+            raise DataReadError(f"Missing required employee identifier column in {file_path}")
 
         # --- Final Checks ---
         # Ensure EMP_ID is suitable as an identifier (e.g., check for uniqueness)
@@ -170,9 +163,7 @@ def read_census_data(file_path: Path) -> Optional[pd.DataFrame]:
     except DataReadError:  # Re-raise specific data read errors
         raise
     except Exception as e:
-        logger.exception(
-            f"An unexpected error occurred while reading census data from {file_path}"
-        )
+        logger.exception(f"An unexpected error occurred while reading census data from {file_path}")
         raise DataReadError(f"Unexpected error reading data from {file_path}") from e
 
 

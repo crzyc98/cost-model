@@ -1,18 +1,18 @@
 # utils/plan_rules.py
 
 from typing import Any, Dict
+
 import pandas as pd
 from pandas import DataFrame
-
-from utils.rules.validators import (
-    EligibilityRule,
-    AutoEnrollmentRule,
-    AutoIncreaseRule,
-    OutcomeDistribution,
-)
-from utils.rules.eligibility import apply as _apply_eligibility
 from utils.rules.auto_enrollment import apply as _apply_auto_enrollment
 from utils.rules.auto_increase import apply as _apply_auto_increase
+from utils.rules.eligibility import apply as _apply_eligibility
+from utils.rules.validators import (
+    AutoEnrollmentRule,
+    AutoIncreaseRule,
+    EligibilityRule,
+    OutcomeDistribution,
+)
 
 
 def apply_eligibility(
@@ -39,9 +39,7 @@ def apply_auto_enrollment(
 
     # Convert nested outcome_distribution dict to model
     if isinstance(ae_cfg.get("outcome_distribution"), dict):
-        ae_cfg["outcome_distribution"] = OutcomeDistribution(
-            **ae_cfg["outcome_distribution"]
-        )
+        ae_cfg["outcome_distribution"] = OutcomeDistribution(**ae_cfg["outcome_distribution"])
 
     ae_rules = AutoEnrollmentRule(**ae_cfg)
 

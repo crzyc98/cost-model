@@ -11,10 +11,11 @@ from typing import List
 import pandas as pd
 
 from cost_model.state.event_log import EVENT_COLS, EVT_COLA, create_event
-from cost_model.state.schema import EMP_ID, EMP_TERM_DATE
 from cost_model.state.schema import EMP_GROSS_COMP  # to read existing salary
+from cost_model.state.schema import EMP_ID, EMP_TERM_DATE
 
 logger = logging.getLogger(__name__)
+
 
 def cola(
     snapshot: pd.DataFrame,
@@ -22,7 +23,7 @@ def cola(
     as_of: pd.Timestamp,
     days_into_year: int = 0,
     jitter_days: int = 0,
-    rng=None
+    rng=None,
 ) -> List[pd.DataFrame]:
     """
     Emit a cost-of-living adjustment (EVT_COLA) for each active employee, vectorized.
@@ -49,9 +50,10 @@ def cola(
     # Optional jitter in timing
     if jitter_days > 0:
         import numpy as np
+
         if rng is None:
             rng = np.random.default_rng()
-        offsets = rng.integers(-jitter_days//2, jitter_days//2 + 1, size=len(active))
+        offsets = rng.integers(-jitter_days // 2, jitter_days // 2 + 1, size=len(active))
         active["event_time"] = [base_time + pd.Timedelta(days=int(d)) for d in offsets]
     else:
         active["event_time"] = base_time
@@ -62,7 +64,7 @@ def cola(
             employee_id=row[EMP_ID],
             event_type=EVT_COLA,
             value_num=row["delta"],
-            meta=f"COLA {cola_pct:.1%}"
+            meta=f"COLA {cola_pct:.1%}",
         )
 
     events = active.apply(mk_event, axis=1).tolist()

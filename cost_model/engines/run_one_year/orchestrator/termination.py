@@ -7,15 +7,21 @@ generating appropriate termination and compensation events.
 """
 import logging
 from typing import List, Optional, Tuple
+
 import pandas as pd
 
 from cost_model.engines import term
 from cost_model.engines.nh_termination import run_new_hires
-from cost_model.state.schema import (
-    EMP_ID, EMP_HIRE_DATE, EMP_TENURE_BAND, EMP_TERM_DATE, EVENT_COLS
-)
 from cost_model.state.event_log import EVENT_PANDAS_DTYPES
+from cost_model.state.schema import (
+    EMP_HIRE_DATE,
+    EMP_ID,
+    EMP_TENURE_BAND,
+    EMP_TERM_DATE,
+    EVENT_COLS,
+)
 from cost_model.utils.tenure_utils import standardize_tenure_band
+
 from .base import YearContext, filter_valid_employee_ids
 
 
@@ -40,9 +46,7 @@ class TerminationOrchestrator:
         self.logger = logger or logging.getLogger(__name__)
 
     def get_experienced_termination_events(
-        self,
-        snapshot: pd.DataFrame,
-        year_context: YearContext
+        self, snapshot: pd.DataFrame, year_context: YearContext
     ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
         """
         Generate termination events for experienced employees and update snapshot.
@@ -77,7 +81,7 @@ class TerminationOrchestrator:
             hazard_slice=hz_slice,
             rng=year_context.year_rng,
             deterministic=year_context.deterministic_term,
-            global_params=year_context.global_params
+            global_params=year_context.global_params,
         )
 
         # Validate and process events
@@ -91,9 +95,7 @@ class TerminationOrchestrator:
         return [term_events], updated_snapshot
 
     def get_new_hire_termination_events(
-        self,
-        snapshot: pd.DataFrame,
-        year_context: YearContext
+        self, snapshot: pd.DataFrame, year_context: YearContext
     ) -> Tuple[List[pd.DataFrame], pd.DataFrame]:
         """
         Generate termination events for new hires and update snapshot.
@@ -144,10 +146,11 @@ class TerminationOrchestrator:
 
                 # Apply events to snapshot using the event system
                 from cost_model.state.snapshot_update import update
+
                 updated_snapshot = update(
                     prev_snapshot=snapshot_for_update,
                     new_events=combined_events,
-                    snapshot_year=year_context.year
+                    snapshot_year=year_context.year,
                 )
 
                 # Restore EMP_ID as column if original snapshot had it as column
@@ -162,24 +165,28 @@ class TerminationOrchestrator:
                 terminated_ids = set(nh_term_events[EMP_ID]) if not nh_term_events.empty else set()
 
                 self.logger.info(f"[NH-TERM] Applied {len(combined_events)} events to snapshot")
-                self.logger.info(f"[NH-TERM] Processed termination for {len(terminated_ids)} new hires via event system")
+                self.logger.info(
+                    f"[NH-TERM] Processed termination for {len(terminated_ids)} new hires via event system"
+                )
 
                 # Verify termination dates were set
                 if terminated_ids and EMP_TERM_DATE in updated_snapshot.columns:
                     # Check how many terminated employees have termination dates set
                     if EMP_ID in updated_snapshot.columns:
                         terminated_with_dates = updated_snapshot[
-                            updated_snapshot[EMP_ID].isin(terminated_ids) &
-                            updated_snapshot[EMP_TERM_DATE].notna()
+                            updated_snapshot[EMP_ID].isin(terminated_ids)
+                            & updated_snapshot[EMP_TERM_DATE].notna()
                         ]
                     else:
                         # If EMP_ID is in index
                         terminated_with_dates = updated_snapshot[
-                            updated_snapshot.index.isin(terminated_ids) &
-                            updated_snapshot[EMP_TERM_DATE].notna()
+                            updated_snapshot.index.isin(terminated_ids)
+                            & updated_snapshot[EMP_TERM_DATE].notna()
                         ]
 
-                    self.logger.info(f"[NH-TERM] Verified: {len(terminated_with_dates)} employees have termination dates set")
+                    self.logger.info(
+                        f"[NH-TERM] Verified: {len(terminated_with_dates)} employees have termination dates set"
+                    )
 
             else:
                 updated_snapshot = snapshot.copy()
@@ -243,31 +250,43 @@ class TerminationOrchestrator:
             df_clean = df.copy()
             all_na_cols = df_clean.columns[df_clean.isna().all()]
             if not all_na_cols.empty:
-                self.logger.debug(f"[TERMINATION] Dropping {len(all_na_cols)} all-NA columns from DataFrame at index {i}")
+                self.logger.debug(
+                    f"[TERMINATION] Dropping {len(all_na_cols)} all-NA columns from DataFrame at index {i}"
+                )
                 df_clean = df_clean.drop(columns=all_na_cols)
 
             # Only add if the cleaned DataFrame is not empty
             if not df_clean.empty:
                 valid_dfs_to_concat.append(df_clean)
             else:
-                self.logger.debug(f"[TERMINATION] DataFrame at index {i} became empty after cleaning, skipping")
+                self.logger.debug(
+                    f"[TERMINATION] DataFrame at index {i} became empty after cleaning, skipping"
+                )
 
-        self.logger.debug(f"[TERMINATION] {len(valid_dfs_to_concat)} DataFrames will be concatenated.")
+        self.logger.debug(
+            f"[TERMINATION] {len(valid_dfs_to_concat)} DataFrames will be concatenated."
+        )
 
         if valid_dfs_to_concat:
             try:
                 # Use concat with sort=False to avoid the FutureWarning about column ordering
                 # and ignore_index=True for clean row indexing
                 term_events = pd.concat(valid_dfs_to_concat, ignore_index=True, sort=False)
-                self.logger.debug(f"[TERMINATION] Concatenated {len(valid_dfs_to_concat)} non-empty event DataFrame(s).")
+                self.logger.debug(
+                    f"[TERMINATION] Concatenated {len(valid_dfs_to_concat)} non-empty event DataFrame(s)."
+                )
             except Exception as e:
-                self.logger.error(f"Error during concatenation of termination event DataFrames: {e}", exc_info=True)
+                self.logger.error(
+                    f"Error during concatenation of termination event DataFrames: {e}",
+                    exc_info=True,
+                )
                 # Fallback to an empty DataFrame with defined columns
                 term_events = pd.DataFrame(columns=EVENT_COLS)
         else:
-            self.logger.debug("[TERMINATION] No valid DataFrames to concatenate; returning empty DataFrame.")
+            self.logger.debug(
+                "[TERMINATION] No valid DataFrames to concatenate; returning empty DataFrame."
+            )
             term_events = pd.DataFrame(columns=EVENT_COLS)
-
 
         # Validate and clean the (potentially empty) concatenated DataFrame
         term_events = self._validate_events(term_events, "termination")
@@ -286,12 +305,11 @@ class TerminationOrchestrator:
             Cleaned events DataFrame
         """
         if events.empty:
-            return events # Return the empty DataFrame as is
+            return events  # Return the empty DataFrame as is
 
         # Filter out invalid employee IDs
         # Ensure a fresh copy if filter_valid_employee_ids modifies or returns a view
         events = filter_valid_employee_ids(events, self.logger).copy()
-
 
         # Ensure proper dtypes
         for col, dtype in EVENT_PANDAS_DTYPES.items():
@@ -300,13 +318,17 @@ class TerminationOrchestrator:
                     # Ensure column is not all NA before astype if dtype is non-nullable
                     # and NA handling for that dtype is problematic
                     if events[col].isna().all() and pd.api.types.is_integer_dtype(dtype):
-                         # Potentially skip astype for all-NA int columns or handle differently
-                         # For now, let astype attempt it; it might go to float if NA remains.
-                         # Or use nullable int types like 'Int64' if that's the target.
-                         pass # Let it try, or add specific handling if 'Int64' etc. are used
+                        # Potentially skip astype for all-NA int columns or handle differently
+                        # For now, let astype attempt it; it might go to float if NA remains.
+                        # Or use nullable int types like 'Int64' if that's the target.
+                        pass  # Let it try, or add specific handling if 'Int64' etc. are used
 
                     events[col] = events[col].astype(dtype)
-                except (ValueError, TypeError, pd.errors.IntCastingNaNError) as e: # Added IntCastingNaNError
+                except (
+                    ValueError,
+                    TypeError,
+                    pd.errors.IntCastingNaNError,
+                ) as e:  # Added IntCastingNaNError
                     self.logger.warning(
                         f"Could not convert {event_type} events column '{col}' to {dtype}: {e}. "
                         f"Column head: {events[col].head().tolist()}"
@@ -314,9 +336,7 @@ class TerminationOrchestrator:
         return events
 
     def _remove_terminated_employees(
-        self,
-        snapshot: pd.DataFrame,
-        term_events: pd.DataFrame
+        self, snapshot: pd.DataFrame, term_events: pd.DataFrame
     ) -> pd.DataFrame:
         """
         Remove terminated employees from the snapshot.
@@ -331,26 +351,33 @@ class TerminationOrchestrator:
         if term_events.empty or EMP_ID not in term_events.columns:
             # If no termination events or no EMP_ID column in events, return original snapshot
             if EMP_ID not in term_events.columns and not term_events.empty:
-                self.logger.warning(f"[TERMINATION] EMP_ID column missing in term_events. Cannot remove employees.")
+                self.logger.warning(
+                    f"[TERMINATION] EMP_ID column missing in term_events. Cannot remove employees."
+                )
             return snapshot
 
         # Get terminated employee IDs
-        terminated_ids = set(term_events[EMP_ID].unique()) # .unique() handles potential duplicates
+        terminated_ids = set(term_events[EMP_ID].unique())  # .unique() handles potential duplicates
 
         if not terminated_ids:
-            return snapshot # No valid IDs to remove
+            return snapshot  # No valid IDs to remove
 
         # Filter out terminated employees - assumes EMP_ID is a column in snapshot
         if EMP_ID not in snapshot.columns:
-            self.logger.error(f"[TERMINATION] EMP_ID column missing in snapshot. Cannot remove terminated employees.")
-            return snapshot # Or handle if EMP_ID could be index
+            self.logger.error(
+                f"[TERMINATION] EMP_ID column missing in snapshot. Cannot remove terminated employees."
+            )
+            return snapshot  # Or handle if EMP_ID could be index
 
         # CRITICAL FIX: Set EMP_ACTIVE to False for terminated employees before removal
         # This ensures the active count is correct for diagnostic logging
         from cost_model.state.schema import EMP_ACTIVE
+
         if EMP_ACTIVE in snapshot.columns:
             snapshot.loc[snapshot[EMP_ID].isin(terminated_ids), EMP_ACTIVE] = False
-            self.logger.info(f"[TERMINATION] Set EMP_ACTIVE=False for {len(terminated_ids)} terminated employees")
+            self.logger.info(
+                f"[TERMINATION] Set EMP_ACTIVE=False for {len(terminated_ids)} terminated employees"
+            )
 
         survivors = snapshot[~snapshot[EMP_ID].isin(terminated_ids)].copy()
 

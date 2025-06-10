@@ -2,11 +2,11 @@
 
 import logging
 from pathlib import Path
-from typing import Protocol, Optional, Sequence, Tuple, Union
+from typing import Optional, Protocol, Sequence, Tuple, Union
 
 import joblib
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.utils import check_random_state
 
 logger = logging.getLogger(__name__)
@@ -44,9 +44,7 @@ def try_load_ml_model(
         return None
 
     if not isinstance(feature_names, Sequence):
-        logger.error(
-            "Expected feature_names to be a sequence, got %r", type(feature_names)
-        )
+        logger.error("Expected feature_names to be a sequence, got %r", type(feature_names))
         return None
 
     logger.info("Loaded ML model with %d features", len(feature_names))

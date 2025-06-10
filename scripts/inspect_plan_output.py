@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import argparse
+
 import pandas as pd
 
 
 def main():
-    p = argparse.ArgumentParser(
-        description="Quick inspection of a plan-rules Parquet output"
-    )
+    p = argparse.ArgumentParser(description="Quick inspection of a plan-rules Parquet output")
     p.add_argument("parquet_file", help="Path to a .parquet file")
     args = p.parse_args()
 

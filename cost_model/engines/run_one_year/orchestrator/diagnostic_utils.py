@@ -5,9 +5,10 @@ Extracted from the main orchestrator init file for better organization.
 """
 import logging
 from typing import Optional, Set
+
 import pandas as pd
 
-from cost_model.state.schema import EMP_ID, EMP_ACTIVE
+from cost_model.state.schema import EMP_ACTIVE, EMP_ID
 
 
 def n_active(df: pd.DataFrame) -> int:
@@ -73,11 +74,11 @@ def log_headcount_stage(df: pd.DataFrame, stage: str, year: int, logger: logging
 
 
 def trace_snapshot_integrity(
-    df: pd.DataFrame, 
-    stage: str, 
-    year: int, 
-    logger: logging.Logger, 
-    previous_ids: Optional[Set] = None
+    df: pd.DataFrame,
+    stage: str,
+    year: int,
+    logger: logging.Logger,
+    previous_ids: Optional[Set] = None,
 ) -> Set:
     """
     Trace snapshot integrity across processing stages.
@@ -97,7 +98,7 @@ def trace_snapshot_integrity(
         return set()
 
     current_ids = set(df[EMP_ID].unique())
-    
+
     logger.info(f"[{stage}] Year {year} integrity check:")
     logger.info(f"  Current employee count: {len(current_ids)}")
 
@@ -108,7 +109,7 @@ def trace_snapshot_integrity(
         retained_ids = current_ids & previous_ids
 
         logger.info(f"  Retained from previous: {len(retained_ids)}")
-        
+
         if added_ids:
             logger.info(f"  Added employees: {len(added_ids)}")
             if len(added_ids) <= 10:
@@ -129,7 +130,7 @@ def trace_snapshot_integrity(
 
     # Check for data quality issues
     check_duplicates(df, stage, logger)
-    
+
     # Check active status distribution
     if EMP_ACTIVE in df.columns:
         active_count = df[EMP_ACTIVE].sum()
@@ -143,44 +144,44 @@ class DiagnosticTracker:
     """
     Helper class to track diagnostic information across orchestrator stages.
     """
-    
+
     def __init__(self, logger: logging.Logger, year: int):
         self.logger = logger
         self.year = year
         self.previous_ids: Optional[Set] = None
         self.stage_history = []
-    
+
     def track_stage(self, df: pd.DataFrame, stage: str) -> None:
         """
         Track a processing stage with full diagnostic logging.
-        
+
         Args:
             df: Current snapshot DataFrame
             stage: Description of processing stage
         """
         self.logger.info(f"=== {stage} ===")
-        
+
         # Log headcount
         log_headcount_stage(df, stage, self.year, self.logger)
-        
+
         # Track integrity
-        current_ids = trace_snapshot_integrity(
-            df, stage, self.year, self.logger, self.previous_ids
-        )
-        
+        current_ids = trace_snapshot_integrity(df, stage, self.year, self.logger, self.previous_ids)
+
         # Update tracking state
         self.previous_ids = current_ids
-        self.stage_history.append({
-            'stage': stage,
-            'employee_count': len(df),
-            'active_count': n_active(df),
-            'unique_ids': len(current_ids)
-        })
-    
+        self.stage_history.append(
+            {
+                "stage": stage,
+                "employee_count": len(df),
+                "active_count": n_active(df),
+                "unique_ids": len(current_ids),
+            }
+        )
+
     def get_summary(self) -> dict:
         """Get summary of all tracked stages."""
         return {
-            'year': self.year,
-            'stages': self.stage_history.copy(),
-            'total_stages': len(self.stage_history)
+            "year": self.year,
+            "stages": self.stage_history.copy(),
+            "total_stages": len(self.stage_history),
         }

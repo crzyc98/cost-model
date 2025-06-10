@@ -74,7 +74,7 @@ for year in core_summary['years']:
     active_count = year_data.get('active_count', 0)
     terminated_count = year_data.get('terminated_count', 0)
     new_hire_count = year_data.get('new_hire_count', 0)
-    
+
     print(f"\nYear {year} Summary:")
     print(f"Active employees: {active_count}")
     print(f"Terminated employees: {terminated_count}")
@@ -100,7 +100,7 @@ with open(output_dir / 'core_summary.json', 'w') as f:
                 serializable_summary[key][str(year)] = year_data
         else:
             serializable_summary[key] = value
-    
+
     json.dump(serializable_summary, f, indent=2)
 
 print(f"\nSummary saved to {output_dir / 'core_summary.json'}")
@@ -108,6 +108,7 @@ print(f"\nSummary saved to {output_dir / 'core_summary.json'}")
 
 This demonstrates how to build a comprehensive core summary from snapshot data and analyze the results.
 """
+
 
 def build_core_summary(summary_dict: dict) -> dict:
     """
