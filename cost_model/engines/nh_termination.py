@@ -6,6 +6,7 @@ This module provides deterministic and stochastic termination logic for new hire
 """
 import json
 import logging
+import math
 from typing import List
 
 import numpy as np
@@ -87,7 +88,10 @@ def run_new_hires(
         else 0.0
     )
     n = len(df_nh)
-    k = min(int(round(n * nh_term_rate)), n)  # Ensure k is not larger than n
+    # Determine number to terminate.
+    # For small n, `round(n*rate)` may yield 0 even when rate>0 and n>0.
+    # Use ceil to guarantee at least one termination when rate>0 and n>0.
+    k = min(int(math.ceil(n * nh_term_rate)), n)
 
     # CRITICAL LOGGING: Track new hire termination rate sourcing and application
     logger.info(f"[NH-TERM] Year {year}: Found {n} new hires for potential termination")
