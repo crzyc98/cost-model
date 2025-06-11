@@ -291,36 +291,38 @@ class YearlySnapshotProcessor:
 
         EMP_ID = "employee_id"
 
-        # Candidate termination events (regular EVT_TERM) for employees missing from snapshots
-        term_events = year_events[
-            (year_events["event_type"] == EVT_TERM)
+        # Prefer explicit new-hire termination event type if available
+        nht_events = year_events[
+            (year_events["event_type"] == EVT_NEW_HIRE_TERM)
             & (year_events[EMP_ID].isin(missing_ids))
         ]
 
-        if term_events.empty:
-            logger.debug("No termination events found for missing employees")
+        if nht_events.empty:
+            # Fall back: derive from regular term events where hire year == simulation year
+            term_events = year_events[
+                (year_events["event_type"] == EVT_TERM)
+                & (year_events[EMP_ID].isin(missing_ids))
+            ]
+
+            candidate_events = []
+            for _, term_evt in term_events.iterrows():
+                emp_id = term_evt[EMP_ID]
+                hire_date = self._extract_hire_date_from_events(emp_id, year_events)
+                if hire_date is None:
+                    continue
+                hire_year = pd.to_datetime(hire_date, errors="coerce").year
+                if hire_year == simulation_year:
+                    candidate_events.append(term_evt)
+
+            nht_events = pd.DataFrame(candidate_events)
+
+        if nht_events.empty:
+            logger.debug("No new-hire terminations found for missing employees")
             return pd.DataFrame()
 
-        # Keep only those whose hire occurred in the current simulation year – i.e., true new hires
-        candidate_events = []
-        for _, term_evt in term_events.iterrows():
-            emp_id = term_evt[EMP_ID]
-            hire_date = self._extract_hire_date_from_events(emp_id, year_events)
-            if hire_date is None:
-                continue
-            hire_year = pd.to_datetime(hire_date, errors="coerce").year
-            if hire_year == simulation_year:
-                candidate_events.append(term_evt)
-
-        if not candidate_events:
-            logger.debug("No new-hire terminations after hire-year filter")
-            return pd.DataFrame()
-
-        nht_events = pd.DataFrame(candidate_events)
         logger.debug(f"Processing {len(nht_events)} new hire termination events")
 
         reconstructed_employees = []
-
         for _, nht_event in nht_events.iterrows():
             try:
                 employee_data = self._reconstruct_single_terminated_new_hire(
@@ -331,12 +333,7 @@ class YearlySnapshotProcessor:
             except Exception as e:
                 logger.warning(f"Failed to reconstruct employee {nht_event.get(EMP_ID)}: {e}")
 
-        if reconstructed_employees:
-            result = pd.DataFrame(reconstructed_employees)
-            logger.debug(f"Successfully reconstructed {len(result)} terminated new hires")
-            return result
-        else:
-            return pd.DataFrame()
+        return pd.DataFrame(reconstructed_employees) if reconstructed_employees else pd.DataFrame()
 
     def _reconstruct_single_terminated_new_hire(
         self,
