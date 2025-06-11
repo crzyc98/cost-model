@@ -209,6 +209,48 @@ class YearlySnapshotProcessor:
             ].copy()
 
             if not soy_terminated.empty:
+                # Enrich SOY rows with termination metadata from events
+                try:
+                    from cost_model.state.event_log import EVT_TERM
+                    # Get termination events for these employees in the current year
+                    term_events = year_events[
+                        (year_events["event_type"] == EVT_TERM)
+                        & (year_events[EMP_ID].isin(soy_terminated[EMP_ID]))
+                    ][[EMP_ID, "event_time"]].copy()
+                    term_events = term_events.drop_duplicates(subset=[EMP_ID])
+                    term_events.rename(columns={"event_time": "employee_termination_date"}, inplace=True)
+                    # Drop stale termination-date column to avoid _x/_y suffix mess
+                    if "employee_termination_date" in soy_terminated.columns:
+                        soy_terminated = soy_terminated.drop(columns=["employee_termination_date"])
+                    # Merge termination date into snapshot rows
+                    soy_terminated = soy_terminated.merge(term_events, on=EMP_ID, how="left")
+                    # After merge, ensure proper column naming if suffixes occurred
+                    # (happens if previous column slipped through)
+                    for col_candidate in [
+                        "employee_termination_date_y",
+                        "employee_termination_date_x",
+                    ]:
+                        if col_candidate in soy_terminated.columns:
+                            soy_terminated["employee_termination_date"] = soy_terminated[
+                                col_candidate
+                            ].where(
+                                soy_terminated["employee_termination_date"].isna(),
+                                soy_terminated["employee_termination_date"],
+                            )
+                            soy_terminated = soy_terminated.drop(columns=[col_candidate])
+                    # Normalize to date (remove time) for cleaner snapshot column
+                    soy_terminated["employee_termination_date"] = pd.to_datetime(
+                        soy_terminated["employee_termination_date"], errors="coerce"
+                    ).dt.date
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to merge termination dates for experienced terms: {e}")
+
+                # Mark status flags for terminated employees reconstructed from SOY
+                soy_terminated["active"] = False
+                soy_terminated["exited"] = True
+                soy_terminated["employee_status_eoy"] = "TERMINATED"
+
                 missing_employees.append(soy_terminated)
                 reconstructed_from_soy = set(soy_terminated[EMP_ID].unique())
                 logger.debug(

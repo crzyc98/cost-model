@@ -34,27 +34,38 @@ def make_yearly_status(prev_snap, eoy_snap, event_log, year):
     active_start = int(prev_snap["active"].sum())
     active_end = int(eoy_snap["active"].sum())
 
-    # Use robust snapshot-based counting (same logic as make_yearly_summaries fix)
-    # Add hire year to end-of-year snapshot for cohort analysis
+    # --- New-hire metrics --------------------------------------------------
     eoy_snap = eoy_snap.copy()
-    eoy_snap["hire_year"] = pd.to_datetime(eoy_snap["employee_hire_date"]).dt.year
+    eoy_snap["hire_year"] = pd.to_datetime(eoy_snap["employee_hire_date"], errors="coerce").dt.year
 
-    # Identify current year hires (both active and terminated are in snapshot!)
     is_curr_year_hire = eoy_snap["hire_year"] == year
-    curr_year_active = eoy_snap["active"] & is_curr_year_hire
-    curr_year_terminated = (~eoy_snap["active"]) & is_curr_year_hire
+    nh_actives = int((eoy_snap["active"] & is_curr_year_hire).sum())
+    nh_terms = int((~eoy_snap["active"] & is_curr_year_hire).sum())
 
-    # Count from snapshot (ground truth)
-    nh_actives = int(curr_year_active.sum())
-    nh_terms = int(curr_year_terminated.sum())
+    # --- Experienced termination metrics ----------------------------------
+    # Derive terminations directly from snapshots to avoid dependency on
+    # event log coverage discrepancies. An experienced termination is an
+    # employee who was active at SOY but is inactive at EOY and was *NOT*
+    # hired in the current year.
+    EMP_ID = "employee_id"
 
-    # Calculate experienced terminations from events
-    if not event_log.empty:
-        yr = event_log[pd.to_datetime(event_log["event_time"]).dt.year == year]
-        total_terms = int((yr["event_type"] == EVT_TERM).sum())
-        experienced_terms = max(0, total_terms - nh_terms)
-    else:
-        experienced_terms = 0
+    soy_active_ids = set(prev_snap.loc[prev_snap["active"], EMP_ID].astype(str))
+    eoy_active_ids = set(eoy_snap.loc[eoy_snap["active"], EMP_ID].astype(str))
+
+    # Employees present in SOY active set but absent from EOY active set
+    terminated_ids = soy_active_ids - eoy_active_ids
+
+    # Remove new-hire terminations (those hired in current year)
+    nh_terminated_ids = set(eoy_snap.loc[~eoy_snap["active"] & is_curr_year_hire, EMP_ID].astype(str))
+    experienced_terminated_ids = terminated_ids - nh_terminated_ids
+
+    experienced_terms = len(experienced_terminated_ids)
+
+    # Safety: fall back to event-log count if snapshot-based method yields 0
+    if experienced_terms == 0 and not event_log.empty:
+        yr_log = event_log[pd.to_datetime(event_log["event_time"]).dt.year == year]
+        experienced_terms = int((yr_log["event_type"] == EVT_TERM).sum()) - nh_terms
+        experienced_terms = max(0, experienced_terms)
 
     # Import canonical column names from schema
     from cost_model.state.schema import SUMMARY_YEAR
