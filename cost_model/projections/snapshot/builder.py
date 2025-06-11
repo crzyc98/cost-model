@@ -385,6 +385,29 @@ def _apply_tenure_calculations(
     tenure_col = "employee_tenure"
     tenure_band_col = "employee_tenure_band"
 
+    # Ensure tenure_band column can accept all possible bands we assign
+    # (pandas Categorical will error if we set a value outside categories)
+    if tenure_band_col in snapshot.columns:
+        col = snapshot[tenure_band_col]
+        if pd.api.types.is_categorical_dtype(col):
+            required_cats = [
+                "NEW_HIRE",
+                "EARLY_CAREER",
+                "MID_CAREER",
+                "SENIOR",
+                "VETERAN",
+                "UNKNOWN",
+            ]
+            missing = [c for c in required_cats if c not in col.cat.categories]
+            if missing:
+                snapshot[tenure_band_col] = col.cat.add_categories(missing)
+        else:
+            # Coerce to string dtype to avoid category issues
+            snapshot[tenure_band_col] = col.astype("string[python]")
+    else:
+        # Create column with correct dtype
+        snapshot[tenure_band_col] = pd.Series(dtype="string[python]")
+
     # Calculate tenure based on employee status
     end_of_year = pd.Timestamp(f"{simulation_year}-12-31")
 
@@ -454,9 +477,19 @@ def _apply_age_calculations(
     try:
         # Try to use existing age calculation function
         from cost_model.state.age import apply_age
+        from cost_model.state.schema import EMP_BIRTH_DATE, EMP_AGE, EMP_AGE_BAND
 
-        snapshot = apply_age(snapshot, as_of=end_of_year)
-        logger.debug("Applied age calculations using existing function")
+        if EMP_BIRTH_DATE in snapshot.columns:
+            snapshot = apply_age(
+                snapshot, 
+                birth_col=EMP_BIRTH_DATE, 
+                as_of=end_of_year,
+                out_age_col=EMP_AGE,
+                out_band_col=EMP_AGE_BAND
+            )
+            logger.debug("Applied age calculations using existing function")
+        else:
+            raise ValueError(f"Missing required birth date column: {EMP_BIRTH_DATE}")
 
     except Exception as e:
         logger.warning(f"Existing age function failed, using manual calculation: {e}")

@@ -118,6 +118,9 @@ def run_one_year(
         event_manager.add_events(promotion_events, "promotion")
         diagnostic_tracker.track_stage(snapshot, "Post-Promotions")
 
+        # Capture start count before terminations for hiring calculations
+        start_count_before_terminations = len(snapshot[snapshot[EMP_ACTIVE]] if EMP_ACTIVE in snapshot.columns else snapshot)
+
         # Step 2: Process terminations for experienced employees
         termination_events, snapshot = termination_orchestrator.get_experienced_termination_events(
             snapshot, year_context
@@ -126,7 +129,9 @@ def run_one_year(
         diagnostic_tracker.track_stage(snapshot, "Post-Experienced-Terminations")
 
         # Step 3: Process hiring
-        hiring_events, snapshot = hiring_orchestrator.get_events(snapshot, year_context)
+        hiring_events, snapshot = hiring_orchestrator.get_events(
+            snapshot, year_context, start_count=start_count_before_terminations
+        )
         event_manager.add_events(hiring_events, "hiring")
         diagnostic_tracker.track_stage(snapshot, "Post-Hiring")
 
@@ -144,8 +149,8 @@ def run_one_year(
         event_manager.add_events(contribution_events, "contribution")
         diagnostic_tracker.track_stage(snapshot, "Post-Contributions")
 
-        # Step 6: Apply compensation events (if any)
-        compensation_events = _generate_compensation_events(snapshot, year, logger)
+        # Step 6: Apply compensation events (merit raises and COLA)
+        compensation_events = _generate_compensation_events(snapshot, year_context, logger)
         event_manager.add_events(compensation_events, "compensation")
 
         # Step 7: Final validation
@@ -258,38 +263,52 @@ def _apply_contribution_calculations(
 
 
 def _generate_compensation_events(
-    snapshot: pd.DataFrame, year: int, logger: logging.Logger
-) -> pd.DataFrame:
+    snapshot: pd.DataFrame, year_context: YearContext, logger: logging.Logger
+) -> List[pd.DataFrame]:
     """
-    Generate compensation-related events.
+    Generate compensation-related events (merit raises and COLA).
 
     Args:
         snapshot: Current employee snapshot
-        year: Simulation year
+        year_context: Year-specific context containing hazard_slice and other params
         logger: Logger instance
 
     Returns:
-        Compensation events DataFrame
+        List of compensation event DataFrames [merit_events, cola_events]
     """
-    logger.info("[GENERATE_COMPENSATION] Processing compensation events")
+    logger.info("[GENERATE_COMPENSATION] Processing merit raises and COLA events")
 
-    # TODO: Replace with actual compensation event generation logic
-    # This is a placeholder that maintains the original structure
     try:
-        # Import and apply compensation event logic
-        from cost_model.engines.comp import generate_compensation_events
+        # Import the bump function from comp engine
+        from cost_model.engines.comp import bump
 
-        events = generate_compensation_events(snapshot=snapshot, simulation_year=year)
+        # Generate both merit and COLA events using the bump function
+        # bump returns [merit_events_df, cola_events_df]
+        compensation_events = bump(
+            snapshot=snapshot,
+            hazard_slice=year_context.hazard_slice,
+            as_of=pd.Timestamp(f"{year_context.year}-12-31"),
+            rng=year_context.rng,
+        )
 
-        logger.info(f"Generated {len(events)} compensation events")
-        return events
+        total_events = sum(len(df) for df in compensation_events if not df.empty)
+        logger.info(f"Generated {total_events} total compensation events (merit + COLA)")
+        
+        # Log breakdown
+        if len(compensation_events) >= 2:
+            merit_count = len(compensation_events[0]) if not compensation_events[0].empty else 0
+            cola_count = len(compensation_events[1]) if not compensation_events[1].empty else 0
+            logger.info(f"  Merit events: {merit_count}")
+            logger.info(f"  COLA events: {cola_count}")
 
-    except ImportError:
-        logger.info("Compensation event module not available, skipping")
-        return pd.DataFrame()
+        return compensation_events
+
+    except ImportError as e:
+        logger.warning(f"Compensation module not available: {e}")
+        return [pd.DataFrame(), pd.DataFrame()]
     except Exception as e:
         logger.error(f"Error generating compensation events: {e}")
-        return pd.DataFrame()
+        return [pd.DataFrame(), pd.DataFrame()]
 
 
 # Backward compatibility exports

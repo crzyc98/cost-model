@@ -36,6 +36,17 @@ class YearContext:
     census_template_path: Optional[str] = None
     deterministic_term: bool = False
 
+    # Backwards compatibility alias for random number generator
+    @property
+    def rng(self) -> np.random.Generator:
+        """Alias for :pyattr:`year_rng` to maintain compatibility with components expecting 'rng'."""
+        return self.year_rng
+
+    @rng.setter
+    def rng(self, value: np.random.Generator) -> None:
+        """Allow setting the RNG via the alias as well."""
+        self.year_rng = value
+
     @classmethod
     def create(
         cls,

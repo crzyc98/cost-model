@@ -333,15 +333,41 @@ def run(
     zero_rates = merged_df[TERM_RATE] == 0
 
     if missing_rates.any():
-        # DIAGNOSTIC: Examine which employee level and tenure band combinations are missing
+        # ENHANCED DIAGNOSTIC: Examine which employee level and tenure band combinations are missing
         missing_df = merged_df[missing_rates][[EMP_ID, EMP_LEVEL, EMP_TENURE_BAND]]
         missing_combos = missing_df.groupby([EMP_LEVEL, EMP_TENURE_BAND]).size().reset_index()
         missing_combos.columns = [EMP_LEVEL, EMP_TENURE_BAND, "count"]
+
+        logger.warning(
+            f"[TERM] Year {year}: Found {missing_rates.sum()} employees with missing term_rate across "
+            f"{len(missing_combos)} level-tenure combinations"
+        )
 
         diag_logger.debug(
             f"[TERM DIAGNOSTIC YR={year}] Missing level-tenure combinations:\n"
             f"{missing_combos.to_string()}"
         )
+
+        # Log available combinations in hazard table for comparison
+        available_combos = hz[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates().sort_values([EMP_LEVEL, EMP_TENURE_BAND])
+        diag_logger.debug(
+            f"[TERM DIAGNOSTIC YR={year}] Available hazard table combinations:\n"
+            f"{available_combos.to_string()}"
+        )
+
+        # Identify which specific combinations are missing from hazard table
+        missing_from_hazard = []
+        for _, combo in missing_combos.iterrows():
+            level = combo[EMP_LEVEL]
+            tenure_band = combo[EMP_TENURE_BAND]
+            if not ((hz[EMP_LEVEL] == level) & (hz[EMP_TENURE_BAND] == tenure_band)).any():
+                missing_from_hazard.append(f"Level {level}, Tenure {tenure_band}")
+
+        if missing_from_hazard:
+            logger.error(
+                f"[TERM] Year {year}: The following combinations are completely missing from hazard table: "
+                f"{missing_from_hazard}"
+            )
 
         # Show a sample of employee IDs with missing rates
         sample_size = min(5, missing_df.shape[0])
@@ -356,55 +382,86 @@ def run(
                 f"{sample_missing.to_string()}"
             )
 
-        # FALLBACK STRATEGY: For level 2 with '<1' tenure (specifically identified in logs)
-        # Use a reasonable fallback rate based on other rates in the hazard table
-        level2_01yr_mask = (
-            (merged_df[EMP_LEVEL] == 2) & (merged_df[EMP_TENURE_BAND] == "<1") & missing_rates
+        # ENHANCED FALLBACK STRATEGY: Handle all missing combinations systematically
+        # Group missing employees by level and tenure band for targeted fallback
+        missing_df = merged_df[missing_rates][[EMP_ID, EMP_LEVEL, EMP_TENURE_BAND]]
+        missing_combos = missing_df.groupby([EMP_LEVEL, EMP_TENURE_BAND]).size().reset_index()
+        missing_combos.columns = [EMP_LEVEL, EMP_TENURE_BAND, "count"]
+
+        logger.info(
+            f"[TERM] Year {year}: Applying fallback logic for {len(missing_combos)} missing level-tenure combinations"
         )
-        level2_01yr_count = level2_01yr_mask.sum()
 
-        if level2_01yr_count > 0:
-            # Find the average termination rate for level 2 employees of all tenure bands
-            level2_rates = hz[hz[EMP_LEVEL] == 2][TERM_RATE]
+        # Apply fallback for each missing combination
+        for _, combo in missing_combos.iterrows():
+            level = combo[EMP_LEVEL]
+            tenure_band = combo[EMP_TENURE_BAND]
+            count = combo["count"]
 
-            # If we have level 2 rates, use their mean; otherwise, use level 1 with 0-1 tenure as a proxy
-            if not level2_rates.empty:
-                fallback_rate = level2_rates.mean()
-                logger.info(
-                    f"[TERM] Year {year}: Using average rate {fallback_rate:.4f} from level 2 employees as fallback"
-                )
-            else:
-                # Try to get the rate for level 1, <1 as a proxy
-                level1_01yr = hz[(hz[EMP_LEVEL] == 1) & (hz[EMP_TENURE_BAND] == "<1")]
-                if not level1_01yr.empty:
-                    fallback_rate = level1_01yr[TERM_RATE].iloc[0]
-                    logger.info(
-                        f"[TERM] Year {year}: Using level 1, <1 rate {fallback_rate:.4f} as proxy for level 2, <1"
-                    )
+            # Create mask for this specific combination
+            combo_mask = (
+                (merged_df[EMP_LEVEL] == level) &
+                (merged_df[EMP_TENURE_BAND] == tenure_band) &
+                missing_rates
+            )
+
+            fallback_rate = None
+            fallback_source = None
+
+            # Strategy 1: Use same level, different tenure band
+            same_level_rates = hz[hz[EMP_LEVEL] == level][TERM_RATE]
+            if not same_level_rates.empty:
+                fallback_rate = same_level_rates.mean()
+                fallback_source = f"average of level {level} rates"
+
+            # Strategy 2: Use same tenure band, different level
+            elif not hz[hz[EMP_TENURE_BAND] == tenure_band].empty:
+                same_tenure_rates = hz[hz[EMP_TENURE_BAND] == tenure_band][TERM_RATE]
+                fallback_rate = same_tenure_rates.mean()
+                fallback_source = f"average of {tenure_band} tenure rates"
+
+            # Strategy 3: Use adjacent level (level ± 1)
+            elif level > 0:
+                adjacent_level_rates = hz[hz[EMP_LEVEL] == (level - 1)][TERM_RATE]
+                if not adjacent_level_rates.empty:
+                    fallback_rate = adjacent_level_rates.mean()
+                    fallback_source = f"average of level {level - 1} rates"
                 else:
-                    # Last resort - use global average
-                    fallback_rate = hz[TERM_RATE].mean()
-                    diag_logger.info(
-                        f"[TERM] Year {year}: Using global average rate {fallback_rate:.4f} as last resort fallback"
-                    )
+                    adjacent_level_rates = hz[hz[EMP_LEVEL] == (level + 1)][TERM_RATE]
+                    if not adjacent_level_rates.empty:
+                        fallback_rate = adjacent_level_rates.mean()
+                        fallback_source = f"average of level {level + 1} rates"
+
+            # Strategy 4: Global average as last resort
+            if fallback_rate is None:
+                fallback_rate = hz[TERM_RATE].mean()
+                fallback_source = "global average rate"
 
             # Apply the fallback rate
-            merged_df.loc[level2_01yr_mask, TERM_RATE] = fallback_rate
-            diag_logger.debug(
-                f"[TERM] Year {year}: Using fallback rate {fallback_rate:.1%} for {level2_01yr_count} "
-                f"employees with level 2 and <1 year tenure (no rate in hazard table)"
-            )
-            # Update missing rates count after applying fallback
-            missing_rates = merged_df[TERM_RATE].isna()
+            merged_df.loc[combo_mask, TERM_RATE] = fallback_rate
 
-        # For any remaining NAs, fill with 0 (default behavior)
+            logger.info(
+                f"[TERM] Year {year}: Applied fallback rate {fallback_rate:.4f} ({fallback_source}) "
+                f"for {count} employees with level {level}, tenure {tenure_band}"
+            )
+
+        # Update missing rates count after applying all fallbacks
+        missing_rates = merged_df[TERM_RATE].isna()
+
+        # For any remaining NAs, fill with global average or default 5%
         remaining_na_count = missing_rates.sum()
         if remaining_na_count > 0:
-            logger.warning(
-                f"[TERM] Year {year}: {remaining_na_count} employees still missing {TERM_RATE} after fallback logic. "
-                f"Filling with 0. Check hazard table coverage for all {EMP_LEVEL} and {EMP_TENURE_BAND} combinations."
+            logger.error(
+                f"[TERM] Year {year}: {remaining_na_count} employees STILL missing {TERM_RATE} after all fallback attempts. "
+                "Applying global average rate as last-resort safeguard to avoid zero-termination bias."
             )
-            merged_df[TERM_RATE] = merged_df[TERM_RATE].fillna(0)
+            global_fallback = hz[TERM_RATE].mean()
+            if pd.isna(global_fallback) or global_fallback == 0:
+                global_fallback = 0.05  # safety default 5% if hazard table entirely missing or zero
+            merged_df[TERM_RATE] = merged_df[TERM_RATE].fillna(global_fallback)
+            logger.info(
+                f"[TERM] Year {year}: Applied global fallback rate {global_fallback:.4f} to remaining employees."
+            )
         else:
             logger.info(
                 f"[TERM] Year {year}: All missing term rates successfully handled with fallback logic."

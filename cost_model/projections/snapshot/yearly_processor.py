@@ -25,6 +25,7 @@ from .types import (
     SimulationYear,
 )
 from .validators import SnapshotValidator
+from cost_model.state.event_log import EVT_HIRE, EVT_TERM, EVT_NEW_HIRE_TERM
 
 logger = get_snapshot_logger(__name__)
 
@@ -71,9 +72,6 @@ class YearlySnapshotProcessor:
         # Use original schema column names for compatibility
         EMP_ID = "employee_id"
         EMP_ACTIVE = "active"
-        EVT_HIRE = "hire"
-        EVT_TERM = "termination"
-        EVT_NEW_HIRE_TERM = "new_hire_termination"
 
         # Step 1: Get employees active at start of year
         soy_active_employees = (
@@ -250,7 +248,6 @@ class YearlySnapshotProcessor:
         logger.debug("Reconstructing terminated new hires from events")
 
         EMP_ID = "employee_id"
-        EVT_NEW_HIRE_TERM = "new_hire_termination"
 
         # Filter for new hire termination events
         nht_events = year_events[
@@ -369,7 +366,6 @@ class YearlySnapshotProcessor:
     ) -> Optional[str]:
         """Extract hire date for an employee from events."""
         EMP_ID = "employee_id"
-        EVT_HIRE = "hire"
 
         hire_events = year_events[
             (year_events["event_type"] == EVT_HIRE) & (year_events[EMP_ID] == emp_id)

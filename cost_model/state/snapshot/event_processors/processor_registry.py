@@ -8,6 +8,7 @@ from typing import Dict, List, Type
 import pandas as pd
 
 from .base import BaseEventProcessor, EventProcessorResult
+from cost_model.state.schema import EMP_ID
 from .compensation_processor import CompensationEventProcessor
 from .contribution_processor import ContributionEventProcessor
 from .hire_processor import HireEventProcessor
@@ -94,7 +95,7 @@ class EventProcessorRegistry:
             f"Processing {len(events)} events with {len(self.processors)} registered processors"
         )
 
-        # Initialize result
+        # Initialize result with the incoming snapshot to preserve columns (e.g., EMP_ID)
         consolidated_result = EventProcessorResult()
         consolidated_result.updated_snapshot = snapshot.copy()
 
@@ -124,10 +125,22 @@ class EventProcessorRegistry:
                 consolidated_result.updated_snapshot, event_group, snapshot_year
             )
 
+            # Unconditional EMP_ID presence check right after processor execution
+            if EMP_ID not in result.updated_snapshot.columns:
+                self.logger.error(
+                    f"[EMP_ID LOST] immediately after processor '{event_type}', success={result.success}"
+                )
+
             # Consolidate results
             if result.success:
                 consolidated_result.updated_snapshot = result.updated_snapshot
                 consolidated_result.employees_affected.update(result.employees_affected)
+                
+                # EMP_ID presence check after each processor
+                if EMP_ID not in consolidated_result.updated_snapshot.columns:
+                    self.logger.error(
+                        f"[EMP_ID LOST] Column missing after processing event type: {event_type}"
+                    )
             else:
                 # If any processor fails, stop processing
                 consolidated_result.success = False
@@ -145,6 +158,10 @@ class EventProcessorRegistry:
             )
             for issue in integrity_issues:
                 consolidated_result.add_warning(f"Final integrity check: {issue}")
+
+        # Final EMP_ID presence check after all processing
+        if EMP_ID not in consolidated_result.updated_snapshot.columns:
+            self.logger.error("[EMP_ID LOST] Column missing AFTER all processors")
 
         self.logger.info(
             f"Event processing completed. Success: {consolidated_result.success}, "

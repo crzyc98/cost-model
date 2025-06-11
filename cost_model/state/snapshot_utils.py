@@ -101,18 +101,107 @@ def extract_hire_details(hire_events: pd.DataFrame) -> pd.DataFrame:  # noqa: N8
 
 
 def ensure_columns_and_types(df: pd.DataFrame) -> pd.DataFrame:  # noqa: N802
-    """Ensure *df* conforms to SNAPSHOT_COLS/DTYPES order & dtypes."""
+    """Ensure *df* conforms to SNAPSHOT_COLS/DTYPES order & dtypes.
+
+    Critical fix: do **not** overwrite existing non-null ``EMP_ID`` values. In prior logic, pandas
+    conversion to ``pd.StringDtype`` occasionally wiped out valid IDs, leaving the column full of
+    ``<NA>``. We now:
+      1. Add truly *missing* columns only.
+      2. Apply dtype coercion *except* for the ``EMP_ID`` column, which we coerce separately to
+         a python string dtype while preserving data.
+      3. Assert the result still contains non-null & unique IDs.
+    """
+    # Work on a copy to avoid mutating caller's DF
+    # ------------------------------------------------------------------
+    # 0. Ensure EMP_ID is a column, not an index (some operations may
+    #    accidentally set it as the index which hides it from df.columns)
+    # ------------------------------------------------------------------
+    if EMP_ID not in df.columns and EMP_ID in df.index.names:
+        df = df.reset_index()
+        logger.warning("[ENSURE] EMP_ID found as index; reset to column")
+
+    result = df.copy()
+
+    # Preserve original EMP_ID values to avoid accidental coercion side-effects
+    emp_id_series = result[EMP_ID].copy() if EMP_ID in result.columns else None
+
+    if EMP_ID in result.columns:
+        pre_null = result[EMP_ID].isna().sum()
+        pre_dup = result[EMP_ID].duplicated().sum()
+        logger.info(
+            f"[ENSURE] Pre-process EMP_ID integrity: {pre_dup} dup, {pre_null} null (rows={len(result)})"
+        )
+
+    # ------------------------------------------------------------------
+    # 1. Ensure all required columns exist (do NOT touch existing ones)
+    # ------------------------------------------------------------------
     for col, dtype in SNAPSHOT_DTYPES.items():
-        if col not in df.columns:
+        if col not in result.columns:
             if pd.api.types.is_numeric_dtype(dtype):
-                df[col] = np.nan
+                result[col] = np.nan
             elif pd.api.types.is_datetime64_any_dtype(dtype):
-                df[col] = pd.NaT
+                result[col] = pd.NaT
+            elif dtype == pd.BooleanDtype():
+                result[col] = pd.NA
             else:
-                df[col] = pd.NA
-    df = df[SNAPSHOT_COLS].copy()  # order and create copy to avoid SettingWithCopyWarning
-    # replace pd.NA in numeric cols
+                result[col] = pd.NA
+
+    # ------------------------------------------------------------------
+    # 2. Re-order columns per schema (preserves existing data)
+    # ------------------------------------------------------------------
+    result = result[SNAPSHOT_COLS].copy()
+
+    if EMP_ID in result.columns:
+        post_reorder_null = result[EMP_ID].isna().sum()
+        post_reorder_dup = result[EMP_ID].duplicated().sum()
+        logger.info(
+            f"[ENSURE] After reorder EMP_ID integrity: {post_reorder_dup} dup, {post_reorder_null} null"
+        )
+
+    # Replace pd.NA with np.nan in numeric columns before astype
     for col, dtype in SNAPSHOT_DTYPES.items():
-        if pd.api.types.is_numeric_dtype(dtype):
-            df.loc[:, col] = df[col].replace({pd.NA: np.nan})
-    return df.astype(SNAPSHOT_DTYPES)
+        if pd.api.types.is_numeric_dtype(dtype) and col in result.columns:
+            result.loc[:, col] = result[col].replace({pd.NA: np.nan})
+
+    # ------------------------------------------------------------------
+    # 3. Apply dtype coercion safely
+    #    – apply to all columns *except* EMP_ID to avoid clobbering values
+    # ------------------------------------------------------------------
+    dtype_map = {k: v for k, v in SNAPSHOT_DTYPES.items() if k != EMP_ID}
+    result = result.astype(dtype_map)
+
+    if EMP_ID in result.columns:
+        post_dtype_null = result[EMP_ID].isna().sum()
+        post_dtype_dup = result[EMP_ID].duplicated().sum()
+        logger.info(
+            f"[ENSURE] After astype EMP_ID integrity: {post_dtype_dup} dup, {post_dtype_null} null"
+        )
+
+    # Restore EMP_ID column (unchanged) and set dtype explicitly
+    if emp_id_series is not None:
+        result[EMP_ID] = emp_id_series
+
+    # Explicitly coerce EMP_ID to python string dtype without introducing <NA>
+    if EMP_ID in result.columns:
+        result[EMP_ID] = result[EMP_ID].astype("string[python]")
+        post_final_null = result[EMP_ID].isna().sum()
+        post_final_dup = result[EMP_ID].duplicated().sum()
+        logger.info(
+            f"[ENSURE] After final coercion EMP_ID integrity: {post_final_dup} dup, {post_final_null} null"
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Integrity assertions – must keep non-null, unique EMP_IDs
+    # ------------------------------------------------------------------
+    if EMP_ID in result.columns:
+        null_ids = result[EMP_ID].isna().sum()
+        dup_ids = result[EMP_ID].duplicated().sum()
+        if null_ids or dup_ids:
+            msg = (
+                f"ensure_columns_and_types integrity failure: {null_ids} null and "
+                f"{dup_ids} duplicate {EMP_ID}s after dtype coercion"
+            )
+            logger.error(msg)
+            raise ValueError(msg)
+
+    return result

@@ -287,6 +287,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
     # === Refactored Multi-Year Projection Loop ===
     current_snapshot = initial_snapshot
     current_event_log = initial_event_log
+    current_cumulative_event_log = pd.DataFrame([], columns=initial_event_log.columns if not initial_event_log.empty else [])
     all_employment_summaries = []
     yearly_eoy_snapshots = {}
 
@@ -323,6 +324,25 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
                     global_params, "deterministic_termination", True
                 ),  # Enable deterministic terminations
             )
+
+            # Accumulate events into the cumulative event log
+            if cumulative_event_log is not None and not cumulative_event_log.empty:
+                # Ensure simulation_year column exists and is filled with current year
+                if "simulation_year" not in cumulative_event_log.columns:
+                    cumulative_event_log["simulation_year"] = year
+                # Fill NA values with current year before conversion
+                cumulative_event_log["simulation_year"] = (
+                    cumulative_event_log["simulation_year"].fillna(year).astype(int)
+                )
+
+                current_cumulative_event_log = pd.concat(
+                    [current_cumulative_event_log, cumulative_event_log], ignore_index=True
+                )
+                logger.info(
+                    f"Year {year} - Cumulative event log now has {len(current_cumulative_event_log)} events."
+                )
+            else:
+                logger.info(f"Year {year} - No events from run_one_year to append to cumulative log.")
 
             # Log performance metrics
             elapsed = time.time() - start_time
@@ -411,7 +431,7 @@ def run_projection(args: argparse.Namespace, config_ns: Any, output_path: Path) 
 
         # Set final snapshot and event log for saving
         final_eoy_snapshot = current_snapshot
-        final_cumulative_event_log = current_event_log
+        final_cumulative_event_log = current_cumulative_event_log
         # END Refactored Multi-Year Projection Loop
 
         # 7. Reporting & Saving

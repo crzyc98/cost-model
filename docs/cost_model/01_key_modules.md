@@ -2,90 +2,161 @@
 
 This document provides an overview of the main modules and systems in the Workforce Simulation & Cost Model project.
 
-## Core Simulation
+## Core Architecture
 
-- **Simulation Orchestrator**: Manages the overall simulation flow and coordinates between modules
-- **Projection Engine**: Handles multi-year workforce projections
-- **Dynamics Engine**: Manages year-to-year workforce changes and transitions
+### Configuration (`cost_model/config/`)
+- **Config Loaders** (`loaders.py`): Load and parse YAML configuration files
+- **Config Models** (`models.py`): Pydantic models for configuration validation
+- **Config Accessors** (`accessors.py`): Helper functions to access specific config values
+- **Plan Rules Config** (`plan_rules.py`): Retirement plan configuration
+- **Parameter Management** (`params.py`): Runtime parameter handling
 
-## State Management
+### Data Management (`cost_model/data/`)
+- **Data Readers** (`readers.py`): Load data from various formats (Parquet, CSV)
+- **Data Writers** (`writers.py`): Save data with format detection and optimization
 
-- **Snapshot System**: Represents employee state at specific points in time
-- **Event Logging**: Tracks all state changes for audit and analysis
-- **Job Levels**: Manages organizational hierarchy and career progression
+### Simulation Engines (`cost_model/engines/`)
+- **Termination Engine** (`term.py`): Handles employee exits and turnover with enhanced fallback logic
+- **Hiring Engine** (`hire.py`): Generates and onboards new employees
+- **Compensation Engine** (`comp.py`): Manages salary changes and merit increases
+- **COLA Engine** (`cola.py`): Handles cost-of-living adjustments
+- **Promotion Engine** (`promotion.py`): Manages role and level progression
+- **Markov Promotion** (`markov_promotion.py`): Advanced promotion modeling
+- **New Hire Termination** (`nh_termination.py`): Specialized new hire attrition
 
-## Employee Lifecycle
+### Projections Framework (`cost_model/projections/`)
+- **CLI Interface** (`cli.py`): Command-line interface for running simulations
+- **Dynamic Hazard Tables** (`dynamic_hazard.py`): Runtime hazard table generation
+- **Static Hazard Tables** (`hazard.py`): Pre-built hazard table loading
+- **Snapshot Processing** (`snapshot.py`): Employee state snapshots
+- **Event Logging** (`event_log.py`): Comprehensive event tracking
+- **Reporting** (`reporting.py`): Output generation and analysis
+- **Runner** (`runner.py`): Simulation orchestration
 
-- **Hiring System**: Generates and onboards new employees
-- **Termination System**: Handles employee exits and turnover
-- **Compensation System**: Manages salary changes and adjustments
-- **Promotion System**: Handles role and level progression
+### State Management (`cost_model/state/`)
+- **Schema Definitions** (`schema.py`): Column names and data structure constants
+- **Age Calculations** (`age.py`): Employee age and age band management
+- **Tenure Calculations** (`tenure.py`): Employee tenure and tenure band logic
+- **Job Levels** (`job_levels.py`): Organizational hierarchy management
+- **Snapshot Builder** (`builder.py`): Snapshot construction utilities
+- **Snapshot Updates** (`snapshot_update.py`): State transition processing
 
-## Plan Rules
+### Plan Rules (`cost_model/plan_rules/`)
+- **Auto Enrollment** (`auto_enrollment.py`): Automatic plan enrollment logic
+- **Auto Increase** (`auto_increase.py`): Automatic contribution increases
+- **Contribution Increase** (`contribution_increase.py`): Manual contribution adjustments
+- **Eligibility** (`eligibility.py`): Plan participation eligibility rules
+- **Eligibility Events** (`eligibility_events.py`): Eligibility change tracking
+- **Enrollment** (`enrollment.py`): Plan enrollment processing
+- **Contributions** (`contributions.py`): Contribution calculations
+- **Proactive Decrease** (`proactive_decrease.py`): Contribution reduction logic
 
-- **Eligibility**: Determines plan participation eligibility
-- **Enrollment**: Manages plan enrollment processes
-- **Contributions**: Calculates employee and employer contributions
-- **Vesting**: Tracks vesting schedules and calculations
+### Business Rules (`cost_model/rules/`)
+- **Auto Enrollment Rules** (`auto_enrollment.py`): Core auto-enrollment logic
+- **Auto Increase Rules** (`auto_increase.py`): Contribution escalation rules
+- **Contribution Rules** (`contributions.py`): General contribution logic
+- **Eligibility Rules** (`eligibility.py`): Participation eligibility
+- **Rules Engine** (`engine.py`): Rule processing orchestration
+- **Formula Parsers** (`formula_parsers.py`): Configuration formula parsing
+- **Response Rules** (`response.py`): Behavioral response modeling
+- **Validators** (`validators.py`): Rule validation utilities
 
-## Data Processing
+### Dynamics (`cost_model/dynamics/`)
+- **Dynamics Engine** (`engine.py`): Orchestrates population dynamics
+- **Compensation Dynamics** (`compensation.py`): Salary progression modeling
+- **Hiring Dynamics** (`hiring.py`): New hire generation logic
+- **Termination Dynamics** (`termination.py`): Employee exit modeling
+- **Sampling Utilities** (`sampling/`): Statistical sampling tools
 
-- **Data Readers/Writers**: Handles I/O operations for various data formats
-  - Supports both Parquet and CSV file formats
-  - Automatic format detection based on file extension
-  - Efficient handling of large datasets
-- **Data Validation**: Ensures data quality and consistency
-  - Validates required columns in input data
-  - Checks for data type consistency
-  - Validates data ranges and constraints
-- **Data Transformation**: Standardizes and prepares data for analysis
-  - Automatic column name standardization (e.g., `employee_ssn` to `employee_id`)
-  - Handles missing values and data type conversions
-  - Supports custom data transformations
-- **DataFrame Operations**: Robust handling of tabular data
-  - Safe merging of DataFrames with duplicate column handling
-  - Efficient row-wise and column-wise operations
-  - Memory-optimized operations for large datasets
-- **Sampling**: Provides statistical sampling utilities
-  - Random sampling with configurable sampling rates
-  - Stratified sampling based on key variables
-  - Bootstrapping for statistical analysis
+### Machine Learning (`cost_model/ml/`)
+- **Turnover Models** (`turnover.py`): Employee turnover prediction
+- **ML Utilities** (`ml_utils.py`): Machine learning helper functions
 
-## Machine Learning
+### Schema & Validation (`cost_model/schema/`)
+- **Column Definitions** (`columns.py`): Standardized column names
+- **Data Types** (`dtypes.py`): Type definitions and validation
+- **Event Schema** (`events.py`): Event structure definitions
+- **Migration Tools** (`migration.py`): Schema migration utilities
+- **Validation Rules** (`validation.py`): Data validation logic
 
-- **Turnover Prediction**: Predicts employee turnover risk
-- **Compensation Modeling**: Models salary growth and adjustments
-- **Behavioral Simulation**: Simulates employee decisions and behaviors
+### Reporting (`cost_model/reporting/`)
+- **Metrics** (`metrics.py`): Key performance indicators and calculations
 
-## Configuration
+### Utilities (`cost_model/utils/`)
+- **Column Schema** (`columns.py`): Column name constants and utilities
+- **Constants** (`constants.py`): System-wide constants
+- **Date Utilities** (`date_utils.py`): Date and time helper functions
+- **Data Processing** (`data_processing.py`): General data manipulation
+- **DataFrame Validation** (`dataframe_validator.py`): DataFrame quality checks
+- **ID Generation** (`id_generation.py`): Unique identifier creation
+- **Tenure Utilities** (`tenure_utils.py`): Tenure calculation helpers
+- **Simulation Utilities** (`simulation_utils.py`): Simulation support functions
+- **Census Generation** (`census_generation_helpers.py`): Test data generation
+- **Compensation Utilities** (`compensation/`): Compensation calculation helpers
 
-- **Plan Configuration**: Defines retirement plan rules and parameters
-- **Simulation Parameters**: Controls simulation behavior and scenarios
-- **System Settings**: Application-level configuration
+## Key System Features
 
-## Utilities
+### Enhanced Termination Engine
+- **Intelligent Fallback Logic**: Handles missing hazard table combinations with multi-strategy approach
+- **Age Sensitivity**: Applies age-based multipliers to termination rates
+- **New Hire Termination**: Specialized handling for new employee attrition
+- **Comprehensive Logging**: Detailed diagnostics for troubleshooting
 
-- **Logging**: Centralized logging system
-- **Error Handling**: Standardized error types and handling
-- **Helper Functions**: Common utility functions used throughout the codebase
+### Dynamic Hazard Tables
+- **Runtime Generation**: Creates hazard tables based on configuration parameters
+- **Multi-Year Support**: Handles time-varying parameters across simulation years
+- **Flexible Parameters**: Supports complex parameter structures and scenarios
+
+### Auto-Tuning System
+- **Parameter Optimization**: Automatically calibrates simulation parameters
+- **Multi-Objective Scoring**: Balances headcount growth, age distribution, and compensation targets
+- **Campaign Management**: Supports iterative tuning campaigns with result tracking
+
+### Robust Data Processing
+- **Format Detection**: Automatic Parquet/CSV format handling
+- **Schema Validation**: Comprehensive data quality checks
+- **Memory Optimization**: Efficient handling of large datasets
+- **Error Recovery**: Graceful handling of data quality issues
 
 ## Module Relationships
 
 ```mermaid
 graph TD
-    A[Core Simulation] -->|uses| B[State Management]
-    A -->|generates| C[Employee Lifecycle Events]
-    C -->|feeds into| D[Plan Rules]
-    D -->|updates| B
-    E[Data Processing] -->|provides data to| A
-    F[Machine Learning] -->|informs| C
-    G[Configuration] -->|parameterizes| A
-    G -->|controls| D
-    H[Utilities] -->|supports| all
+    A[Projections Framework] -->|orchestrates| B[Simulation Engines]
+    B -->|updates| C[State Management]
+    B -->|uses| D[Dynamic Hazard Tables]
+    E[Configuration] -->|parameterizes| A
+    E -->|controls| F[Plan Rules]
+    F -->|processes| C
+    G[Data Management] -->|provides data to| A
+    H[Machine Learning] -->|informs| B
+    I[Utilities] -->|supports| all
+    J[Schema & Validation] -->|validates| C
+    K[Reporting] -->|analyzes| C
 ```
+
+## Recent Enhancements
+
+### Termination Engine Improvements
+- **Enhanced Fallback Logic**: Systematic handling of missing hazard table combinations
+- **Multi-Strategy Approach**: Uses same-level, same-tenure, adjacent-level, and global fallbacks
+- **Improved Diagnostics**: Detailed logging for missing combinations and fallback applications
+- **Validation Integration**: Hazard table coverage validation against employee populations
+
+### Auto-Tuning System
+- **Production-Ready Calibration**: Automated parameter optimization for realistic simulations
+- **Multi-Campaign Support**: Iterative refinement with campaign tracking and analysis
+- **Evidence-Based Parameters**: Uses BLS/SSA data for realistic parameter ranges
+- **Comprehensive Scoring**: Balances demographic preservation, headcount growth, and compensation targets
+
+### Age Sensitivity Integration
+- **Age-Based Multipliers**: Termination and promotion rates adjusted by employee age bands
+- **Consistent Age Calculations**: Unified age calculation across simulation and projection modules
+- **Retirement Modeling**: Enhanced modeling of age-related workforce transitions
 
 ## Related Documentation
 
 - [Class Inventory](02_class_inventory.md) - Detailed list of all classes
 - [Configuration Classes](03_config_classes.md) - Configuration module documentation
 - [State Management](07_state_schema.md) - State tracking and schema details
+- [Code Details](09_code_details_identified/index.md) - Implementation specifics and core components

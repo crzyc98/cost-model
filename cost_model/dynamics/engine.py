@@ -361,6 +361,16 @@ def run_dynamics_for_year(
         )
         if not new_hires_df.empty:
             log.info(f"Generated {len(new_hires_df)} new hire records.")
+            # Diagnostic check for EMP_ID integrity right after new hire generation
+            dup_ids = new_hires_df[EMP_ID].duplicated().sum()
+            null_ids = new_hires_df[EMP_ID].isna().sum()
+            if dup_ids or null_ids:
+                diag_msg = (
+                    f"[DIAG] Year {sim_year}: generate_new_hires produced "
+                    f"{dup_ids} duplicate and {null_ids} null {EMP_ID}s"
+                )
+                log.error(diag_msg)
+                raise ValueError(diag_msg)
             if EMP_ID not in new_hires_df.columns:
                 log.error(f"CRITICAL: generate_new_hires did not produce column '{EMP_ID}'.")
                 return pd.DataFrame()

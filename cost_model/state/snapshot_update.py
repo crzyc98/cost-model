@@ -10,7 +10,7 @@ from typing import Optional
 
 import pandas as pd
 
-from cost_model.state.schema import SIMULATION_YEAR, SNAPSHOT_COLS, SNAPSHOT_DTYPES
+from cost_model.state.schema import SIMULATION_YEAR, SNAPSHOT_COLS, SNAPSHOT_DTYPES, EMP_ID
 from cost_model.state.snapshot.event_processors import EventProcessorRegistry
 from cost_model.state.snapshot_utils import ensure_columns_and_types
 
@@ -78,6 +78,27 @@ def update(
 
         # Finalize the snapshot
         final_snapshot = processing_result.updated_snapshot
+        # --- EMP_ID integrity diagnostic BEFORE finalization ---
+        if EMP_ID in final_snapshot.columns:
+            pre_dup = final_snapshot[EMP_ID].duplicated().sum()
+            pre_null = final_snapshot[EMP_ID].isna().sum()
+            logger.info(
+                f"[ENSURE-PRE] Incoming snapshot EMP_ID integrity: {pre_dup} dup, {pre_null} null (rows={len(final_snapshot)})"
+            )
+        else:
+            logger.info("[ENSURE-PRE] Incoming snapshot is MISSING EMP_ID column")
+
+        # Diagnostic check BEFORE finalization
+        if EMP_ID in final_snapshot.columns:
+            dup_ids_pre = final_snapshot[EMP_ID].duplicated().sum()
+            null_ids_pre = final_snapshot[EMP_ID].isna().sum()
+            if dup_ids_pre or null_ids_pre:
+                diag_msg_pre = (
+                    f"[DIAG] Pre-finalize snapshot has {dup_ids_pre} duplicate and {null_ids_pre} null EMP_IDs"
+                )
+                logger.error(diag_msg_pre)
+                raise ValueError(diag_msg_pre)
+
         final_snapshot[SIMULATION_YEAR] = snapshot_year
         final_snapshot = _finalize_snapshot(final_snapshot)
 
@@ -139,6 +160,17 @@ def _finalize_snapshot(snapshot: pd.DataFrame) -> pd.DataFrame:
         # Ensure all required columns exist and have correct types
         finalized_snapshot = ensure_columns_and_types(snapshot)
 
+        # Diagnostic EMP_ID integrity check before validating/returning
+        if EMP_ID in finalized_snapshot.columns:
+            dup_ids = finalized_snapshot[EMP_ID].duplicated().sum()
+            null_ids = finalized_snapshot[EMP_ID].isna().sum()
+            if dup_ids or null_ids:
+                diag_msg = (
+                    f"[DIAG] Finalize snapshot detected {dup_ids} duplicate and {null_ids} null EMP_IDs"
+                )
+                logger.error(diag_msg)
+                raise ValueError(diag_msg)
+
         # Validate final result
         _validate_final_snapshot(finalized_snapshot)
 
@@ -161,14 +193,14 @@ def _validate_final_snapshot(snapshot: pd.DataFrame) -> None:
         return
 
     # Check for duplicate employee IDs
-    if "employee_id" in snapshot.columns:
-        duplicates = snapshot["employee_id"].duplicated().sum()
+    if EMP_ID in snapshot.columns:
+        duplicates = snapshot[EMP_ID].duplicated().sum()
         if duplicates > 0:
             logger.error(f"Final snapshot has {duplicates} duplicate employee IDs")
 
     # Check for null employee IDs
-    if "employee_id" in snapshot.columns:
-        null_ids = snapshot["employee_id"].isna().sum()
+    if EMP_ID in snapshot.columns:
+        null_ids = snapshot[EMP_ID].isna().sum()
         if null_ids > 0:
             logger.error(f"Final snapshot has {null_ids} null employee IDs")
 

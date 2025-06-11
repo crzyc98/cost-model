@@ -21,6 +21,8 @@ from cost_model.state.schema import (
     COLA_PCT,
     EMP_LEVEL,
     EMP_TENURE_BAND,
+    PROMOTION_RATE,
+    PROMOTION_RAISE_PCT,
     SIMULATION_YEAR,
     TERM_RATE,
 )
@@ -109,9 +111,16 @@ def build_hazard_table(
         f"Using global rates: Term={global_term_rate}, CompPct={global_comp_raise_pct}, NH_Term={global_nh_term_rate}"
     )
 
-    # Define all possible employee levels (0-4) and standard tenure bands
+    # Define all possible employee levels (0-4) and modern tenure bands
     all_employee_levels = set(range(5))  # 0, 1, 2, 3, 4
-    standard_tenure_bands = {"<1", "1-3", "3-5", "5+"}
+    # Use the modern categorical tenure bands that the system expects
+    modern_tenure_bands = {"NEW_HIRE", "EARLY_CAREER", "MID_CAREER", "SENIOR", "VETERAN"}
+    
+    # Also include the original string-based bands for backward compatibility
+    legacy_tenure_bands = {"<1", "1-3", "3-5", "5-10", "10-15", "15+"}
+    
+    # Combine both sets to ensure all combinations are covered
+    all_tenure_bands = modern_tenure_bands | legacy_tenure_bands
 
     # Create a set of all possible (level, tenure_band) combinations
     all_combinations = set()
@@ -122,9 +131,9 @@ def build_hazard_table(
         tenure_band = combo[EMP_TENURE_BAND]
         all_combinations.add((combo[EMP_LEVEL], tenure_band))
 
-    # Then add all missing combinations with standard tenure bands
+    # Then add all missing combinations with all tenure bands to ensure full coverage
     for level in all_employee_levels:
-        for tenure_band in standard_tenure_bands:
+        for tenure_band in all_tenure_bands:
             all_combinations.add((level, tenure_band))
 
     # Convert back to list of dicts for the rest of the function
@@ -139,13 +148,19 @@ def build_hazard_table(
     records = []
     for year in years:
         for combo in unique_levels_tenures:
+            # Calculate promotion rate based on configuration
+            promotion_rate = _get_promotion_rate_for_combo(global_params, combo[EMP_LEVEL], combo[EMP_TENURE_BAND])
+            promotion_raise_pct = _get_promotion_raise_pct(global_params)
+            
             records.append(
                 {
                     SIMULATION_YEAR: year,
                     EMP_LEVEL: combo[EMP_LEVEL],
                     EMP_TENURE_BAND: combo[EMP_TENURE_BAND],
                     TERM_RATE: global_term_rate,
+                    PROMOTION_RATE: promotion_rate,
                     MERIT_RAISE_PCT: global_comp_raise_pct,  # CRITICAL FIX: Use correct column name
+                    PROMOTION_RAISE_PCT: promotion_raise_pct,
                     NEW_HIRE_TERMINATION_RATE: global_nh_term_rate,
                     COLA_PCT: _get_cola_rate_for_year(
                         global_params, year
@@ -174,7 +189,9 @@ def build_hazard_table(
             EMP_LEVEL,
             EMP_TENURE_BAND,
             TERM_RATE,
+            PROMOTION_RATE,
             MERIT_RAISE_PCT,
+            PROMOTION_RAISE_PCT,
             NEW_HIRE_TERMINATION_RATE,
             COLA_PCT,
             CFG,
@@ -182,6 +199,55 @@ def build_hazard_table(
         df = pd.DataFrame(columns=cols)
         logger.warning("Empty hazard table created.")
     return df
+
+
+def _get_promotion_rate_for_combo(global_params, emp_level: int, tenure_band: str) -> float:
+    """Calculate promotion rate for a specific level-tenure combination."""
+    try:
+        if hasattr(global_params, "promotion_hazard"):
+            promo_config = global_params.promotion_hazard
+            base_rate = getattr(promo_config, "base_rate", 0.1)
+            tenure_multipliers = getattr(promo_config, "tenure_multipliers", {})
+            level_dampener_factor = getattr(promo_config, "level_dampener_factor", 0.15)
+            
+            # Apply tenure multiplier
+            if hasattr(tenure_multipliers, tenure_band):
+                tenure_multiplier = getattr(tenure_multipliers, tenure_band)
+            elif isinstance(tenure_multipliers, dict):
+                tenure_multiplier = tenure_multipliers.get(tenure_band, 1.0)
+            else:
+                tenure_multiplier = 1.0
+            
+            # Apply level dampener (reduce promotion rate for higher levels)
+            level_dampener = max(0.0, 1 - level_dampener_factor * (emp_level - 1))
+            
+            # Calculate final promotion rate
+            promotion_rate = base_rate * tenure_multiplier * level_dampener
+            
+            # Set promotion rate to 0 for highest level (level 4 can't be promoted)
+            if emp_level >= 4:
+                promotion_rate = 0.0
+                
+            return promotion_rate
+        else:
+            # Default promotion rate if no configuration
+            return 0.05 if emp_level < 4 else 0.0
+    except Exception as e:
+        logger.warning(f"Error calculating promotion rate for level {emp_level}, tenure {tenure_band}: {e}")
+        return 0.05 if emp_level < 4 else 0.0
+
+
+def _get_promotion_raise_pct(global_params) -> float:
+    """Get promotion raise percentage from configuration."""
+    try:
+        if hasattr(global_params, "raises_hazard"):
+            raises_config = global_params.raises_hazard
+            return getattr(raises_config, "promotion_raise", 0.12)
+        else:
+            return 0.12  # Default 12% promotion raise
+    except Exception as e:
+        logger.warning(f"Error getting promotion raise percentage: {e}")
+        return 0.12
 
 
 def load_and_expand_hazard_table(path: str = "data/hazard_table.parquet") -> pd.DataFrame:

@@ -194,7 +194,7 @@ def run_projection_engine(
         )
 
         # Store the start-of-year snapshot before applying any events
-        start_of_year_snapshot = current_snapshot.copy()
+        snapshot_start_of_year = current_snapshot.copy(deep=True)
 
         # --- Patch: Regenerate hazard table for the current year using the current snapshot ---
         hazard_table = build_hazard_table(
@@ -334,9 +334,15 @@ def run_projection_engine(
         participation_rate = (participant_count / eligible_count) if eligible_count > 0 else 0.0
 
         # Use refactored employment summary builder
-        emp_summary = build_employment_status_summary(
-            current_snapshot, event_log_for_year, current_sim_year
+        from cost_model.projections.summaries.employment import make_yearly_status
+
+        emp_summary = make_yearly_status(
+            snapshot_start_of_year,
+            current_snapshot,
+            current_cumulative_event_log,
+            current_sim_year,
         )
+
         employment_status_summary_data.append(emp_summary)
 
         # Use refactored core summary builder
@@ -366,7 +372,7 @@ def run_projection_engine(
 
         # Build the enhanced yearly snapshot that includes all employees active during the year
         enhanced_yearly_snapshot = build_enhanced_yearly_snapshot(
-            start_of_year_snapshot=start_of_year_snapshot,
+            start_of_year_snapshot=snapshot_start_of_year,
             end_of_year_snapshot=current_snapshot,
             year_events=event_log_for_year,
             simulation_year=current_sim_year,

@@ -158,7 +158,7 @@ class CensusLoader:
     @timing_decorator(logger)
     def filter_terminated_employees(self, df: pd.DataFrame, start_year: int) -> pd.DataFrame:
         """
-        Filter out employees who were terminated before the start year.
+        Filter out employees who were terminated before the start year or have future hire dates.
 
         Args:
             df: DataFrame with employee data
@@ -170,8 +170,34 @@ class CensusLoader:
         # Use standardized column names
         EMP_TERM_DATE = "EMP_TERM_DATE"
         EMP_ACTIVE = "EMP_ACTIVE"
+        EMP_HIRE_DATE = "EMP_HIRE_DATE"
 
         initial_count = len(df)
+
+        # First, check for and filter out employees with future hire dates
+        if EMP_HIRE_DATE in df.columns:
+            # Convert hire dates to datetime if they're strings
+            if df[EMP_HIRE_DATE].dtype == "object":
+                df[EMP_HIRE_DATE] = pd.to_datetime(df[EMP_HIRE_DATE], errors="coerce")
+
+            # Filter out employees hired after the start year
+            cutoff_date = pd.Timestamp(f"{start_year}-12-31")
+            future_hires = df[EMP_HIRE_DATE].notna() & (df[EMP_HIRE_DATE] > cutoff_date)
+
+            if future_hires.any():
+                future_count = future_hires.sum()
+                logger.warning(
+                    "Found employees with future hire dates in census data",
+                    future_hire_count=future_count,
+                    cutoff_date=str(cutoff_date),
+                    sample_future_dates=df[future_hires][EMP_HIRE_DATE].head(3).tolist()
+                )
+                df = df[~future_hires].copy()
+                logger.info(
+                    "Filtered employees with future hire dates",
+                    filtered_count=future_count,
+                    remaining_count=len(df),
+                )
 
         # Filter based on termination date if available
         if EMP_TERM_DATE in df.columns:

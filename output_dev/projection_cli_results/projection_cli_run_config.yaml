@@ -135,7 +135,7 @@ global_parameters: !!python/object/apply:types.SimpleNamespace
         target_bonus_percent: 0.3
     log_level: DEBUG
     maintain_headcount: false
-    max_working_age: 65
+    max_working_age: 70
     min_working_age: 22
     monthly_transition: false
     new_hire_age_std_dev: 5

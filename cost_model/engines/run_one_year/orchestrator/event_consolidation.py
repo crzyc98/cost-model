@@ -354,14 +354,46 @@ class EventConsolidationManager:
             else:
                 consolidated_by_type[event_type] = pd.concat(events_list, ignore_index=True)
 
+        # Consolidate sub-types back to main types (e.g., "hiring_0", "hiring_1" -> "hiring")
+        main_event_types = {
+            "promotion": [],
+            "termination": [],
+            "hiring": [],
+            "nh_termination": [],
+            "compensation": [],
+            "contribution": [],
+        }
+        
+        # Group events by main type, including sub-types
+        for event_type, events in consolidated_by_type.items():
+            # Extract main type from sub-types (e.g., "hiring_0" -> "hiring")
+            main_type = event_type.split('_')[0]
+            if main_type in main_event_types:
+                main_event_types[main_type].append(events)
+            else:
+                # Handle unknown event types by treating them as their own type
+                main_event_types[event_type] = [events]
+
+        # Concatenate events of the same main type
+        final_consolidated = {}
+        for main_type, events_list in main_event_types.items():
+            if events_list:
+                if len(events_list) == 1:
+                    final_consolidated[main_type] = events_list[0]
+                else:
+                    final_consolidated[main_type] = pd.concat(events_list, ignore_index=True)
+                    self.logger.info(f"Consolidated {len(events_list)} sub-types for {main_type}: {sum(len(df) for df in events_list)} total events")
+            else:
+                final_consolidated[main_type] = pd.DataFrame()
+
         # Final consolidation
         return consolidate_events(
-            promotion_events=consolidated_by_type.get("promotion", pd.DataFrame()),
-            termination_events=consolidated_by_type.get("termination", pd.DataFrame()),
-            hiring_events=consolidated_by_type.get("hiring", pd.DataFrame()),
-            nh_termination_events=consolidated_by_type.get("nh_termination", pd.DataFrame()),
-            compensation_events=consolidated_by_type.get("compensation", pd.DataFrame()),
-            contribution_events=consolidated_by_type.get("contribution", pd.DataFrame()),
+            promotion_events=final_consolidated.get("promotion", pd.DataFrame()),
+            termination_events=final_consolidated.get("termination", pd.DataFrame()),
+            hiring_events=final_consolidated.get("hiring", pd.DataFrame()),
+            nh_termination_events=final_consolidated.get("nh_termination", pd.DataFrame()),
+            compensation_events=final_consolidated.get("compensation", pd.DataFrame()),
+            contribution_events=final_consolidated.get("contribution", pd.DataFrame()),
             year=self.year,
             logger=self.logger,
         )

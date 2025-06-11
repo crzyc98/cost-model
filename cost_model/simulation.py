@@ -22,8 +22,8 @@ from cost_model.config.models import GlobalParameters, MainConfig  # Needed for 
 
 # Age calculation imports
 from cost_model.state.age import apply_age
-from cost_model.state.schema import EMP_AGE, EMP_AGE_BAND, EMP_BIRTH_DATE
-from cost_model.utils.columns import EMP_ID, EMP_TENURE_BAND
+from cost_model.state.schema import EMP_AGE, EMP_AGE_BAND, EMP_BIRTH_DATE, EMP_LEVEL, EMP_TENURE_BAND
+from cost_model.utils.columns import EMP_ID
 
 # Data I/O
 # TODO: Update these imports if readers/writers structure changes
@@ -212,6 +212,23 @@ def run_simulation(
         logger.info(
             f"Dynamic hazard table built successfully with {len(hazard)} rows for {len(simulation_years)} years"
         )
+
+        # Validate hazard table coverage against initial snapshot
+        if EMP_LEVEL in snap.columns:
+            snapshot_levels = set(snap[EMP_LEVEL].dropna().unique())
+            hazard_levels = set(hazard[EMP_LEVEL].unique())
+            missing_levels = snapshot_levels - hazard_levels
+            if missing_levels:
+                logger.warning(
+                    f"Hazard table missing coverage for employee levels found in snapshot: {missing_levels}. "
+                    f"Snapshot levels: {sorted(snapshot_levels)}, Hazard levels: {sorted(hazard_levels)}"
+                )
+            else:
+                logger.info(f"Hazard table covers all employee levels in snapshot: {sorted(snapshot_levels)}")
+
+        # Log hazard table structure for debugging
+        logger.debug(f"Hazard table columns: {list(hazard.columns)}")
+        logger.debug(f"Hazard table level-tenure combinations: {len(hazard[[EMP_LEVEL, EMP_TENURE_BAND]].drop_duplicates())}")
     except Exception as e:
         logger.error(f"Failed to build dynamic hazard table: {e}")
         logger.exception("Dynamic hazard table generation failed, falling back to static loading")
