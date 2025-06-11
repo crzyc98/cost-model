@@ -291,16 +291,32 @@ class YearlySnapshotProcessor:
 
         EMP_ID = "employee_id"
 
-        # Filter for new hire termination events
-        nht_events = year_events[
-            (year_events["event_type"] == EVT_NEW_HIRE_TERM)
+        # Candidate termination events (regular EVT_TERM) for employees missing from snapshots
+        term_events = year_events[
+            (year_events["event_type"] == EVT_TERM)
             & (year_events[EMP_ID].isin(missing_ids))
         ]
 
-        if nht_events.empty:
-            logger.debug("No new hire termination events found for missing employees")
+        if term_events.empty:
+            logger.debug("No termination events found for missing employees")
             return pd.DataFrame()
 
+        # Keep only those whose hire occurred in the current simulation year – i.e., true new hires
+        candidate_events = []
+        for _, term_evt in term_events.iterrows():
+            emp_id = term_evt[EMP_ID]
+            hire_date = self._extract_hire_date_from_events(emp_id, year_events)
+            if hire_date is None:
+                continue
+            hire_year = pd.to_datetime(hire_date, errors="coerce").year
+            if hire_year == simulation_year:
+                candidate_events.append(term_evt)
+
+        if not candidate_events:
+            logger.debug("No new-hire terminations after hire-year filter")
+            return pd.DataFrame()
+
+        nht_events = pd.DataFrame(candidate_events)
         logger.debug(f"Processing {len(nht_events)} new hire termination events")
 
         reconstructed_employees = []
@@ -356,6 +372,30 @@ class YearlySnapshotProcessor:
         # Get hire date from events
         hire_date = self._extract_hire_date_from_events(emp_id, year_events)
         term_date = termination_event.get("event_date")
+
+        # After obtaining dates, ensure fallbacks to event_time when event_date missing
+        if pd.isna(hire_date) or hire_date is None:
+            # fallback: get event_time from first hire event in year_events
+            hires_for_emp = year_events[
+                (year_events["event_type"] == EVT_HIRE) & (year_events[EMP_ID] == emp_id)
+            ]
+            if not hires_for_emp.empty:
+                hire_date = hires_for_emp.iloc[-1]["event_time"]
+
+        if pd.isna(term_date) or term_date is None:
+            term_date = termination_event.get("event_time")
+
+        # Convert to string ISO for consistency
+        hire_date = pd.to_datetime(hire_date, errors="coerce")
+        term_date = pd.to_datetime(term_date, errors="coerce")
+        if not pd.isna(hire_date):
+            hire_date = hire_date.date().isoformat()
+        else:
+            hire_date = None
+        if not pd.isna(term_date):
+            term_date = term_date.date().isoformat()
+        else:
+            term_date = None
 
         # Build employee record
         employee_data = {
@@ -416,6 +456,9 @@ class YearlySnapshotProcessor:
         if not hire_events.empty:
             # Get the most recent hire event
             hire_event = hire_events.iloc[-1]
-            return hire_event.get("event_date")
-
-        return None
+            hire_dt = hire_event.get("event_date")
+            if pd.isna(hire_dt) or hire_dt is None:
+                hire_dt = hire_event.get("event_time")
+            return hire_dt
+        else:
+            return None

@@ -1,185 +1,339 @@
-# Workforce Cost Model
+# CLAUDE.md
 
-## Overview
+This file provides comprehensive guidance to Claude Code (claude.ai/code) when working with the Workforce Cost Model Project codebase.
+
+## Project Overview
+
+This is an event-driven workforce cost simulation framework designed for deterministic and stochastic workforce projections. The system models hiring, termination, promotion, and compensation events over multiple years, producing snapshots and comprehensive audit logs.
 
 The Workforce Cost Model is an advanced, event-driven simulation framework for projecting workforce demographics, compensation, and retirement plan costs. It provides deterministic and stochastic modeling capabilities for hiring, terminations, promotions, compensation adjustments, and retirement plan participation. The system is designed for organizations, consultants, and plan sponsors to analyze, audit, and forecast workforce and plan outcomes under customizable business rules and scenarios.
 
-Key goals:
-- **Accurate multi-year workforce and cost projections**
-- **Deterministic and stochastic simulation support**
-- **Full audit trail of all workforce events**
-- **Modular, analyst-friendly configuration**
-- **Comprehensive snapshot and event log management**
+## Critical Rules and Guidelines
 
----
+### Mandatory Requirements
+- **Read Everything**: Process all provided documents, instructions, and code line by line without summarizing or skipping details
+- **No Guessing**: Never assume, fabricate, or provide placeholder/TODO code. Ask for clarification when uncertain
+- **Accuracy First**: All solutions must be complete, correct, tested, and immediately implementable
+- **Preserve Intent**: Maintain original logic, structure, and functionality of existing code
+- **Zero-Bug Philosophy**: Never introduce errors, bugs, or unresolved issues
 
-## Key Features
+### Code Quality Standards
+- Use Python type hints consistently
+- Implement structured logging (never use print statements)
+- Follow proper error handling with meaningful messages
+- Maintain clear docstrings and comments
+- Write corresponding tests for new functionality
 
-- **Event-Driven Simulation Engine**: Models every workforce event (hire, termination, promotion, compensation change, plan eligibility, enrollment, etc.) with full auditability.
-- **Modular Business Rule Engines**: Each business rule (compensation, hiring, termination, plan rules, etc.) is implemented as a self-contained, swappable engine.
-- **Deterministic & Stochastic Logic**: Supports both deterministic and probabilistic (hazard-based) modeling for terminations, hiring, and other events.
-- **Snapshot Management**: Rebuilds workforce state at any point in time for scenario analysis and reporting.
-- **Structured Logging**: All significant state changes are logged with rich context for traceability and debugging.
-- **Scenario Analysis**: Easily compare alternative plan designs or workforce strategies using YAML/CSV configuration files.
-- **Analyst-Friendly Configuration**: All assumptions and rules are stored in human-readable YAML and CSV files.
+## Development Commands
 
----
+### Building the environment
 
-## Project Architecture
+rm -rf .venv
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 
-```
-cost-model/
-├── cost_model/
-│   ├── simulation.py            # Main simulation entry point
-│   ├── state/
-│   │   ├── snapshot.py         # Snapshot creation and management
-│   │   ├── snapshot_update.py  # Snapshot update logic
-│   │   ├── event_log.py        # Event logging
-│   │   └── schema.py           # Data schema definitions
-│   ├── dynamics/
-│   │   ├── engine.py           # Core dynamics orchestration
-│   │   ├── hiring.py           # Hiring logic
-│   │   ├── termination.py      # Termination logic
-│   │   └── compensation.py     # Compensation adjustments
-│   ├── plan_rules/             # Plan rules (benefits, contributions)
-│   ├── projections/
-│   │   ├── hazard.py           # Hazard modeling (stochastic logic)
-│   │   └── cli.py              # CLI interface
-│   ├── data/                   # Data loading and preprocessing
-│   ├── ml/                     # Machine learning models (if any)
-│   └── reporting/              # Reporting utilities
-├── config/                     # YAML/CSV configuration files
-├── tests/                      # Unit and integration tests
-├── output_dev/                 # Output logs and reports
-└── README.md                   # Project documentation
-```
-
----
-
-## Configuration
-
-All simulation rules and assumptions are defined in YAML and CSV files under `config/`.
-
-- **Plan Rules**: Define employer match, auto-enrollment, auto-increase, IRS limits, etc.
-- **Workforce Assumptions**: Turnover rates, hiring rates, compensation growth, etc.
-- **Scenarios**: Multiple plan designs or workforce strategies can be defined and compared.
-
-Example YAML snippet:
-```yaml
-plan_rules:
-  auto_enroll:
-    enabled: true
-    window_days: 90
-    default_rate: 0.03
-    outcome_distribution:
-      prob_opt_out: 0.10
-      prob_stay_default: 0.70
-      prob_opt_down: 0.05
-      prob_increase_to_match: 0.10
-      prob_increase_high: 0.05
-  auto_increase:
-    enabled: true
-    increase_rate: 0.01
-    cap_rate: 0.10
-  employer_match:
-    tiers:
-      - match_rate: 1.0
-        cap_deferral_pct: 0.03
-      - match_rate: 0.5
-        cap_deferral_pct: 0.02
-    dollar_cap: 5000
-  employer_nec:
-    rate: 0.03
-  irs_limits:
-    2025:
-      compensation_limit: 345000
-      deferral_limit: 23000
-      catchup_limit: 7500
-      catchup_eligibility_age: 50
-
-scenarios:
-  Baseline:
-    name: "Current Plan Design"
-  Enhanced_Match:
-    name: "Enhanced Employer Match"
-    plan_rules:
-      employer_match:
-        tiers:
-          - match_rate: 1.0
-            cap_deferral_pct: 0.04
-          - match_rate: 0.5
-            cap_deferral_pct: 0.02
-```
-See `docs/config_documentation.md` for a full reference of configuration options.
-
----
-
-## Data Requirements
-
-Provide an initial census CSV (e.g., `census_data.csv`) with the following columns:
-
-**Required Columns:**
-- `employee_id`: Unique identifier
-- `birth_date`: YYYY-MM-DD
-- `hire_date`: YYYY-MM-DD
-- `gross_compensation`: Annual gross compensation
-
-**Optional Columns:**
-- `termination_date`: YYYY-MM-DD (if applicable)
-- `role`, `plan_year_compensation`, `capped_compensation`, `deferral_percentage`, `employee_contribution`, `employer_match`, `employer_nec`, `tenure_band`, `age_band`
-
-Missing values will be calculated based on configuration and business rules.
-
----
-
-## Setup & Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone <repo-url>
-   cd cost-model
-   ```
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Review configuration:**
-   - Edit YAML/CSV files in `config/` as needed for your scenarios.
-
----
-
-## Running Simulations
-
-### Command-Line Interface (CLI)
-
-Run a projection with your chosen scenario:
+### Testing
 ```bash
-python -m cost_model.projections.cli --config config/your_config.yaml --scenario Baseline
+# Run all tests
+pytest
+
+# Run quick tests only (< 30 seconds)
+pytest -q tests/quick
+
+# Run specific test markers
+pytest -m unit          # Unit tests only
+pytest -m integration   # Integration tests only
+pytest -m slow          # Slow tests
+
+# Run with coverage
+pytest --cov=cost_model
 ```
 
-Outputs (snapshots, event logs, reports) will be saved to `output_dev/`.
+### Linting and Code Quality
+```bash
+# Type checking
+mypy cost_model/
 
----
+# Code style checking
+flake8 cost_model/
 
-## Testing & Validation
+# Code formatting (if black is configured)
+black cost_model/
+```
 
-- Run all tests:
-  ```bash
-  pytest
-  ```
-- Review logs in `output_dev/projection_logs/` for detailed traceability.
-- Validate output data against schema definitions in `cost_model/state/schema.py`.
+### Main Simulation Commands
+```bash
+# Run multi-year projection with CLI (primary interface)
+python -m cost_model.projections.cli \
+  --config config/default.yaml \
+  --census data/census_preprocessed.parquet
 
----
+# Run simulation with specific scenario
+python -m cost_model.projections.cli \
+  --config config/default.yaml \
+  --census data/census_preprocessed.parquet \
+  --scenario-name baseline
 
-## Contribution & Support
+# Run projection with CLI (primary interface) use this example to test always
+python scripts/run_multi_year_projection.py --config config/dev_tiny.yaml --census data/census_preprocessed.parquet --debug
+```
 
-- Follow PEP 8 and project code conventions.
-- Add type hints and docstrings to all new code.
-- Include unit tests for new functionality.
-- See `docs/` for further documentation.
-- For questions or support, open an issue or contact the maintainers.
+## Architecture Overview
 
----
+### Core Engine Structure
+- **Projection Framework**: `cost_model/projections/` orchestrates multi-year simulations
+- **Modular Engines**: Specialized engines in `cost_model/engines/` for each workforce event type
+  - **Enhanced Termination Engine**: Intelligent fallback logic for missing hazard combinations
+  - **Hiring Engine**: New employee generation with configurable parameters
+  - **Compensation Engine**: Merit increases, COLA adjustments, and promotion raises
+  - **Promotion Engine**: Career progression with age sensitivity
+- **Dynamic Hazard Tables**: Runtime generation based on configuration parameters
+- **Event-Driven Architecture**: All changes recorded as structured events
+- **Snapshot-Based State**: Point-in-time workforce state with comprehensive tracking
 
-© 2025 Workforce Cost Model Project. All rights reserved.
+### Key Project Structure
+```
+cost_model/
+├── simulation.py              # Core simulation orchestration
+├── config/                    # Configuration management
+│   ├── loaders.py            # YAML configuration loading
+│   ├── models.py             # Pydantic validation models
+│   ├── accessors.py          # Configuration access helpers
+│   ├── params.py             # Parameter management
+│   └── plan_rules.py         # Plan rule configuration
+├── data/                      # Data I/O operations
+│   ├── readers.py            # Data loading (Parquet/CSV)
+│   └── writers.py            # Data saving with format detection
+├── engines/                   # Core simulation engines
+│   ├── term.py               # Enhanced termination engine
+│   ├── hire.py               # Hiring engine
+│   ├── comp.py               # Compensation engine
+│   ├── cola.py               # Cost-of-living adjustments
+│   ├── promotion.py          # Promotion engine
+│   ├── markov_promotion.py   # Advanced promotion modeling
+│   ├── nh_termination.py     # New hire termination
+│   ├── compensation.py       # Compensation orchestration
+│   └── run_one_year/         # Year-level orchestration
+├── projections/              # Multi-year projection framework
+│   ├── cli.py               # Command-line interface
+│   ├── runner.py            # Simulation orchestration
+│   ├── dynamic_hazard.py    # Runtime hazard table generation
+│   ├── hazard.py            # Static hazard table loading
+│   ├── snapshot.py          # Snapshot processing
+│   ├── event_log.py         # Event tracking
+│   ├── reporting.py         # Output generation
+│   ├── config.py            # Projection configuration
+│   └── utils.py             # Projection utilities
+├── state/                     # State management
+│   ├── schema.py            # Column names and constants
+│   ├── age.py               # Age calculations and bands
+│   ├── tenure.py            # Tenure calculations
+│   ├── job_levels.py        # Organizational hierarchy
+│   ├── builder.py           # Snapshot construction
+│   ├── snapshot.py          # Snapshot utilities
+│   ├── snapshot_update.py   # State transitions
+│   └── event_log.py         # Event logging system
+├── plan_rules/               # Retirement plan rules
+│   ├── auto_enrollment.py   # Auto-enrollment logic
+│   ├── auto_increase.py     # Auto-increase rules
+│   ├── contribution_increase.py # Contribution adjustments
+│   ├── eligibility.py       # Eligibility rules
+│   ├── eligibility_events.py # Eligibility tracking
+│   ├── enrollment.py        # Enrollment processing
+│   ├── contributions.py     # Contribution calculations
+│   └── proactive_decrease.py # Contribution reductions
+├── rules/                     # Business rule implementations
+│   ├── engine.py            # Rule processing orchestration
+│   ├── auto_enrollment.py   # Core auto-enrollment
+│   ├── auto_increase.py     # Contribution escalation
+│   ├── contributions.py     # General contribution logic
+│   ├── eligibility.py       # Participation eligibility
+│   ├── formula_parsers.py   # Configuration parsing
+│   ├── response.py          # Behavioral response modeling
+│   └── validators.py        # Rule validation
+├── dynamics/                  # Population dynamics
+│   ├── engine.py            # Dynamics orchestration
+│   ├── compensation.py      # Salary progression
+│   ├── hiring.py            # New hire generation
+│   ├── termination.py       # Employee exit modeling
+│   └── sampling/            # Statistical sampling tools
+├── ml/                        # Machine learning
+│   ├── turnover.py          # Turnover prediction models
+│   └── ml_utils.py          # ML utilities
+├── schema/                    # Data structure definitions
+│   ├── columns.py           # Column definitions
+│   ├── dtypes.py            # Data type validation
+│   ├── events.py            # Event structure
+│   ├── migration.py         # Schema migration
+│   └── validation.py        # Data validation
+├── reporting/                 # Analysis and reporting
+│   └── metrics.py           # KPI calculations
+└── utils/                     # Shared utilities
+    ├── columns.py           # Column constants
+    ├── constants.py         # System constants
+    ├── date_utils.py        # Date/time helpers
+    ├── data_processing.py   # Data manipulation
+    ├── dataframe_validator.py # DataFrame validation
+    ├── id_generation.py     # ID creation
+    ├── tenure_utils.py      # Tenure calculations
+    ├── simulation_utils.py  # Simulation helpers
+    ├── census_generation_helpers.py # Test data
+    └── compensation/        # Compensation utilities
+```
+
+### Configuration System
+- **Hierarchical YAML Configuration**: All parameters in `config/` directory
+- **Pydantic Validation**: Configuration validated using models in `cost_model/config/models.py`
+- **Scenario Support**: Multiple scenarios per config file
+- **Parameter Inheritance**: Scenarios inherit from global parameters with overrides
+
+### Data Flow
+1. **Input**: Census data (Parquet/CSV) + Configuration (YAML)
+2. **Configuration Loading**: Pydantic validation and parameter extraction
+3. **Hazard Table Generation**: Dynamic hazard tables created from configuration
+4. **Initialization**: Initial snapshot from census with age/tenure calculations
+5. **Year Processing**: Multi-engine pipeline per simulation year:
+   - **Terminations**: Enhanced engine with intelligent fallback logic
+   - **Hiring**: New employee generation with demographic targeting
+   - **Promotions**: Career progression with age-based multipliers
+   - **Compensation**: Merit raises, COLA adjustments, promotion increases
+   - **Plan Rules**: Retirement plan eligibility and contribution processing
+6. **State Updates**: Snapshot mutations and event logging
+7. **Output**: Yearly snapshots + consolidated data + comprehensive event logs + summary analytics
+
+## Critical Development Patterns
+
+### Snapshot Management
+- Use `snapshot.py` for snapshot creation
+- Update snapshots using `snapshot_update.py` functions
+- Maintain consistency with `schema.py` definitions
+- **Compensation Validation**: All employees must have valid compensation values
+- Log compensation issues with appropriate severity levels
+
+### Data Handling Best Practices
+- **File Format Support**: Handle both Parquet and CSV census files
+- **Column Standardization**: Auto-map common variations (e.g., `employee_ssn` to `employee_id`)
+- **DataFrame Merging**: Handle duplicate columns, ensure unique names
+- **NA/NaN Handling**: Proper handling of pandas NA/NaN in all operations
+- **Error Handling**: Comprehensive logging with graceful fallbacks
+
+### Event Logging
+- Log all significant state changes using structured logging
+- Include relevant context, especially for compensation events
+- Use appropriate log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- Log warnings when default values are used for missing data
+
+### Compensation Handling
+- All employees must have valid compensation values
+- Default to role-based compensation when data is missing
+- Handle pandas NA/NaN appropriately in calculations
+- Document assumptions and fallbacks
+
+## Testing Structure
+- Tests organized by pytest markers: `@pytest.mark.unit`, `@pytest.mark.integration`
+- Quick tests (`@pytest.mark.quick`) run in under 30 seconds
+- Test configuration in `pytest.ini`
+- Maintain comprehensive test coverage
+
+## Output Structure
+- Results in `output_dev/` or specified directory
+- Parquet format for efficiency
+- Yearly snapshots + consolidated final snapshot
+- Cumulative event log with full audit trail
+- Summary statistics and employment status summaries
+- Configuration copied to output for reproducibility
+
+## Key Constants and Conventions
+
+### Schema Constants
+- **Employee Schema**: Defined in `cost_model/state/schema.py`
+  - `EMP_ID`: Employee identifier
+  - `EMP_LEVEL`: Employee level (0-4 standard range)
+  - `EMP_TENURE_BAND`: Tenure categories ('<1', '1-3', '3-5', '5-10', '10-15', '15+')
+  - `EMP_AGE`, `EMP_AGE_BAND`: Age and age band calculations
+  - `EMP_GROSS_COMP`: Employee compensation
+  - `EMP_ACTIVE`: Active status flag
+- **Event Schema**: Event types and structure in `cost_model/schema/events.py`
+- **Column Utilities**: Helper constants in `cost_model/utils/columns.py`
+
+### Data Conventions
+- **Date Handling**: Pandas Timestamps with consistent `as_of_date` logic
+- **Monetary Values**: Float precision for performance (no Decimal)
+- **Random Generation**: Numpy Generator with configurable seeds for reproducibility
+- **Logging**: Structured logging via `logging_config.py` with appropriate levels
+- **File Formats**: Automatic Parquet/CSV detection and optimization
+
+## Recent System Enhancements
+
+### Enhanced Termination Engine (Latest)
+- **Intelligent Fallback Logic**: Multi-strategy approach for missing hazard table combinations
+- **Comprehensive Diagnostics**: Detailed logging for troubleshooting missing combinations
+- **Age Sensitivity Integration**: Age-based multipliers for realistic retirement modeling
+- **New Hire Termination**: Specialized handling for new employee attrition patterns
+
+### Auto-Tuning System
+- **Production-Ready Calibration**: Automated parameter optimization for realistic simulations
+- **Multi-Campaign Support**: Iterative refinement with comprehensive result tracking
+- **Evidence-Based Parameters**: Uses BLS/SSA data for realistic parameter ranges
+- **Multi-Objective Scoring**: Balances demographic preservation, headcount growth, and compensation targets
+
+### Dynamic Hazard Tables
+- **Runtime Generation**: Creates hazard tables based on configuration parameters
+- **Multi-Year Support**: Handles time-varying parameters across simulation years
+- **Flexible Parameter Structure**: Supports complex scenarios and parameter combinations
+
+### Robust Data Processing
+- **Format Detection**: Automatic Parquet/CSV handling with optimization
+- **Schema Validation**: Comprehensive data quality checks and error recovery
+- **Memory Optimization**: Efficient handling of large datasets
+- **Column Standardization**: Automatic mapping of common column variations
+
+## Current Development Focus
+
+### System Stability
+1. **Production Validation**: Ensuring all engines work reliably with real-world data
+2. **Performance Optimization**: Efficient processing of large employee populations
+3. **Error Recovery**: Graceful handling of edge cases and data quality issues
+4. **Comprehensive Testing**: Full coverage of simulation scenarios and edge cases
+
+### Common Debugging Areas
+- Check logs in `output_dev/projection_logs/` for detailed diagnostics
+- Validate hazard table coverage for all employee level-tenure combinations
+- Ensure age calculations are consistent across simulation and projection modules
+- Verify event log integrity and snapshot consistency
+- Monitor memory usage with large datasets
+
+## When Modifying This Codebase
+
+### Required Practices
+- Follow existing orchestrator-based engine patterns
+- Use Pydantic models for new configuration parameters
+- Add appropriate pytest markers to new tests
+- Update YAML configuration files for new parameters
+- Maintain event log compatibility with schema changes
+- Use existing column constants, not hardcoded strings
+- Ensure comprehensive logging for all major operations
+
+### Before Making Changes
+1. Read and understand all relevant documentation
+2. Review existing code patterns for similar functionality
+3. Validate proposed changes maintain data consistency
+4. Verify changes don't break existing functionality
+5. Add appropriate tests and documentation
+
+### Verification Process
+1. Run full test suite with `pytest`
+2. Execute smoke tests with `python scripts/smoke_run.py`
+3. Validate output structure and data integrity
+4. Check logs for warnings or errors
+5. Verify configuration loading works correctly
+
+## Performance Considerations
+- Optimize for large datasets using vectorized operations
+- Be mindful of memory usage with large snapshots
+- Use chunking for large operations when needed
+- Profile code to identify bottlenecks
+- Clear unused variables to manage memory
+
+Remember: This system requires high accuracy and zero tolerance for bugs. Always verify solutions thoroughly before implementation and maintain the integrity of the simulation's deterministic and stochastic modeling capabilities.

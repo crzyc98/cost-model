@@ -6,6 +6,8 @@ This file provides comprehensive guidance to Claude Code (claude.ai/code) when w
 
 This is an event-driven workforce cost simulation framework designed for deterministic and stochastic workforce projections. The system models hiring, termination, promotion, and compensation events over multiple years, producing snapshots and comprehensive audit logs.
 
+The Workforce Cost Model is an advanced, event-driven simulation framework for projecting workforce demographics, compensation, and retirement plan costs. It provides deterministic and stochastic modeling capabilities for hiring, terminations, promotions, compensation adjustments, and retirement plan participation. The system is designed for organizations, consultants, and plan sponsors to analyze, audit, and forecast workforce and plan outcomes under customizable business rules and scenarios.
+
 ## Critical Rules and Guidelines
 
 ### Mandatory Requirements
@@ -23,6 +25,13 @@ This is an event-driven workforce cost simulation framework designed for determi
 - Write corresponding tests for new functionality
 
 ## Development Commands
+
+### Building the environment
+
+rm -rf .venv
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 
 ### Testing
 ```bash

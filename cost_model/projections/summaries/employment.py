@@ -61,6 +61,21 @@ def make_yearly_status(prev_snap, eoy_snap, event_log, year):
 
     experienced_terms = len(experienced_terminated_ids)
 
+    # --- Fallback to event log if snapshot shows zero new-hire terminations ----
+    if nh_terms == 0 and not event_log.empty:
+        yr_events = event_log[pd.to_datetime(event_log["event_time"]).dt.year == year]
+
+        term_ids = set(yr_events.loc[yr_events["event_type"] == EVT_TERM, "employee_id"].astype(str))
+        if term_ids:
+            hires_this_year = yr_events[
+                (yr_events["event_type"] == EVT_HIRE) & (yr_events["employee_id"].isin(term_ids))
+            ]
+            hire_ids = set(hires_this_year["employee_id"].astype(str))
+            nh_terms = len(hire_ids)
+
+            # Adjust experienced_terms to avoid double counting
+            experienced_terms = max(0, experienced_terms - nh_terms)
+
     # Safety: fall back to event-log count if snapshot-based method yields 0
     if experienced_terms == 0 and not event_log.empty:
         yr_log = event_log[pd.to_datetime(event_log["event_time"]).dt.year == year]
